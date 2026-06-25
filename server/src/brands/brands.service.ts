@@ -4,12 +4,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
-import { Brand } from './entities/brand.entity';
-import { CreateBrandDto } from './dto/create-brand.dto';
-import { Paginated } from '../common/interfaces/paginated.interface';
-import { PaginationDto } from '../common/dto/pagination.dto';
-import { PrismaService } from '../prisma/prisma.service';
-import { UpdateBrandDto } from './dto/update-brand.dto';
+import { Brand } from '../generated/prisma/client.js';
+import { CreateBrandDto } from './dto/create-brand.dto.js';
+import { Paginated } from '../common/interfaces/paginated.interface.js';
+import { PaginationDto } from '../common/dto/pagination.dto.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { UpdateBrandDto } from './dto/update-brand.dto.js';
 import { uuidv7 } from 'uuidv7';
 
 @Injectable()

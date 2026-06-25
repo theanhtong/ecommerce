@@ -9,10 +9,10 @@ import {
   Post,
   Query,
 } from '@nestjs/common';
-import { BrandsService } from './brands.service';
-import { CreateBrandDto } from './dto/create-brand.dto';
-import { UpdateBrandDto } from './dto/update-brand.dto';
-import { PaginationDto } from '../common/dto/pagination.dto';
+import { BrandsService } from './brands.service.js';
+import { CreateBrandDto } from './dto/create-brand.dto.js';
+import { UpdateBrandDto } from './dto/update-brand.dto.js';
+import { PaginationDto } from '../common/dto/pagination.dto.js';
 
 @Controller('brands')
 export class BrandsController {
