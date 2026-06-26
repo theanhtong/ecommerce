@@ -94,6 +94,7 @@ model User {
   updatedAt       DateTime  @updatedAt
 
   oauths        OAuth[]
+  emailVerification EmailVerification[]
   sessions      Session[]
   addresses     Address[]
   cart          Cart?
@@ -106,6 +107,18 @@ model User {
   auditLogs     AuditLog[]
 
   @@map("users")
+}
+
+model EmailVerification {
+  id        String   @id @db.Uuid
+  userId    String   @db.Uuid
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("email_verifications")
 }
 
 model OAuth {
