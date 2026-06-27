@@ -15,6 +15,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { UpdateInventoryDto } from '../inventories/dto/update-inventory.dto.js';
 import { UpdateProductDto } from './dto/update-product.dto.js';
 import { UpdateVariantDto } from '../variants/dto/update-variant.dto.js';
+import { buildPaginated } from '../common/helpers/pagination.helper.js';
 import { uuidv7 } from 'uuidv7';
 
 @Injectable()
@@ -54,15 +55,7 @@ export class ProductsService {
       this.prisma.product.count({ where }),
     ]);
 
-    return {
-      data,
-      meta: {
-        total,
-        page: query.page,
-        limit: query.limit,
-        totalPages: Math.ceil(total / query.limit),
-      },
-    };
+    return buildPaginated(data, total, query.page, query.limit);
   }
 
   async findOne(id: string): Promise<Product> {

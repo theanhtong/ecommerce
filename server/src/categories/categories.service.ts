@@ -11,6 +11,7 @@ import { Paginated } from '../common/interfaces/paginated.interface.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UpdateCategoryDto } from './dto/update-category.dto.js';
+import { buildPaginated } from '../common/helpers/pagination.helper.js';
 import { uuidv7 } from 'uuidv7';
 
 @Injectable()
@@ -54,15 +55,7 @@ export class CategoriesService {
       this.prisma.category.count({ where }),
     ]);
 
-    return {
-      data,
-      meta: {
-        total,
-        page: query.page,
-        limit: query.limit,
-        totalPages: Math.ceil(total / query.limit),
-      },
-    };
+    return buildPaginated(data, total, query.page, query.limit);
   }
 
   async findOne(id: string): Promise<Category> {

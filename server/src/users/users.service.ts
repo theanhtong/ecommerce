@@ -9,13 +9,12 @@ import {
 
 import { ChangePasswordDto } from './dto/change-password.dto.js';
 import { CreateAddressDto } from './dto/create-address.dto.js';
-import { Paginated } from '../common/interfaces/paginated.interface.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UpdateAddressDto } from './dto/update-address.dto.js';
 import { UpdateProfileDto } from './dto/update-profile.dto.js';
 import { UpdateUserStatusDto } from './dto/update-user-status.dto.js';
-import { User } from '../generated/prisma/client.js';
+import { buildPaginated } from '../common/helpers/pagination.helper.js';
 import { uuidv7 } from 'uuidv7';
 
 @Injectable()
@@ -131,7 +130,7 @@ export class UsersService {
     });
   }
 
-  async findAll(query: PaginationDto): Promise<Paginated<User>> {
+  async findAll(query: PaginationDto) {
     const where = {
       ...(query.search && {
         OR: [
@@ -161,15 +160,7 @@ export class UsersService {
       this.prisma.user.count({ where }),
     ]);
 
-    return {
-      data: data as unknown as User[],
-      meta: {
-        total,
-        page: query.page,
-        limit: query.limit,
-        totalPages: Math.ceil(total / query.limit),
-      },
-    };
+    return buildPaginated(data, total, query.page, query.limit);
   }
 
   async findOne(id: string) {
