@@ -46,9 +46,8 @@ export class PaymentsService {
     if (!order) throw new NotFoundException('Order not found');
     if (order.userId !== userId) throw new ForbiddenException('Access denied');
 
-    // chỉ cho phép tạo payment khi CONFIRMED
-    if (order.status !== OrderStatus.CONFIRMED) {
-      throw new BadRequestException('Order must be CONFIRMED before payment');
+    if (order.status !== OrderStatus.PENDING) {
+      throw new BadRequestException('Order must be PENDING');
     }
 
     // VNPAY: cho phép retry nếu payment trước đó FAILED

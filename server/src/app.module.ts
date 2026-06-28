@@ -11,6 +11,7 @@ import { OrdersModule } from './orders/orders.module.js';
 import { PaymentsModule } from './payments/payments.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ProductsModule } from './products/products.module.js';
+import { ShipmentsModule } from './shipments/shipments.module.js';
 import { UsersModule } from './users/users.module.js';
 
 @Module({
@@ -28,6 +29,7 @@ import { UsersModule } from './users/users.module.js';
     CartModule,
     OrdersModule,
     PaymentsModule,
+    ShipmentsModule,
   ],
 })
 export class AppModule {}
