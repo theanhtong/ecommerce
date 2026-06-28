@@ -10,6 +10,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ProductsModule } from './products/products.module.js';
 import { UsersModule } from './users/users.module.js';
+import { OrdersModule } from './orders/orders.module.js';
 
 @Module({
   controllers: [AppController],
@@ -24,6 +25,7 @@ import { UsersModule } from './users/users.module.js';
     MailModule,
     UsersModule,
     CartModule,
+    OrdersModule,
   ],
 })
 export class AppModule {}
