@@ -7,10 +7,11 @@ import { CategoriesModule } from './categories/categories.module.js';
 import { ConfigModule } from '@nestjs/config';
 import { MailModule } from './mail/mail.module.js';
 import { Module } from '@nestjs/common';
+import { OrdersModule } from './orders/orders.module.js';
+import { PaymentsModule } from './payments/payments.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 import { ProductsModule } from './products/products.module.js';
 import { UsersModule } from './users/users.module.js';
-import { OrdersModule } from './orders/orders.module.js';
 
 @Module({
   controllers: [AppController],
@@ -26,6 +27,7 @@ import { OrdersModule } from './orders/orders.module.js';
     UsersModule,
     CartModule,
     OrdersModule,
+    PaymentsModule,
   ],
 })
 export class AppModule {}
