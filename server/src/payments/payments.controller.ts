@@ -27,7 +27,7 @@ export class PaymentsController {
   @Post('orders/:orderId')
   createPayment(
     @CurrentUser() user: { id: string },
-    @Param('orderId', new ParseUUIDPipe({ version: undefined }))
+    @Param('orderId', ParseUUIDPipe)
     orderId: string,
     @Body() dto: CreatePaymentDto,
     @Req() req: Request,
@@ -56,8 +56,7 @@ export class PaymentsController {
   @Get('orders/:orderId')
   getPayment(
     @CurrentUser() user: { id: string },
-    @Param('orderId', new ParseUUIDPipe({ version: undefined }))
-    orderId: string,
+    @Param('orderId', ParseUUIDPipe) orderId: string,
   ) {
     return this.paymentsService.getPayment(user.id, orderId);
   }

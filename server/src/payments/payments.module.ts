@@ -20,7 +20,7 @@ import { VnpayProvider } from './providers/vnpay.provider.js';
     {
       provide: VNPAY_PROVIDER,
       useFactory: () => {
-        return process.env.VNPAY_PROVIDER === 'real'
+        return process.env.VNPAY_PROVIDER === 'sandbox'
           ? new VnpayProvider()
           : new MockVnpayProvider();
       },

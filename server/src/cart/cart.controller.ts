@@ -33,7 +33,7 @@ export class CartController {
   @Patch('items/:id')
   updateItem(
     @CurrentUser() user: { id: string },
-    @Param('id', new ParseUUIDPipe({ version: undefined })) id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateCartItemDto,
   ) {
     return this.cartService.updateItem(user.id, id, dto);
@@ -42,7 +42,7 @@ export class CartController {
   @Delete('items/:id')
   removeItem(
     @CurrentUser() user: { id: string },
-    @Param('id', new ParseUUIDPipe({ version: undefined })) id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.cartService.removeItem(user.id, id);
   }

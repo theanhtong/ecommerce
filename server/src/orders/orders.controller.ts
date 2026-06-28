@@ -43,7 +43,7 @@ export class OrdersController {
   @Get('my/:id')
   getMyOrder(
     @CurrentUser() user: { id: string },
-    @Param('id', new ParseUUIDPipe({ version: undefined })) id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.ordersService.getMyOrder(user.id, id);
   }
@@ -51,7 +51,7 @@ export class OrdersController {
   @Patch('my/:id/cancel')
   cancelOrder(
     @CurrentUser() user: { id: string },
-    @Param('id', new ParseUUIDPipe({ version: undefined })) id: string,
+    @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.ordersService.cancelOrder(user.id, id);
   }
@@ -67,7 +67,7 @@ export class OrdersController {
   @Roles(Role.ADMIN)
   @Patch('admin/:id/status')
   updateStatus(
-    @Param('id', new ParseUUIDPipe({ version: undefined })) id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateOrderStatusDto,
   ) {
     return this.ordersService.updateStatus(id, dto);
