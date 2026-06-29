@@ -16,6 +16,7 @@ import { ProductsModule } from './products/products.module.js';
 import { ReviewsModule } from './reviews/reviews.module.js';
 import { ShipmentsModule } from './shipments/shipments.module.js';
 import { UsersModule } from './users/users.module.js';
+import { WishlistsModule } from './wishlists/wishlists.module.js';
 
 @Module({
   controllers: [AppController],
@@ -36,6 +37,7 @@ import { UsersModule } from './users/users.module.js';
     AddressModule,
     CouponsModule,
     ReviewsModule,
+    WishlistsModule,
   ],
 })
 export class AppModule {}
