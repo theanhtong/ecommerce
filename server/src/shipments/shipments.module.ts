@@ -22,7 +22,7 @@ const shippingProviderFactory = () => {
 };
 
 @Module({
-  imports: [OrdersModule, forwardRef(() => PaymentsModule)],
+  imports: [forwardRef(() => OrdersModule), forwardRef(() => PaymentsModule)],
   controllers: [ShipmentsController, GhnWebhookController],
   providers: [
     ShipmentsService,

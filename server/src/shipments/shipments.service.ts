@@ -17,7 +17,12 @@ import {
 import { GHN_STATUS_MAP } from './helpers/ghn-status.map.js';
 import { CreateShipmentDto } from './dto/create-shipment.dto.js';
 import { AddTrackingDto } from './dto/add-tracking.dto.js';
-import { OrderStatus, ShipmentStatus } from '../generated/prisma/enums.js';
+import {
+  OrderStatus,
+  PaymentMethod,
+  ShipmentStatus,
+} from '../generated/prisma/enums.js';
+import { toNumber } from '../common/helpers/price.hepler.js';
 
 @Injectable()
 export class ShipmentsService {
@@ -33,7 +38,7 @@ export class ShipmentsService {
   async createShipment(orderId: string, dto: CreateShipmentDto) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      include: { shipment: true, address: true, items: true },
+      include: { shipment: true, address: true, items: true, payment: true },
     });
 
     if (!order) throw new NotFoundException('Order not found');
@@ -54,12 +59,19 @@ export class ShipmentsService {
       toDistrictName: order.address.districtName,
       toWardName: order.address.wardName,
       weight: totalWeight,
-      length: dto.length ?? 20,
-      width: dto.width ?? 20,
-      height: dto.height ?? 10,
-      codAmount: 0,
+      length: (dto.length ?? Number(process.env.GHN_DEFAULT_LENGTH)) || 20,
+      width: (dto.width ?? Number(process.env.GHN_DEFAULT_WIDTH)) || 20,
+      height: (dto.height ?? Number(process.env.GHN_DEFAULT_HEIGHT)) || 10,
+      codAmount:
+        order.payment?.method === PaymentMethod.COD ? toNumber(order.total) : 0,
       note: dto.note ?? order.notes ?? undefined,
+      insuranceValue: Number(process.env.GHN_INSURANCE_VALUE) || 0,
       orderNumber: order.orderNumber,
+      items: order.items.map((item) => ({
+        name: (item.variantSnapshot as { productName: string }).productName,
+        quantity: item.quantity,
+        weight: Number(process.env.GHN_DEFAULT_ITEM_WEIGHT) || 500,
+      })),
     });
 
     const shipment = await this.prisma.shipment.create({

@@ -3,6 +3,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  Matches,
   MaxLength,
 } from 'class-validator';
 
@@ -11,8 +12,9 @@ export class CreateAddressDto {
   @MaxLength(100)
   fullName!: string;
 
-  @IsString()
-  @MaxLength(20)
+  @Matches(/^(0[3|5|7|8|9])+([0-9]{8})$/, {
+    message: 'Invalid Vietnamese phone number',
+  })
   phone!: string;
 
   @IsString()

@@ -23,8 +23,13 @@ export class GhnMockProvider implements IShippingProvider {
     return Promise.resolve({
       trackingNumber,
       expectedDeliveryAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
-      fee: 30000,
+      fee: Number(process.env.GHN_MOCK_FEE) || 30000,
     });
+  }
+
+  calculateFee(): Promise<number> {
+    this.logger.log('MOCK GHN - Calculate fee');
+    return Promise.resolve(Number(process.env.GHN_MOCK_FEE) || 30000);
   }
 
   cancelOrder(trackingNumber: string): Promise<void> {

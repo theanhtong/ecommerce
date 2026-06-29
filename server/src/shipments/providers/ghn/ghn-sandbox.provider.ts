@@ -1,4 +1,5 @@
 import type {
+  CalculateFeeInput,
   CreateShippingOrderInput,
   IShippingProvider,
   ShippingOrderResult,
@@ -38,7 +39,13 @@ export class GhnSandboxProvider implements IShippingProvider {
         width: input.width,
         height: input.height,
         cod_amount: input.codAmount,
+        insurance_value: input.insuranceValue,
         note: input.note,
+        items: input.items.map((item) => ({
+          name: item.name,
+          quantity: item.quantity,
+          weight: item.weight,
+        })),
         service_type_id: Number(process.env.GHN_SERVICE_TYPE_ID) || 2,
         payment_type_id: Number(process.env.GHN_PAYMENT_TYPE_ID) || 1,
         required_note: process.env.GHN_REQUIRED_NOTE ?? 'KHONGCHOXEMHANG',
@@ -55,8 +62,6 @@ export class GhnSandboxProvider implements IShippingProvider {
         total_fee: number;
       };
     };
-    console.log('GHN headers:', this.headers);
-    console.log('GHN response:', JSON.stringify(data, null, 2));
 
     if (data.code !== 200 || !data.data) {
       throw new InternalServerErrorException(
@@ -69,6 +74,36 @@ export class GhnSandboxProvider implements IShippingProvider {
       expectedDeliveryAt: new Date(data.data.expected_delivery_time),
       fee: data.data.total_fee,
     };
+  }
+
+  async calculateFee(input: CalculateFeeInput): Promise<number> {
+    const res = await fetch(`${this.apiUrl}/v2/shipping-order/fee`, {
+      method: 'GET',
+      headers: this.headers,
+      body: JSON.stringify({
+        service_type_id: Number(process.env.GHN_SERVICE_TYPE_ID) || 2,
+        to_district_id: input.toDistrictId,
+        to_ward_code: input.toWardCode,
+        weight: input.weight,
+        length: input.length,
+        width: input.width,
+        height: input.height,
+        insurance_value: input.insuranceValue ?? 0,
+        cod_failed_amount: input.codAmount ?? 0,
+      }),
+    });
+
+    const data = (await res.json()) as {
+      code: number;
+      message: string;
+      data?: { total: number };
+    };
+
+    if (data.code !== 200 || !data.data) {
+      throw new InternalServerErrorException(`GHN fee error: ${data.message}`);
+    }
+
+    return data.data.total;
   }
 
   async cancelOrder(trackingNumber: string): Promise<void> {

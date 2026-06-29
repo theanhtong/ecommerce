@@ -12,4 +12,5 @@ export const GHN_STATUS_MAP: Record<string, ShipmentStatus> = {
   delivery_fail: ShipmentStatus.FAILED,
   return: ShipmentStatus.RETURNED,
   returned: ShipmentStatus.RETURNED,
+  cancel: ShipmentStatus.FAILED,
 };

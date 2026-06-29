@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -12,7 +14,6 @@ import {
 } from '../generated/prisma/client.js';
 
 import { CreateOrderDto } from './dto/create-order.dto.js';
-import { InventoryService } from '../inventories/inventories.service.js';
 import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { UpdateOrderStatusDto } from './dto/update-order.dto.js';
@@ -21,8 +22,10 @@ import { generateOrderNumber } from './helpers/order-number.helper.js';
 import { isValidTransition } from './helpers/order-transition.helper.js';
 import { toNumber } from '../common/helpers/price.hepler.js';
 import { uuidv7 } from 'uuidv7';
-
-const SHIPPING_FEE = 30000;
+import {
+  SHIPPING_PROVIDER,
+  type IShippingProvider,
+} from '../shipments/interfaces/shipping-provider.interface.js';
 
 type CouponWithUsages = Coupon & { usages: CouponUsage[] };
 
@@ -30,7 +33,8 @@ type CouponWithUsages = Coupon & { usages: CouponUsage[] };
 export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly inventoryService: InventoryService,
+    @Inject(SHIPPING_PROVIDER)
+    private readonly shippingProvider: IShippingProvider,
   ) {}
 
   async createOrder(userId: string, dto: CreateOrderDto) {
@@ -75,8 +79,10 @@ export class OrdersService {
     }
 
     const subtotal = cartItems.reduce((sum, item) => {
-      const price = toNumber(item.variant.salePrice ?? item.variant.price);
-      return sum + price * item.quantity;
+      return (
+        sum +
+        toNumber(item.variant.salePrice ?? item.variant.price) * item.quantity
+      );
     }, 0);
 
     let coupon: CouponWithUsages | null = null;
@@ -107,18 +113,33 @@ export class OrdersService {
         );
       }
 
-      if (coupon.discountType === 'PERCENTAGE') {
-        discountAmount = (subtotal * toNumber(coupon.discountValue)) / 100;
-      } else {
-        discountAmount = toNumber(coupon.discountValue);
-      }
+      discountAmount =
+        coupon.discountType === 'PERCENTAGE'
+          ? (subtotal * toNumber(coupon.discountValue)) / 100
+          : toNumber(coupon.discountValue);
 
       if (coupon.maxDiscount) {
         discountAmount = Math.min(discountAmount, toNumber(coupon.maxDiscount));
       }
     }
 
-    const total = subtotal - discountAmount + SHIPPING_FEE;
+    const totalWeight = cartItems.reduce(
+      (sum) => sum + (Number(process.env.GHN_DEFAULT_ITEM_WEIGHT) || 500),
+      0,
+    );
+
+    const shippingFee = await this.shippingProvider.calculateFee({
+      toDistrictId: address.districtId,
+      toWardCode: address.wardCode,
+      weight: totalWeight,
+      length: Number(process.env.GHN_DEFAULT_LENGTH) || 20,
+      width: Number(process.env.GHN_DEFAULT_WIDTH) || 20,
+      height: Number(process.env.GHN_DEFAULT_HEIGHT) || 10,
+      insuranceValue: Number(process.env.GHN_INSURANCE_VALUE) || 0,
+      codAmount: 0,
+    });
+
+    const total = subtotal - discountAmount + shippingFee;
 
     const shippingSnapshot = {
       fullName: address.fullName,
@@ -133,10 +154,10 @@ export class OrdersService {
       async (tx) => {
         const variantIds = cartItems.map((i) => i.variantId);
         await tx.$executeRaw`
-          SELECT id FROM inventories
-          WHERE "variantId" = ANY(${variantIds}::uuid[])
-          FOR UPDATE
-        `;
+        SELECT id FROM inventories
+        WHERE "variantId" = ANY(${variantIds}::uuid[])
+        FOR UPDATE
+      `;
 
         const inventories = await tx.inventory.findMany({
           where: { variantId: { in: variantIds } },
@@ -162,7 +183,7 @@ export class OrdersService {
             couponId: coupon?.id,
             subtotal,
             discountAmount,
-            shippingFee: SHIPPING_FEE,
+            shippingFee,
             total,
             shippingSnapshot,
             notes: dto.notes,
