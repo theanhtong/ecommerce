@@ -5,6 +5,7 @@ import { GhnSandboxProvider } from './providers/ghn/ghn-sandbox.provider.js';
 import { OrdersModule } from '../orders/orders.module.js';
 import { PaymentsModule } from '../payments/payments.module.js';
 import { SHIPPING_PROVIDER } from './interfaces/shipping-provider.interface.js';
+import { ShipmentsAdminController } from './shipments-admin.controller.js';
 import { ShipmentsController } from './shipments.controller.js';
 import { ShipmentsService } from './shipments.service.js';
 
@@ -19,7 +20,7 @@ const shippingProviderFactory = () => {
 
 @Module({
   imports: [forwardRef(() => OrdersModule), forwardRef(() => PaymentsModule)],
-  controllers: [ShipmentsController],
+  controllers: [ShipmentsController, ShipmentsAdminController],
   providers: [
     ShipmentsService,
     {

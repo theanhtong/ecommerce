@@ -3,10 +3,10 @@ import { Module, forwardRef } from '@nestjs/common';
 import { CartModule } from '../cart/cart.module.js';
 import { CouponsModule } from '../coupons/coupons.module.js';
 import { GhnMockProvider } from '../shipments/providers/ghn/ghn-mock.provider.js';
-import { GhnProvider } from '../shipments/providers/ghn/ghn.provider.js';
 import { GhnSandboxProvider } from '../shipments/providers/ghn/ghn-sandbox.provider.js';
 import { InventoryModule } from '../inventories/inventory.module.js';
 import { NotificationsModule } from '../notifications/notifications.module.js';
+import { OrdersAdminController } from './orders-admin.controller.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { PaymentsModule } from '../payments/payments.module.js';
@@ -15,8 +15,6 @@ import { ShipmentsModule } from '../shipments/shipments.module.js';
 
 const shippingFeeProviderFactory = () => {
   switch (process.env.SHIPPING_PROVIDER) {
-    case 'ghn':
-      return new GhnProvider();
     case 'ghn-sandbox':
       return new GhnSandboxProvider();
     default:
@@ -33,7 +31,7 @@ const shippingFeeProviderFactory = () => {
     forwardRef(() => PaymentsModule),
     forwardRef(() => ShipmentsModule),
   ],
-  controllers: [OrdersController],
+  controllers: [OrdersController, OrdersAdminController],
   providers: [
     OrdersService,
     {
