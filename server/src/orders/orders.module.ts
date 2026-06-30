@@ -6,6 +6,7 @@ import { GhnMockProvider } from '../shipments/providers/ghn/ghn-mock.provider.js
 import { GhnProvider } from '../shipments/providers/ghn/ghn.provider.js';
 import { GhnSandboxProvider } from '../shipments/providers/ghn/ghn-sandbox.provider.js';
 import { InventoryModule } from '../inventories/inventory.module.js';
+import { NotificationsModule } from '../notifications/notifications.module.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
 import { PaymentsModule } from '../payments/payments.module.js';
@@ -28,6 +29,7 @@ const shippingFeeProviderFactory = () => {
     InventoryModule,
     CartModule,
     CouponsModule,
+    NotificationsModule,
     forwardRef(() => PaymentsModule),
     forwardRef(() => ShipmentsModule),
   ],

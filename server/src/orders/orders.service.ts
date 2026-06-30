@@ -15,6 +15,8 @@ import { generateOrderNumber } from './helpers/order-number.helper.js';
 import { isValidTransition } from './helpers/order-transition.helper.js';
 import { toNumber } from '../common/helpers/price.hepler.js';
 import { uuidv7 } from 'uuidv7';
+import { NotificationsService } from '../notifications/notifications.service.js';
+import { ORDER_NOTIFICATION_MAP } from './helpers/order-notification.map.js';
 import {
   SHIPPING_PROVIDER,
   type IShippingProvider,
@@ -26,6 +28,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly couponsService: CouponsService,
+    private readonly notificationsService: NotificationsService,
     @Inject(SHIPPING_PROVIDER)
     private readonly shippingProvider: IShippingProvider,
   ) {}
@@ -209,6 +212,16 @@ export class OrdersService {
           where: { id: { in: dto.cartItemIds } },
         });
 
+        const notif = ORDER_NOTIFICATION_MAP[OrderStatus.PENDING];
+        if (notif) {
+          await this.notificationsService.create({
+            userId,
+            type: notif.type,
+            title: notif.title,
+            body: `Đơn hàng #${order.orderNumber} đã được tạo`,
+          });
+        }
+
         return order;
       },
       {
@@ -262,8 +275,11 @@ export class OrdersService {
 
     if (!order) throw new NotFoundException('Order not found');
     if (order.userId !== userId) throw new ForbiddenException('Access denied');
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException('Only PENDING orders can be cancelled');
+
+    if (!isValidTransition(order.status, OrderStatus.CANCELLED)) {
+      throw new BadRequestException(
+        `Cannot cancel order with status ${order.status}`,
+      );
     }
 
     return this.prisma.$transaction(
@@ -283,6 +299,16 @@ export class OrdersService {
             data: { usedCount: { decrement: 1 } },
           });
           await tx.couponUsage.deleteMany({ where: { orderId } });
+        }
+
+        const notif = ORDER_NOTIFICATION_MAP[OrderStatus.CANCELLED];
+        if (notif) {
+          await this.notificationsService.create({
+            userId: order.userId,
+            type: notif.type,
+            title: notif.title,
+            body: `Đơn hàng #${order.orderNumber} đã được hủy`,
+          });
         }
 
         return tx.order.update({
@@ -364,6 +390,16 @@ export class OrdersService {
             });
             await tx.couponUsage.deleteMany({ where: { orderId } });
           }
+        }
+
+        const notif = ORDER_NOTIFICATION_MAP[dto.status];
+        if (notif) {
+          await this.notificationsService.create({
+            userId: order.userId,
+            type: notif.type,
+            title: notif.title,
+            body: `Đơn hàng #${order.orderNumber}`,
+          });
         }
 
         return tx.order.update({

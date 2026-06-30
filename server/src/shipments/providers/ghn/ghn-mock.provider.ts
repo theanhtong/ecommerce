@@ -9,6 +9,16 @@ import { Injectable, Logger } from '@nestjs/common';
 export class GhnMockProvider implements IShippingProvider {
   private readonly logger = new Logger(GhnMockProvider.name);
 
+  private readonly MOCK_PROGRESSION = [
+    'ready_to_pick',
+    'picking',
+    'picked',
+    'storing',
+    'transporting',
+    'delivering',
+    'delivered',
+  ];
+
   createOrder(input: CreateShippingOrderInput): Promise<ShippingOrderResult> {
     const trackingNumber = `MOCK-GHN-${Date.now()}`;
     this.logger.log('─────────────────────────────────');
@@ -19,7 +29,6 @@ export class GhnMockProvider implements IShippingProvider {
     );
     this.logger.log(`Tracking: ${trackingNumber}`);
     this.logger.log('─────────────────────────────────');
-
     return Promise.resolve({
       trackingNumber,
       expectedDeliveryAt: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000),
@@ -38,7 +47,17 @@ export class GhnMockProvider implements IShippingProvider {
   }
 
   getOrderStatus(trackingNumber: string): Promise<string> {
-    this.logger.log(`MOCK GHN - Get status: ${trackingNumber}`);
-    return Promise.resolve('ready_to_pick');
+    const createdAt = Number(trackingNumber.replace('MOCK-GHN-', ''));
+    const elapsedSeconds = (Date.now() - createdAt) / 1000;
+    const secondsPerStep = Number(process.env.GHN_MOCK_STEP_SECONDS) || 30;
+
+    const stepIndex = Math.min(
+      Math.floor(elapsedSeconds / secondsPerStep),
+      this.MOCK_PROGRESSION.length - 1,
+    );
+
+    const status = this.MOCK_PROGRESSION[stepIndex];
+    this.logger.log(`MOCK GHN - Get status: ${trackingNumber} → ${status}`);
+    return Promise.resolve(status);
   }
 }

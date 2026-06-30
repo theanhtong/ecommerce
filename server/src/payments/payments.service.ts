@@ -16,11 +16,7 @@ import {
   COD_PROVIDER,
   VNPAY_PROVIDER,
 } from './interfaces/payment-provider.interface.js';
-import {
-  OrderStatus,
-  PaymentMethod,
-  PaymentStatus,
-} from '../generated/prisma/enums.js';
+import { PaymentMethod, PaymentStatus } from '../generated/prisma/enums.js';
 import { toNumber } from '../common/helpers/price.hepler.js';
 
 @Injectable()
@@ -46,11 +42,10 @@ export class PaymentsService {
     if (!order) throw new NotFoundException('Order not found');
     if (order.userId !== userId) throw new ForbiddenException('Access denied');
 
-    if (order.status !== OrderStatus.PENDING) {
-      throw new BadRequestException('Order must be PENDING');
-    }
+    // if (order.status !== OrderStatus.PENDING) {
+    //   throw new BadRequestException('Order must be PENDING');
+    // }
 
-    // VNPAY: cho phép retry nếu payment trước đó FAILED
     if (order.payment) {
       if (order.payment.status === PaymentStatus.PAID) {
         throw new BadRequestException('Order already paid');
