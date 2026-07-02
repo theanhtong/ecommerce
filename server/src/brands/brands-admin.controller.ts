@@ -17,9 +17,11 @@ import { Roles } from '../auth/decorators/roles.decorator.js';
 import { AuditAction, Role } from '../generated/prisma/enums.js';
 import { Auditable } from '../audit-log/decorators/auditable.decorator.js';
 import { AuditLogInterceptor } from '../audit-log/interceptors/audit-log.interceptor.js';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 const entityType = 'BRAND' as string;
 
+@ApiBearerAuth('JWT')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.STAFF)
 @Controller('admin/brands')

@@ -18,7 +18,9 @@ import { UpdateUserStatusDto } from './dto/update-user-status.dto.js';
 import { AuditAction, Role } from '../generated/prisma/enums.js';
 import { AuditLogInterceptor } from '../audit-log/interceptors/audit-log.interceptor.js';
 import { Auditable } from '../audit-log/decorators/auditable.decorator.js';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiBearerAuth('JWT')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN)
 @Controller('admin/users')

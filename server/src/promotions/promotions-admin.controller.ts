@@ -24,7 +24,9 @@ import { AuditLogInterceptor } from '../audit-log/interceptors/audit-log.interce
 import { Auditable } from '../audit-log/decorators/auditable.decorator.js';
 import { CreateCouponDto } from '../coupons/dto/create-coupon.dto.js';
 import { CouponsService } from '../coupons/coupons.service.js';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
+@ApiBearerAuth('JWT')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN)
 @Controller('admin/promotions')

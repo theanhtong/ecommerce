@@ -21,9 +21,11 @@ import { PaginationDto } from '../common/dto/pagination.dto.js';
 import { AuditAction, Role } from '../generated/prisma/enums.js';
 import { AuditLogInterceptor } from '../audit-log/interceptors/audit-log.interceptor.js';
 import { Auditable } from '../audit-log/decorators/auditable.decorator.js';
+import { ApiBearerAuth } from '@nestjs/swagger';
 
 const entityType = 'COUPON' as string;
 
+@ApiBearerAuth('JWT')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN)
 @Controller('admin/coupons')

@@ -28,7 +28,9 @@ import { AuditLogInterceptor } from '../audit-log/interceptors/audit-log.interce
 import { Auditable } from '../audit-log/decorators/auditable.decorator.js';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
+import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
 
+@ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(Role.ADMIN, Role.STAFF)
 @Controller('admin/products')
@@ -92,6 +94,20 @@ export class ProductsAdminController {
 
   @Post(':id/variants/:vid/images')
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: {
+          type: 'string',
+          format: 'binary',
+        },
+        altText: { type: 'string' },
+        order: { type: 'number' },
+      },
+    },
+  })
   createImage(
     @Param('id', ParseUUIDPipe) id: string,
     @Param('vid', ParseUUIDPipe) vid: string,
