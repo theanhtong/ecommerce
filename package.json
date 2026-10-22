@@ -1,0 +1,16 @@
+{
+  "name": "ecommerce",
+  "private": true,
+  "packageManager": "pnpm@11.22.0",
+  "scripts": {
+    "dev:api": "pnpm --filter @ecommerce/api start:dev",
+    "dev:worker": "pnpm --filter @ecommerce/worker start:dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint",
+    "db:generate": "pnpm --filter @ecommerce/db generate",
+    "db:migrate": "pnpm --filter @ecommerce/db migrate:dev",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
+  }
+}
