@@ -124,29 +124,27 @@ export class AuthService {
     };
   }
 
+  async revokeUserSessions(
+    userId: string,
+    exceptSessionId?: string,
+    tx: Prisma.TransactionClient = this.prisma,
+  ): Promise<void> {
+    await tx.session.updateMany({
+      where: {
+        userId,
+        revokedAt: null,
+        id: exceptSessionId ? { not: exceptSessionId } : undefined,
+      },
+      data: { revokedAt: new Date() },
+    });
+  }
+
   async logout(refreshToken: string | undefined): Promise<void> {
     if (!refreshToken) return;
     await this.prisma.session.updateMany({
       where: { tokenHash: sha256(refreshToken), revokedAt: null },
       data: { revokedAt: new Date() },
     });
-  }
-
-  async me(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        status: true,
-        createdAt: true,
-      },
-    });
-    if (!user || user.status !== UserStatus.active) {
-      throw new UnauthorizedException();
-    }
-    return user;
   }
 
   private async startSession(
