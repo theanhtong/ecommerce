@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  Get,
   HttpCode,
   HttpStatus,
   Inject,
@@ -9,21 +8,17 @@ import {
   Req,
   Res,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { AUTH_CONFIG, type AuthConfig } from './auth.config.js';
 import {
   AuthService,
-  type AccessTokenPayload,
   type ClientMeta,
   type IssuedTokens,
 } from './auth.service.js';
-import { CurrentUser } from './decorators/current-user.decorator.js';
 import { LoginDto } from './dto/login.dto.js';
 import { RegisterDto } from './dto/register.dto.js';
-import { JwtAuthGuard } from './guards/jwt-auth.guard.js';
 
 export const REFRESH_COOKIE = 'refresh_token';
 const REFRESH_COOKIE_PATH = '/auth';
@@ -65,7 +60,10 @@ export class AuthController {
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 20, ttl: 60_000 } })
-  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async refresh(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const token = req.cookies?.[REFRESH_COOKIE] as string | undefined;
     if (!token) throw new UnauthorizedException();
     try {
@@ -81,12 +79,6 @@ export class AuthController {
   async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await this.auth.logout(req.cookies?.[REFRESH_COOKIE] as string | undefined);
     this.clearCookie(res);
-  }
-
-  @Get('me')
-  @UseGuards(JwtAuthGuard)
-  me(@CurrentUser() user: AccessTokenPayload) {
-    return this.auth.me(user.sub);
   }
 
   private respond(res: Response, tokens: IssuedTokens) {
