@@ -6,3 +6,47 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum Role {
+  user
+  admin
+
+  @@map("role")
+}
+
+enum UserStatus {
+  active
+  banned
+
+  @@map("user_status")
+}
+
+model User {
+  id           String     @id @default(uuid(7)) @db.Uuid
+  email        String     @unique
+  passwordHash String     @map("password_hash")
+  role         Role       @default(user)
+  status       UserStatus @default(active)
+  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions     Session[]
+
+  @@map("users")
+}
+
+model Session {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash")
+  previousTokenHash String?   @unique @map("previous_token_hash")
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  userAgent         String?   @map("user_agent")
+  ip                String?
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}

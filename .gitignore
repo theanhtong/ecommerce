@@ -1,8 +1,18 @@
+# Dependencies
 node_modules/
+
+# Build output
 dist/
-coverage/
 *.tsbuildinfo
+coverage/
+
+# Environment
 .env
+
+# Prisma
 packages/db/generated/
-CLAUDE.md
+packages/db/prisma/migrations/
+
+# Editor / local tooling
 .vscode/
+CLAUDE.md
