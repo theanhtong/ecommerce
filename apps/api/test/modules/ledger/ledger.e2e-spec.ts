@@ -4,7 +4,12 @@ import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { LedgerService } from '../../../src/modules/ledger/ledger.service.js';
 import { PrismaService } from '../../../src/prisma/prisma.service.js';
-import { bearer, createTestApp, signUp } from '../../support/helpers.js';
+import {
+  bearer,
+  createTestApp,
+  SHOP_ADDRESS,
+  signUp,
+} from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
 
@@ -33,18 +38,13 @@ describe('Ledger (e2e)', () => {
   async function seller() {
     const account = await signUp(app, emails);
     const shop = await as(account)
-      .post('/shops', { name: `Shop ${randomUUID().slice(0, 8)}` })
+      .post('/shops', {
+        ...SHOP_ADDRESS,
+        name: `Shop ${randomUUID().slice(0, 8)}`,
+      })
       .expect(201);
     await as(admin)
       .patch(`/admin/shops/${shop.body.id}/status`, { status: 'active' })
-      .expect(200);
-    await as(account)
-      .put('/shops/me/address', {
-        contactName: 'Kho',
-        phone: '0901234567',
-        wardCode: '00004',
-        street: '1 Kho',
-      })
       .expect(200);
     const item = await as(account)
       .post('/items', {
@@ -153,7 +153,9 @@ describe('Ledger (e2e)', () => {
   it('posts nothing for orders that do not complete', async () => {
     const s = await seller();
     const cancelled = await order(s);
-    await as(cancelled.b).post(`/orders/${cancelled.order.id}/cancel`);
+    await as(cancelled.b).post(`/orders/${cancelled.order.id}/cancel`, {
+      reason: 'changed_mind',
+    });
     const inTransit = await order(s);
     const arranged = await as(s)
       .post(`/orders/${inTransit.order.id}/ship`)

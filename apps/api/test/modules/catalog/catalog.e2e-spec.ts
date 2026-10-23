@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { PrismaService } from '../../../src/prisma/prisma.service.js';
-import { bearer, createTestApp, signUp } from '../../support/helpers.js';
+import {
+  bearer,
+  createTestApp,
+  SHOP_ADDRESS,
+  signUp,
+} from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
 
@@ -50,7 +55,10 @@ describe('Catalog (e2e)', () => {
   async function seller(status: 'active' | 'pending' = 'active') {
     const account = await signUp(app, emails);
     const shop = await as(account)
-      .post('/shops', { name: `Shop ${randomUUID().slice(0, 8)}` })
+      .post('/shops', {
+        ...SHOP_ADDRESS,
+        name: `Shop ${randomUUID().slice(0, 8)}`,
+      })
       .expect(201);
     if (status === 'active') {
       await as(admin)
@@ -292,10 +300,31 @@ describe('Catalog (e2e)', () => {
         stock: 18,
       });
 
+      const own = await as(s).get(`/items/mine/${hidden.id}`).expect(200);
+      expect(own.body).toMatchObject({
+        status: 'hidden',
+        models: [{}, {}, {}, {}],
+      });
+      await as(admin).get(`/items/mine/${hidden.id}`).expect(404);
+
+      const newer = (await as(s).post('/items', mug()).expect(201)).body;
+      const all = await http().get('/items?limit=100').expect(200);
+      const ids = all.body.items.map((i: { id: string }) => i.id);
+      expect(ids).not.toContain(hidden.id);
+      expect(ids.indexOf(newer.id)).toBeLessThan(ids.indexOf(visible.id));
+      expect(all.body.items[ids.indexOf(newer.id)].shop).toEqual({
+        id: s.shopId,
+        name: expect.any(String),
+      });
+
       await as(admin)
         .patch(`/admin/shops/${s.shopId}/status`, { status: 'banned' })
         .expect(200);
       await http().get(`/items/${visible.id}`).expect(404);
+      const afterBan = await http().get('/items?limit=100').expect(200);
+      expect(
+        afterBan.body.items.map((i: { id: string }) => i.id),
+      ).not.toContain(visible.id);
       await as(s).patch(`/items/${visible.id}`, { name: 'Edit' }).expect(403);
     });
 

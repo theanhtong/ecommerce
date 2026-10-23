@@ -32,7 +32,7 @@ export const WardCode = () =>
 
 export const locationInclude = {
   ward: { include: { province: true } },
-} satisfies Prisma.AddressInclude & Prisma.ShopAddressInclude;
+} satisfies Prisma.AddressInclude & Prisma.ShopInclude;
 
 export const locationView = ({
   ward,

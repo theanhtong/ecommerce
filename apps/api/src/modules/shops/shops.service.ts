@@ -33,16 +33,16 @@ const publicSelect = {
   createdAt: true,
 } satisfies Prisma.ShopSelect;
 
-const addressQuery = {
-  omit: { shopId: true, wardCode: true },
+const shopQuery = {
+  omit: { wardCode: true },
   include: locationInclude,
-} satisfies Pick<Prisma.ShopAddressFindUniqueArgs, 'omit' | 'include'>;
+} satisfies Pick<Prisma.ShopFindUniqueArgs, 'omit' | 'include'>;
 
-const addressView = ({
+const shopView = ({
   ward,
-  ...address
-}: Prisma.ShopAddressGetPayload<typeof addressQuery>) => ({
-  ...address,
+  ...shop
+}: Prisma.ShopGetPayload<typeof shopQuery>) => ({
+  ...shop,
   ...locationView({ ward }),
 });
 
@@ -57,15 +57,22 @@ export class ShopsService {
   async create(ownerId: string, dto: CreateShopDto) {
     await this.assertNoShop(ownerId);
     await this.assertNameAvailable(dto.name);
+    await assertWardExists(this.prisma, dto.wardCode);
     try {
-      return await this.prisma.shop.create({
+      const shop = await this.prisma.shop.create({
         data: {
           ownerId,
           name: dto.name,
           description: dto.description,
+          contactName: dto.contactName,
+          phone: dto.phone,
+          wardCode: dto.wardCode,
+          street: dto.street,
           ledgerAccount: { create: { type: LedgerAccountType.wallet } },
         },
+        ...shopQuery,
       });
+      return shopView(shop);
     } catch (error) {
       if (!isUniqueViolation(error)) throw error;
       await this.assertNoShop(ownerId);
@@ -74,9 +81,12 @@ export class ShopsService {
   }
 
   async getMine(ownerId: string) {
-    const shop = await this.prisma.shop.findUnique({ where: { ownerId } });
+    const shop = await this.prisma.shop.findUnique({
+      where: { ownerId },
+      ...shopQuery,
+    });
     if (!shop) throw new NotFoundException('You do not have a shop');
-    return shop;
+    return shopView(shop);
   }
 
   async updateMine(ownerId: string, dto: UpdateShopDto) {
@@ -117,16 +127,6 @@ export class ShopsService {
     return this.getMine(ownerId);
   }
 
-  async getAddress(ownerId: string) {
-    const shop = await this.getMine(ownerId);
-    const address = await this.prisma.shopAddress.findUnique({
-      where: { shopId: shop.id },
-      ...addressQuery,
-    });
-    if (!address) throw new NotFoundException('Shop address not set');
-    return addressView(address);
-  }
-
   async setAddress(ownerId: string, dto: ShopAddressDto) {
     const shop = await this.getMine(ownerId);
     if (shop.status === ShopStatus.banned) {
@@ -134,14 +134,11 @@ export class ShopsService {
     }
     await assertWardExists(this.prisma, dto.wardCode);
     const { contactName, phone, wardCode, street } = dto;
-    const fields = { contactName, phone, wardCode, street };
-    const address = await this.prisma.shopAddress.upsert({
-      where: { shopId: shop.id },
-      create: { ...fields, shopId: shop.id },
-      update: fields,
-      ...addressQuery,
+    await this.prisma.shop.update({
+      where: { id: shop.id },
+      data: { contactName, phone, wardCode, street },
     });
-    return addressView(address);
+    return this.getMine(ownerId);
   }
 
   async getPublic(id: string) {

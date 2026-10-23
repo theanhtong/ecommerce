@@ -46,6 +46,13 @@ export const TEST_PASSWORD = 'correct horse battery';
 export const testUsername = () =>
   `u_${randomUUID().replaceAll('-', '').slice(0, 12)}`;
 
+export const SHOP_ADDRESS = {
+  contactName: 'Kho',
+  phone: '0901234567',
+  wardCode: '00004',
+  street: '1 Kho',
+};
+
 export const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
 
 // Pushes the email into `created` so the caller can clean up afterwards.

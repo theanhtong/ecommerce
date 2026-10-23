@@ -5,6 +5,7 @@ import { PrismaService } from '../../src/prisma/prisma.service.js';
 import {
   bearer,
   createTestApp,
+  SHOP_ADDRESS,
   signUp,
   TEST_PASSWORD,
 } from '../support/helpers.js';
@@ -35,7 +36,7 @@ describe('Roles: admin, buyer and seller (e2e)', () => {
     seller = await signUp(app, emails);
 
     const shop = await as(seller)
-      .post('/shops', { name: 'Cửa Hàng Người Bán' })
+      .post('/shops', { ...SHOP_ADDRESS, name: 'Cửa Hàng Người Bán' })
       .expect(201);
     shopId = shop.body.id;
     await as(admin)
@@ -93,7 +94,9 @@ describe('Roles: admin, buyer and seller (e2e)', () => {
     });
 
     it('cannot open a second shop or use admin endpoints', async () => {
-      await as(seller).post('/shops', { name: 'Shop Thứ Hai' }).expect(409);
+      await as(seller)
+        .post('/shops', { ...SHOP_ADDRESS, name: 'Shop Thứ Hai' })
+        .expect(409);
       await as(seller).get('/admin/shops').expect(403);
       await as(seller)
         .patch(`/admin/shops/${shopId}/status`, { status: 'banned' })

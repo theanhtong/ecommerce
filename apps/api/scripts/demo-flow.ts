@@ -60,7 +60,7 @@ async function resetDatabase() {
       throw new Error('No wards loaded; run pnpm db:seed first');
     }
     await db.query('BEGIN');
-    // Items cascade to variations, models, inventory and stock movements; shops to their address;
+    // Items cascade to variations, models, inventory and stock movements;
     // users to sessions, carts and addresses. Provinces and wards are reference data and stay.
     await db.query('TRUNCATE ledger_lines, ledger_entries, ledger_accounts');
     // Orders reference models and shops, so they go first (items and history cascade).
@@ -106,23 +106,21 @@ async function main() {
     body: { ...SELLER, password: PASSWORD },
   });
 
-  step('2. Seller opens a shop (pending review)');
+  step('2. Seller opens a shop with its pickup address (pending review)');
   const shop = await call('POST', '/shops', 201, {
     token: seller.accessToken,
-    body: { name: 'Cửa Hàng Demo', description: 'Đồ gỗ thủ công' },
-  });
-  await call('GET', `/shops/${shop.id}`, 404);
-  const pickup = await call('PUT', '/shops/me/address', 200, {
-    token: seller.accessToken,
     body: {
+      name: 'Cửa Hàng Demo',
+      description: 'Đồ gỗ thủ công',
       contactName: 'Kho Cửa Hàng Demo',
       phone: '0901 234 567',
       wardCode: '00070',
       street: '12 Hàng Bài',
     },
   });
+  await call('GET', `/shops/${shop.id}`, 404);
   console.log(
-    `    pickup and return address: ${pickup.street}, ${pickup.ward.name}, ${pickup.province.name}`,
+    `    pickup and return address: ${shop.street}, ${shop.ward.name}, ${shop.province.name}`,
   );
 
   step('3. Admin logs in and approves the shop');
@@ -259,20 +257,18 @@ async function main() {
   });
   const shop2 = await call('POST', '/shops', 201, {
     token: seller2.accessToken,
-    body: { name: 'Nhà Gỗ Demo', description: 'Nội thất và đồ gia dụng' },
-  });
-  await call('PATCH', `/admin/shops/${shop2.id}/status`, 200, {
-    token: admin.accessToken,
-    body: { status: 'active' },
-  });
-  await call('PUT', '/shops/me/address', 200, {
-    token: seller2.accessToken,
     body: {
+      name: 'Nhà Gỗ Demo',
+      description: 'Nội thất và đồ gia dụng',
       contactName: 'Xưởng Nhà Gỗ Demo',
       phone: '0377 888 999',
       wardCode: '26740',
       street: '45 Nguyễn Huệ',
     },
+  });
+  await call('PATCH', `/admin/shops/${shop2.id}/status`, 200, {
+    token: admin.accessToken,
+    body: { status: 'active' },
   });
   const template = await call('GET', '/items/imports/template', 200, {
     token: seller2.accessToken,

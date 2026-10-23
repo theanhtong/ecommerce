@@ -42,12 +42,6 @@ export class ShopsController {
     return this.shops.updateMine(user.sub, dto);
   }
 
-  @Get('me/address')
-  @UseGuards(JwtAuthGuard)
-  address(@CurrentUser() user: AccessTokenPayload) {
-    return this.shops.getAddress(user.sub);
-  }
-
   @Put('me/address')
   @UseGuards(JwtAuthGuard)
   setAddress(
