@@ -283,6 +283,7 @@ enum OrderStatus {
   unpaid
   to_ship
   shipping
+  delivered
   completed
   cancelled
 
@@ -330,6 +331,7 @@ model Order {
   shop            Shop                 @relation(fields: [shopId], references: [id])
   items           OrderItem[]
   history         OrderStatusHistory[]
+  shipment        Shipment?
 
   @@index([buyerId, status])
   @@index([shopId, status])
@@ -365,4 +367,26 @@ model OrderStatusHistory {
 
   @@index([orderId])
   @@map("order_status_history")
+}
+
+enum ShipmentStatus {
+  awaiting_pickup
+  picked_up
+  delivered
+
+  @@map("shipment_status")
+}
+
+// Created when the seller arranges shipment; the carrier service moves it forward.
+model Shipment {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  orderId     String         @unique @map("order_id") @db.Uuid
+  status      ShipmentStatus @default(awaiting_pickup)
+  pickedUpAt  DateTime?      @map("picked_up_at") @db.Timestamptz(3)
+  deliveredAt DateTime?      @map("delivered_at") @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("shipments")
 }

@@ -5,6 +5,7 @@ export const orderInclude = {
   shop: { select: { id: true, name: true } },
   items: { orderBy: { id: 'asc' } },
   history: { orderBy: { id: 'asc' } },
+  shipment: true,
 } satisfies Prisma.OrderInclude;
 
 type OrderWithDetails = Prisma.OrderGetPayload<{
@@ -15,6 +16,7 @@ export const orderView = ({
   items,
   history,
   checkout,
+  shipment,
   ...order
 }: OrderWithDetails) => ({
   id: order.id,
@@ -40,6 +42,12 @@ export const orderView = ({
     to: h.toStatus,
     at: h.createdAt,
   })),
+  shipment: shipment && {
+    id: shipment.id,
+    status: shipment.status,
+    pickedUpAt: shipment.pickedUpAt,
+    deliveredAt: shipment.deliveredAt,
+  },
   createdAt: order.createdAt,
   updatedAt: order.updatedAt,
 });
