@@ -68,18 +68,19 @@ enum ShopStatus {
 }
 
 model Shop {
-  id            String       @id @default(uuid(7)) @db.Uuid
-  ownerId       String       @unique @map("owner_id") @db.Uuid
-  name          String       @unique
-  nameChangedAt DateTime?    @map("name_changed_at") @db.Timestamptz(3)
+  id            String         @id @default(uuid(7)) @db.Uuid
+  ownerId       String         @unique @map("owner_id") @db.Uuid
+  name          String         @unique
+  nameChangedAt DateTime?      @map("name_changed_at") @db.Timestamptz(3)
   description   String?
-  status        ShopStatus   @default(pending)
-  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
-  owner         User         @relation(fields: [ownerId], references: [id])
+  status        ShopStatus     @default(pending)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  owner         User           @relation(fields: [ownerId], references: [id])
   items         Item[]
   address       ShopAddress?
   orders        Order[]
+  ledgerAccount LedgerAccount?
 
   @@index([status])
   @@map("shops")
@@ -389,4 +390,51 @@ model Shipment {
   order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@map("shipments")
+}
+
+enum LedgerAccountType {
+  receivable
+  commission
+  shipping
+  wallet
+
+  @@map("ledger_account_type")
+}
+
+model LedgerAccount {
+  id        String            @id @default(uuid(7)) @db.Uuid
+  type      LedgerAccountType
+  shopId    String?           @unique @map("shop_id") @db.Uuid
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  shop      Shop?             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  lines     LedgerLine[]
+
+  @@map("ledger_accounts")
+}
+
+// Balanced entries and append-only rows are enforced by triggers in the migration.
+model LedgerEntry {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  idempotencyKey String       @unique @map("idempotency_key")
+  refType        String       @map("ref_type")
+  refId          String       @map("ref_id") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  lines          LedgerLine[]
+
+  @@index([refType, refId])
+  @@map("ledger_entries")
+}
+
+// Positive debits, negative credits.
+model LedgerLine {
+  id        String        @id @default(uuid(7)) @db.Uuid
+  entryId   String        @map("entry_id") @db.Uuid
+  accountId String        @map("account_id") @db.Uuid
+  amount    Int
+  entry     LedgerEntry   @relation(fields: [entryId], references: [id])
+  account   LedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([entryId])
+  @@index([accountId, id])
+  @@map("ledger_lines")
 }

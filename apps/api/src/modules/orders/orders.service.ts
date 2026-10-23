@@ -12,6 +12,7 @@ import {
 } from '@ecommerce/db';
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { LedgerService } from '../ledger/ledger.service.js';
 import type { ListOrdersQuery } from './dto/order.dto.js';
 import { orderInclude, orderView } from './order-view.js';
 
@@ -77,7 +78,10 @@ const shipmentView = (s: {
 
 @Injectable()
 export class OrdersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly ledger: LedgerService,
+  ) {}
 
   async listForBuyer(buyerId: string, query: ListOrdersQuery) {
     return this.list({ buyerId }, query);
@@ -135,6 +139,7 @@ export class OrdersService {
     return this.transition(userId, id, {
       from: { delivered: ['buyer'] },
       to: OrderStatus.completed,
+      after: (tx, order) => this.ledger.settleOrder(tx, order),
     });
   }
 
@@ -217,6 +222,10 @@ export class OrdersService {
       to: OrderStatus;
       stock?: StockEffect;
       guard?: (tx: Prisma.TransactionClient) => Promise<void>;
+      after?: (
+        tx: Prisma.TransactionClient,
+        order: Awaited<ReturnType<OrdersService['involved']>>['order'],
+      ) => Promise<void>;
     },
   ) {
     const { party, order } = await this.involved(userId, id);
@@ -235,6 +244,7 @@ export class OrdersService {
         actorId: userId,
         stock: rule.stock,
       });
+      await rule.after?.(tx, order);
     });
     return this.get(userId, id);
   }

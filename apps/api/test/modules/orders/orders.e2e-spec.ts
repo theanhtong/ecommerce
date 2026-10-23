@@ -135,6 +135,7 @@ describe('Orders (e2e)', () => {
 
   afterAll(async () => {
     const users = { email: { in: emails } };
+    await prisma.$executeRaw`TRUNCATE ledger_lines, ledger_entries, ledger_accounts`;
     await prisma.order.deleteMany({ where: { buyer: users } });
     await prisma.checkout.deleteMany({ where: { buyer: users } });
     await prisma.item.deleteMany({ where: { shop: { owner: users } } });
