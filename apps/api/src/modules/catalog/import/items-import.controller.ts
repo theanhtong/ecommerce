@@ -31,6 +31,13 @@ export class ItemsImportController {
     return this.imports.template();
   }
 
+  @Get('export')
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  @Header('Content-Disposition', 'attachment; filename="items.csv"')
+  export(@CurrentUser() user: AccessTokenPayload) {
+    return this.imports.export(user.sub);
+  }
+
   @Post()
   @HttpCode(HttpStatus.OK)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
