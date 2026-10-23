@@ -4,7 +4,7 @@
   "packageManager": "pnpm@11.22.0",
   "scripts": {
     "dev:api": "pnpm --filter @ecommerce/api start:dev",
-    "dev:worker": "pnpm --filter @ecommerce/worker start:dev",
+    "dev:worker": "pnpm --filter @ecommerce/api start:dev:worker",
     "dev:web": "pnpm --filter @ecommerce/web dev",
     "dev": "pnpm run \"/^dev:(api|web)$/\"",
     "build": "pnpm -r build",
