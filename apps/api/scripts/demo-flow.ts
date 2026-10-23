@@ -1,5 +1,5 @@
 // Resets the dev database (keeps admins) and drives the marketplace flow through the running API.
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import pg from 'pg';
 
 if (existsSync('../../.env')) process.loadEnvFile('../../.env');
@@ -9,17 +9,20 @@ const API =
 const PASSWORD = 'demo password 123';
 const BUYER = { email: 'buyer@demo.vn', username: 'demo_buyer' };
 const SELLER = { email: 'seller@demo.vn', username: 'demo_seller' };
+const SELLER2 = { email: 'seller2@demo.vn', username: 'demo_seller2' };
+const SAMPLE_CSV = 'scripts/sample-items.csv';
 
 interface CallOptions {
   token?: string;
   body?: unknown;
+  form?: FormData;
 }
 
 async function call(
   method: string,
   path: string,
   expected: number,
-  { token, body }: CallOptions = {},
+  { token, body, form }: CallOptions = {},
 ) {
   const res = await fetch(`${API}${path}`, {
     method,
@@ -27,10 +30,11 @@ async function call(
       ...(body !== undefined && { 'Content-Type': 'application/json' }),
       ...(token && { Authorization: `Bearer ${token}` }),
     },
-    body: body === undefined ? undefined : JSON.stringify(body),
+    body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
   });
   const text = await res.text();
-  const json = text ? JSON.parse(text) : null;
+  const isJson = res.headers.get('content-type')?.includes('json');
+  const json = isJson && text ? JSON.parse(text) : text;
   const ok = res.status === expected;
   console.log(
     `  ${ok ? '✓' : '✗'} ${method.padEnd(5)} ${path} → ${res.status}`,
@@ -48,11 +52,13 @@ async function resetDatabase() {
   await db.connect();
   try {
     await db.query('BEGIN');
+    // Items cascade to variations, models, inventory and stock movements.
+    const items = await db.query('DELETE FROM items');
     const shops = await db.query('DELETE FROM shops');
     const users = await db.query("DELETE FROM users WHERE role <> 'admin'");
     await db.query('COMMIT');
     console.log(
-      `  deleted ${shops.rowCount} shops, ${users.rowCount} non-admin users (and their sessions)`,
+      `  deleted ${items.rowCount} items, ${shops.rowCount} shops, ${users.rowCount} non-admin users (and their sessions)`,
     );
   } catch (error) {
     await db.query('ROLLBACK');
@@ -121,12 +127,170 @@ async function main() {
     body: { description: 'Đồ gỗ thủ công, giao toàn quốc' },
   });
 
+  step(
+    '6. Seller lists an item with colour and size variations, and one without',
+  );
+  const shirt = await call('POST', '/items', 201, {
+    token: seller.accessToken,
+    body: {
+      name: 'Áo thun cotton',
+      description: 'Cotton 100%, form rộng',
+      tierVariations: [
+        { name: 'Màu', options: ['Trắng', 'Đen'] },
+        { name: 'Size', options: ['M', 'L'] },
+      ],
+      models: [
+        { tierIndex: [0, 0], price: 150000, stock: 10, sku: 'AO-TRANG-M' },
+        { tierIndex: [0, 1], price: 150000, stock: 8, sku: 'AO-TRANG-L' },
+        { tierIndex: [1, 0], price: 165000, stock: 5, sku: 'AO-DEN-M' },
+        { tierIndex: [1, 1], price: 165000, stock: 0, sku: 'AO-DEN-L' },
+      ],
+    },
+  });
+  const mug = await call('POST', '/items', 201, {
+    token: seller.accessToken,
+    body: {
+      name: 'Cốc gỗ khắc tên',
+      tierVariations: [],
+      models: [{ tierIndex: [], price: 89000, stock: 30 }],
+    },
+  });
+
+  step('7. Seller edits a model price and restocks the sold-out size');
+  const blackL = shirt.models.find(
+    (m: { tierIndex: number[] }) => m.tierIndex.join() === '1,1',
+  );
+  await call('PATCH', `/models/${blackL.id}`, 200, {
+    token: seller.accessToken,
+    body: { price: 159000 },
+  });
+  const restocked = await call(
+    'POST',
+    `/models/${blackL.id}/stock-adjustments`,
+    201,
+    {
+      token: seller.accessToken,
+      body: { delta: 12, reason: 'restock' },
+    },
+  );
+  console.log(`    black/L stock: 0 → ${restocked.onHand}`);
+  await call('POST', `/models/${blackL.id}/stock-adjustments`, 201, {
+    token: seller.accessToken,
+    body: { delta: -2, reason: 'adjust' },
+  });
+  await call('POST', `/models/${blackL.id}/stock-adjustments`, 409, {
+    token: seller.accessToken,
+    body: { delta: -100, reason: 'adjust' },
+  });
+  const history = await call(
+    'GET',
+    `/models/${blackL.id}/stock-movements`,
+    200,
+    {
+      token: seller.accessToken,
+    },
+  );
   console.log(
-    `\nDone. Data is kept in the dev database; open it with pnpm --filter @ecommerce/db studio.`,
+    `    movements: ${history.items.map((m: { delta: number; reason: string }) => `${m.delta > 0 ? '+' : ''}${m.delta} ${m.reason}`).join(', ')}`,
+  );
+
+  step('8. Seller hides one item; buyer browses the shop');
+  await call('PATCH', `/items/${mug.id}/status`, 200, {
+    token: seller.accessToken,
+    body: { status: 'hidden' },
+  });
+  const listing = await call('GET', `/shops/${shop.id}/items`, 200);
+  console.log(
+    `    public listing: ${listing.items.map((i: { name: string; priceMin: number; priceMax: number; stock: number }) => `${i.name} (${i.priceMin}-${i.priceMax}đ, ${i.stock} in stock)`).join('; ')}`,
+  );
+  await call('GET', `/items/${shirt.id}`, 200);
+  await call('GET', `/items/${mug.id}`, 404);
+  await call('GET', '/items/mine', 200, { token: seller.accessToken });
+
+  step("9. Buyer cannot edit the seller's catalog");
+  await call('PATCH', `/items/${shirt.id}`, 404, {
+    token: buyer.accessToken,
+    body: { name: 'Hack' },
+  });
+  await call('POST', `/models/${blackL.id}/stock-adjustments`, 404, {
+    token: buyer.accessToken,
+    body: { delta: -1, reason: 'adjust' },
+  });
+  await call('POST', '/items', 403, {
+    token: buyer.accessToken,
+    body: {
+      name: 'Không có shop',
+      tierVariations: [],
+      models: [{ tierIndex: [], price: 1000, stock: 1 }],
+    },
+  });
+
+  step('10. A second seller opens a shop and imports products from CSV');
+  const seller2 = await call('POST', '/auth/register', 201, {
+    body: { ...SELLER2, password: PASSWORD },
+  });
+  const shop2 = await call('POST', '/shops', 201, {
+    token: seller2.accessToken,
+    body: { name: 'Nhà Gỗ Demo', description: 'Nội thất và đồ gia dụng' },
+  });
+  await call('PATCH', `/admin/shops/${shop2.id}/status`, 200, {
+    token: admin.accessToken,
+    body: { status: 'active' },
+  });
+  const template = await call('GET', '/items/imports/template', 200, {
+    token: seller2.accessToken,
+  });
+  console.log(
+    `    template header: ${template.replace(/^\uFEFF/, '').split(/\r?\n/)[0]}`,
+  );
+
+  const csv = readFileSync(SAMPLE_CSV);
+  const upload = () => {
+    const form = new FormData();
+    form.append(
+      'file',
+      new Blob([csv], { type: 'text/csv' }),
+      'sample-items.csv',
+    );
+    return form;
+  };
+  const imported = await call('POST', '/items/imports', 200, {
+    token: seller2.accessToken,
+    form: upload(),
+  });
+  console.log(
+    `    ${SAMPLE_CSV}: ${imported.created} created, ${imported.failed} failed`,
+  );
+  for (const r of imported.results) {
+    console.log(
+      `      rows ${r.rows.join(',').padEnd(10)} ${r.parentSku.padEnd(9)} ${r.status}`,
+    );
+  }
+
+  const reimported = await call('POST', '/items/imports', 200, {
+    token: seller2.accessToken,
+    form: upload(),
+  });
+  console.log(
+    `    same file again: ${reimported.created} created, ${reimported.failed} failed (${reimported.results[0].error})`,
+  );
+
+  const listing2 = await call('GET', `/shops/${shop2.id}/items`, 200);
+  for (const i of listing2.items) {
+    console.log(
+      `      ${i.name.padEnd(22)} ${i.priceMin}-${i.priceMax}đ, ${i.stock} in stock`,
+    );
+  }
+
+  console.log(
+    `\nDone. Data is kept in the dev database; open it with pnpm db:studio.`,
   );
   console.log(`  buyer  ${BUYER.email} / ${PASSWORD}`);
   console.log(`  seller ${SELLER.email} / ${PASSWORD}`);
+  console.log(`  seller ${SELLER2.email} / ${PASSWORD} (CSV import)`);
   console.log(`  shop   ${API}/shops/${shop.id}`);
+  console.log(`  items  ${API}/shops/${shop.id}/items`);
+  console.log(`  items  ${API}/shops/${shop2.id}/items`);
 }
 
 main().catch((error: unknown) => {
