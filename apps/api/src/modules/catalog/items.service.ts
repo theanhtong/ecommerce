@@ -1,0 +1,326 @@
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { InventoryReason, ItemStatus, Prisma, ShopStatus } from '@ecommerce/db';
+import {
+  cursorArgs,
+  toPage,
+  type CursorQuery,
+} from '../../common/pagination.js';
+import { PrismaService } from '../../prisma/prisma.service.js';
+import type { CreateItemDto, UpdateItemDto } from './dto/item.dto.js';
+import type { StockAdjustmentDto } from './dto/stock-adjustment.dto.js';
+import type { ModelFieldsDto, VariationsDto } from './dto/variations.dto.js';
+import { validateVariations } from './variations.js';
+
+const modelInclude = { inventory: true } satisfies Prisma.ModelInclude;
+
+const detailInclude = {
+  tierVariations: {
+    orderBy: { position: 'asc' },
+    include: { options: { orderBy: { position: 'asc' } } },
+  },
+  models: { orderBy: { id: 'asc' }, include: modelInclude },
+} satisfies Prisma.ItemInclude;
+
+const summaryInclude = {
+  models: { include: modelInclude },
+} satisfies Prisma.ItemInclude;
+
+type ModelWithInventory = Prisma.ModelGetPayload<{
+  include: typeof modelInclude;
+}>;
+type ItemDetail = Prisma.ItemGetPayload<{ include: typeof detailInclude }>;
+type ItemSummary = Prisma.ItemGetPayload<{ include: typeof summaryInclude }>;
+
+const available = (m: ModelWithInventory) =>
+  m.inventory ? m.inventory.onHand - m.inventory.reserved : 0;
+
+// Buyers only see what can be bought; sellers also see on-hand and reserved stock.
+const modelView = (m: ModelWithInventory, seller: boolean) => ({
+  id: m.id,
+  tierIndex: m.tierIndex,
+  price: m.price,
+  sku: m.sku,
+  stock: available(m),
+  ...(seller && {
+    onHand: m.inventory?.onHand ?? 0,
+    reserved: m.inventory?.reserved ?? 0,
+  }),
+});
+
+const detailView = (
+  { tierVariations, models, ...item }: ItemDetail,
+  seller: boolean,
+) => ({
+  ...item,
+  tierVariations: tierVariations.map((t) => ({
+    name: t.name,
+    options: t.options.map((o) => o.option),
+  })),
+  models: models.map((m) => modelView(m, seller)),
+});
+
+const summaryView = ({ models, ...item }: ItemSummary) => {
+  const prices = models.map((m) => m.price);
+  return {
+    id: item.id,
+    name: item.name,
+    status: item.status,
+    priceMin: Math.min(...prices),
+    priceMax: Math.max(...prices),
+    stock: models.reduce((sum, m) => sum + available(m), 0),
+    createdAt: item.createdAt,
+  };
+};
+
+const variationsCreate = (dto: VariationsDto, actorId: string) => ({
+  tierVariations: {
+    create: dto.tierVariations.map((tier, position) => ({
+      position,
+      name: tier.name,
+      options: {
+        create: tier.options.map((option, i) => ({ position: i, option })),
+      },
+    })),
+  },
+  models: {
+    create: dto.models.map(({ tierIndex, price, stock, sku }) => ({
+      tierIndex,
+      price,
+      sku,
+      inventory: { create: { onHand: stock } },
+      movements: {
+        create:
+          stock > 0
+            ? [{ delta: stock, reason: InventoryReason.restock, actorId }]
+            : [],
+      },
+    })),
+  },
+});
+
+const publicWhere = {
+  status: ItemStatus.active,
+  shop: { status: ShopStatus.active },
+} satisfies Prisma.ItemWhereInput;
+
+const isUniqueViolation = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === 'P2002';
+
+@Injectable()
+export class ItemsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async activeShopOf(ownerId: string) {
+    const shop = await this.prisma.shop.findUnique({ where: { ownerId } });
+    if (!shop) throw new ForbiddenException('Open a shop first');
+    if (shop.status !== ShopStatus.active) {
+      throw new ForbiddenException('Shop is not active');
+    }
+    return shop;
+  }
+
+  async create(ownerId: string, dto: CreateItemDto) {
+    const shop = await this.activeShopOf(ownerId);
+    validateVariations(dto.tierVariations, dto.models);
+    try {
+      const item = await this.prisma.item.create({
+        data: {
+          shopId: shop.id,
+          parentSku: dto.parentSku,
+          name: dto.name,
+          description: dto.description,
+          ...variationsCreate(dto, ownerId),
+        },
+        include: detailInclude,
+      });
+      return detailView(item, true);
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        throw new ConflictException('Product code already exists in your shop');
+      }
+      throw error;
+    }
+  }
+
+  async update(ownerId: string, id: string, dto: UpdateItemDto) {
+    await this.writableItem(ownerId, id);
+    const item = await this.prisma.item.update({
+      where: { id },
+      data: { name: dto.name, description: dto.description },
+      include: detailInclude,
+    });
+    return detailView(item, true);
+  }
+
+  async setStatus(ownerId: string, id: string, status: ItemStatus) {
+    await this.writableItem(ownerId, id);
+    const item = await this.prisma.item.update({
+      where: { id },
+      data: { status },
+      include: detailInclude,
+    });
+    return detailView(item, true);
+  }
+
+  async replaceVariations(ownerId: string, id: string, dto: VariationsDto) {
+    await this.writableItem(ownerId, id);
+    validateVariations(dto.tierVariations, dto.models);
+    const item = await this.prisma.$transaction(async (tx) => {
+      await tx.tierVariation.deleteMany({ where: { itemId: id } });
+      await tx.model.deleteMany({ where: { itemId: id } });
+      return tx.item.update({
+        where: { id },
+        data: variationsCreate(dto, ownerId),
+        include: detailInclude,
+      });
+    });
+    return detailView(item, true);
+  }
+
+  async updateModel(ownerId: string, modelId: string, dto: ModelFieldsDto) {
+    await this.writableModel(ownerId, modelId);
+    const updated = await this.prisma.model.update({
+      where: { id: modelId },
+      data: { price: dto.price, sku: dto.sku },
+      include: modelInclude,
+    });
+    return modelView(updated, true);
+  }
+
+  async adjustStock(
+    ownerId: string,
+    modelId: string,
+    dto: StockAdjustmentDto,
+    idempotencyKey?: string,
+  ) {
+    await this.writableModel(ownerId, modelId);
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        await tx.inventoryMovement.create({
+          data: {
+            modelId,
+            delta: dto.delta,
+            reason: dto.reason,
+            actorId: ownerId,
+            idempotencyKey,
+          },
+        });
+        // Relative update so concurrent reservations are never overwritten.
+        const changed = await tx.$executeRaw`
+          UPDATE inventory
+          SET on_hand = on_hand + ${dto.delta}, updated_at = now()
+          WHERE model_id = ${modelId}::uuid AND on_hand + ${dto.delta} >= reserved`;
+        if (changed === 0) {
+          throw new ConflictException('Not enough unreserved stock');
+        }
+      });
+    } catch (error) {
+      if (!idempotencyKey || !isUniqueViolation(error)) throw error;
+      // A replay of an already applied adjustment: return the current state.
+      const previous = await this.prisma.inventoryMovement.findUnique({
+        where: { idempotencyKey },
+      });
+      if (previous?.modelId !== modelId) {
+        throw new ConflictException(
+          'Idempotency key was used for another model',
+        );
+      }
+    }
+    const model = await this.prisma.model.findUniqueOrThrow({
+      where: { id: modelId },
+      include: modelInclude,
+    });
+    return modelView(model, true);
+  }
+
+  async listMovements(ownerId: string, modelId: string, query: CursorQuery) {
+    const owned = await this.prisma.model.count({
+      where: { id: modelId, item: { shop: { ownerId } } },
+    });
+    if (!owned) throw new NotFoundException('Model not found');
+    const movements = await this.prisma.inventoryMovement.findMany({
+      where: { modelId },
+      omit: { idempotencyKey: true },
+      ...cursorArgs(query),
+    });
+    return toPage(movements, query.limit);
+  }
+
+  async listMine(ownerId: string, query: CursorQuery) {
+    const shop = await this.prisma.shop.findUnique({ where: { ownerId } });
+    if (!shop) throw new NotFoundException('You do not have a shop');
+    const items = await this.prisma.item.findMany({
+      where: { shopId: shop.id },
+      include: summaryInclude,
+      ...cursorArgs(query),
+    });
+    const page = toPage(items, query.limit);
+    return { ...page, items: page.items.map(summaryView) };
+  }
+
+  async getPublic(id: string) {
+    const item = await this.prisma.item.findFirst({
+      where: { id, ...publicWhere },
+      include: detailInclude,
+    });
+    if (!item) throw new NotFoundException('Item not found');
+    return detailView(item, false);
+  }
+
+  async listByShop(shopId: string, query: CursorQuery) {
+    const items = await this.prisma.item.findMany({
+      where: { shopId, ...publicWhere },
+      include: summaryInclude,
+      ...cursorArgs(query),
+    });
+    const page = toPage(items, query.limit);
+    return { ...page, items: page.items.map(summaryView) };
+  }
+
+  async adminSetStatus(id: string, status: ItemStatus) {
+    const exists = await this.prisma.item.count({ where: { id } });
+    if (!exists) throw new NotFoundException('Item not found');
+    const item = await this.prisma.item.update({
+      where: { id },
+      data: { status },
+      include: detailInclude,
+    });
+    return detailView(item, true);
+  }
+
+  private async writableItem(ownerId: string, id: string) {
+    const item = await this.prisma.item.findFirst({
+      where: { id, shop: { ownerId } },
+      include: { shop: true },
+    });
+    if (!item) throw new NotFoundException('Item not found');
+    this.assertWritable(item);
+  }
+
+  private async writableModel(ownerId: string, modelId: string) {
+    const model = await this.prisma.model.findFirst({
+      where: { id: modelId, item: { shop: { ownerId } } },
+      include: { item: { include: { shop: true } } },
+    });
+    if (!model) throw new NotFoundException('Model not found');
+    this.assertWritable(model.item);
+  }
+
+  private assertWritable(item: {
+    status: ItemStatus;
+    shop: { status: ShopStatus };
+  }) {
+    if (item.shop.status !== ShopStatus.active) {
+      throw new ForbiddenException('Shop is not active');
+    }
+    if (item.status === ItemStatus.banned) {
+      throw new ForbiddenException('Item is banned');
+    }
+  }
+}
