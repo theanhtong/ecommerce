@@ -73,7 +73,113 @@ model Shop {
   createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
   owner         User       @relation(fields: [ownerId], references: [id])
+  items         Item[]
 
   @@index([status])
   @@map("shops")
+}
+
+enum ItemStatus {
+  active
+  hidden
+  banned
+
+  @@map("item_status")
+}
+
+model Item {
+  id             String          @id @default(uuid(7)) @db.Uuid
+  shopId         String          @map("shop_id") @db.Uuid
+  // Seller's own product code; groups rows in a CSV import and blocks duplicate imports.
+  parentSku      String?         @map("parent_sku")
+  name           String
+  description    String?
+  status         ItemStatus      @default(active)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  shop           Shop            @relation(fields: [shopId], references: [id])
+  tierVariations TierVariation[]
+  models         Model[]
+
+  @@unique([shopId, parentSku])
+  @@index([shopId, status])
+  @@map("items")
+}
+
+model TierVariation {
+  id       String       @id @default(uuid(7)) @db.Uuid
+  itemId   String       @map("item_id") @db.Uuid
+  position Int
+  name     String
+  item     Item         @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  options  TierOption[]
+
+  @@unique([itemId, position])
+  @@map("tier_variations")
+}
+
+model TierOption {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  tierVariationId String        @map("tier_variation_id") @db.Uuid
+  position        Int
+  option          String
+  tierVariation   TierVariation @relation(fields: [tierVariationId], references: [id], onDelete: Cascade)
+
+  @@unique([tierVariationId, position])
+  @@map("tier_options")
+}
+
+model Model {
+  id        String              @id @default(uuid(7)) @db.Uuid
+  itemId    String              @map("item_id") @db.Uuid
+  tierIndex Int[]               @map("tier_index")
+  sku       String?
+  price     Int
+  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  item      Item                @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  inventory Inventory?
+  movements InventoryMovement[]
+
+  @@unique([itemId, tierIndex])
+  @@map("models")
+}
+
+// Sellable quantity = onHand - reserved. reserved holds stock for orders awaiting payment.
+model Inventory {
+  modelId   String   @id @map("model_id") @db.Uuid
+  onHand    Int      @map("on_hand")
+  reserved  Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  model     Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@map("inventory")
+}
+
+enum InventoryReason {
+  restock
+  adjust
+  reserve
+  release
+  sale
+  return
+
+  @@map("inventory_reason")
+}
+
+// Append-only history of every change to Inventory.onHand or reserved.
+model InventoryMovement {
+  id             String          @id @default(uuid(7)) @db.Uuid
+  modelId        String          @map("model_id") @db.Uuid
+  delta          Int
+  reason         InventoryReason
+  refType        String?         @map("ref_type")
+  refId          String?         @map("ref_id")
+  idempotencyKey String?         @unique @map("idempotency_key")
+  actorId        String?         @map("actor_id") @db.Uuid
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  model          Model           @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@index([modelId, createdAt])
+  @@map("inventory_movements")
 }
