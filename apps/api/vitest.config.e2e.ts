@@ -6,6 +6,9 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.e2e-spec.ts'],
-    setupFiles: ['./test/setup-env.ts'],
+    globalSetup: ['./test/support/global-setup.ts'],
+    setupFiles: ['./test/support/setup-env.ts'],
+    // Files share one database, so run them one after another.
+    fileParallelism: false,
   },
 });

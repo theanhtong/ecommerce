@@ -22,15 +22,17 @@ enum UserStatus {
 }
 
 model User {
-  id           String     @id @default(uuid(7)) @db.Uuid
-  email        String     @unique
-  passwordHash String     @map("password_hash")
-  displayName  String?    @map("display_name")
-  role         Role       @default(user)
-  status       UserStatus @default(active)
-  createdAt    DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
-  sessions     Session[]
+  id                String     @id @default(uuid(7)) @db.Uuid
+  email             String     @unique
+  passwordHash      String     @map("password_hash")
+  username          String     @unique
+  usernameChangedAt DateTime?  @map("username_changed_at") @db.Timestamptz(3)
+  role              Role       @default(user)
+  status            UserStatus @default(active)
+  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions          Session[]
+  shop              Shop?
 
   @@map("users")
 }
@@ -50,4 +52,28 @@ model Session {
 
   @@index([userId])
   @@map("sessions")
+}
+
+enum ShopStatus {
+  pending
+  active
+  rejected
+  banned
+
+  @@map("shop_status")
+}
+
+model Shop {
+  id            String     @id @default(uuid(7)) @db.Uuid
+  ownerId       String     @unique @map("owner_id") @db.Uuid
+  name          String     @unique
+  nameChangedAt DateTime?  @map("name_changed_at") @db.Timestamptz(3)
+  description   String?
+  status        ShopStatus @default(pending)
+  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  owner         User       @relation(fields: [ownerId], references: [id])
+
+  @@index([status])
+  @@map("shops")
 }

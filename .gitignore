@@ -16,3 +16,4 @@ packages/db/prisma/migrations/
 # Editor / local tooling
 .vscode/
 CLAUDE.md
+cookies.txt
