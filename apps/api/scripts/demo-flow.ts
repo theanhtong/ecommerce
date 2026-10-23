@@ -391,12 +391,13 @@ async function main() {
         g.items.map((l) => l.id),
       ),
       addressId: workAddress.id,
+      paymentMethod: 'cod',
     },
     headers: { 'Idempotency-Key': `demo-${Date.now()}` },
   });
   for (const o of placed.orders) {
     console.log(
-      `    ${o.shop.name.padEnd(14)} items ${o.itemsTotal}đ + ship ${o.shippingFee}đ = ${o.total}đ (${o.pickupAddress.province.name} → ${o.shippingAddress.province.name})`,
+      `    ${o.shop.name.padEnd(14)} ${o.paymentMethod} ${o.status} items ${o.itemsTotal}đ + ship ${o.shippingFee}đ = ${o.total}đ (${o.pickupAddress.province.name} → ${o.shippingAddress.province.name})`,
     );
   }
   await call('GET', '/cart', 200, { token: buyer.accessToken });
