@@ -1,10 +1,12 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import {
+  CancelReason,
   InventoryReason,
   OrderStatus,
   Prisma,
@@ -122,14 +124,37 @@ export class OrdersService {
 
   // An unpaid order is the buyer's to abandon; a payable one either side may cancel until
   // shipment is arranged. Assumption: cancelling after that has to go through the carrier.
-  async cancel(userId: string, id: string) {
+  async cancel(
+    userId: string,
+    id: string,
+    { reason, note }: { reason?: CancelReason; note?: string },
+  ) {
     return this.transition(userId, id, {
       from: { unpaid: ['buyer'], to_ship: ['buyer', 'seller'] },
       to: OrderStatus.cancelled,
       stock: RELEASE,
+      check: (party) => {
+        if (party === 'buyer' && !reason) {
+          throw new BadRequestException('reason is required');
+        }
+        if (reason === CancelReason.other && !note) {
+          throw new BadRequestException('note is required for other');
+        }
+      },
       guard: async (tx) => {
         if (await tx.shipment.count({ where: { orderId: id } })) {
           throw new ConflictException('Shipment already arranged');
+        }
+      },
+      after: async (tx) => {
+        if (reason) {
+          await tx.order.update({
+            where: { id },
+            data: {
+              cancelReason: reason,
+              cancelNote: reason === CancelReason.other ? note : null,
+            },
+          });
         }
       },
     });
@@ -221,6 +246,7 @@ export class OrdersService {
       from: Partial<Record<OrderStatus, Party[]>>;
       to: OrderStatus;
       stock?: StockEffect;
+      check?: (party: Party) => void;
       guard?: (tx: Prisma.TransactionClient) => Promise<void>;
       after?: (
         tx: Prisma.TransactionClient,
@@ -236,6 +262,7 @@ export class OrdersService {
         `Only the ${allowed.join(' or ')} can do this`,
       );
     }
+    rule.check?.(party);
 
     await this.prisma.$transaction(async (tx) => {
       await this.lockOrder(tx, id);

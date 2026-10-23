@@ -16,7 +16,11 @@ import type { AccessTokenPayload } from '../auth/auth.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CheckoutService } from './checkout.service.js';
-import { CheckoutDto, ListOrdersQuery } from './dto/order.dto.js';
+import {
+  CancelOrderDto,
+  CheckoutDto,
+  ListOrdersQuery,
+} from './dto/order.dto.js';
 import { OrdersService } from './orders.service.js';
 
 @Controller()
@@ -78,8 +82,9 @@ export class OrdersController {
   cancel(
     @CurrentUser() user: AccessTokenPayload,
     @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CancelOrderDto,
   ) {
-    return this.orders.cancel(user.sub, id);
+    return this.orders.cancel(user.sub, id, dto);
   }
 
   @Post('orders/:id/receive')

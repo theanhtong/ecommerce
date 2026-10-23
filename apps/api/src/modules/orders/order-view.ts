@@ -29,6 +29,8 @@ export const orderView = ({
   total: order.total,
   shippingAddress: order.shippingAddress,
   pickupAddress: order.pickupAddress,
+  cancelReason: order.cancelReason,
+  cancelNote: order.cancelNote,
   items: items.map((i) => ({
     modelId: i.modelId,
     itemName: i.itemName,
