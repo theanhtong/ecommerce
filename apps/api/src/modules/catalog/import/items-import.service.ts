@@ -23,6 +23,7 @@ const ITEM_FIELDS: { [field: string]: Column } = {
   parentSku: 'parent_sku',
   name: 'name',
   description: 'description',
+  weight: 'weight',
   price: 'price',
   stock: 'stock',
   sku: 'sku',
@@ -63,6 +64,7 @@ const TEMPLATE_ROWS = [
     'AO-001',
     'Áo thun cotton',
     'Cotton 100%',
+    300,
     'Màu',
     'Trắng',
     'Size',
@@ -75,6 +77,7 @@ const TEMPLATE_ROWS = [
     'AO-001',
     'Áo thun cotton',
     'Cotton 100%',
+    300,
     'Màu',
     'Trắng',
     'Size',
@@ -87,6 +90,7 @@ const TEMPLATE_ROWS = [
     'AO-001',
     'Áo thun cotton',
     'Cotton 100%',
+    300,
     'Màu',
     'Đen',
     'Size',
@@ -99,6 +103,7 @@ const TEMPLATE_ROWS = [
     'AO-001',
     'Áo thun cotton',
     'Cotton 100%',
+    300,
     'Màu',
     'Đen',
     'Size',
@@ -107,7 +112,7 @@ const TEMPLATE_ROWS = [
     0,
     'AO-DEN-L',
   ],
-  ['COC-001', 'Cốc gỗ khắc tên', '', '', '', '', '', 89000, 30, ''],
+  ['COC-001', 'Cốc gỗ khắc tên', '', 250, '', '', '', '', 89000, 30, ''],
 ];
 
 @Injectable()

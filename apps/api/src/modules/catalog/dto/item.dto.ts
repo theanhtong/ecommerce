@@ -1,5 +1,14 @@
 import { Transform } from 'class-transformer';
-import { IsIn, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import {
+  IsIn,
+  IsInt,
+  IsOptional,
+  IsString,
+  Length,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 import { Omittable } from '../../../common/omittable.js';
 import { trim } from '../../../common/transforms.js';
 import { VariationsDto } from './variations.dto.js';
@@ -21,6 +30,12 @@ export class CreateItemDto extends VariationsDto {
   @IsString()
   @MaxLength(3000)
   description?: string | null;
+
+  // Grams after packing.
+  @IsInt()
+  @Min(1)
+  @Max(1_000_000)
+  weight: number;
 }
 
 export class UpdateItemDto {
@@ -35,6 +50,12 @@ export class UpdateItemDto {
   @IsString()
   @MaxLength(3000)
   description?: string | null;
+
+  @Omittable()
+  @IsInt()
+  @Min(1)
+  @Max(1_000_000)
+  weight?: number;
 }
 
 export class SellerItemStatusDto {

@@ -2,7 +2,7 @@ import { buildImportGroups, COLUMNS, LABELS } from './build-items.js';
 
 const header = COLUMNS.map((c) => LABELS[c]);
 const row = (values: Partial<Record<(typeof COLUMNS)[number], string>>) =>
-  COLUMNS.map((c) => values[c] ?? '');
+  COLUMNS.map((c) => values[c] ?? (c === 'weight' ? '300' : ''));
 
 describe('buildImportGroups', () => {
   it('groups rows by parent_sku and derives tiers and tierIndex', () => {
@@ -48,6 +48,7 @@ describe('buildImportGroups', () => {
     expect(group.item).toEqual({
       parentSku: 'AO',
       name: 'Áo',
+      weight: 300,
       tierVariations: [
         { name: 'Màu', options: ['Trắng', 'Đen'] },
         { name: 'Size', options: ['M', 'L'] },
@@ -67,6 +68,7 @@ describe('buildImportGroups', () => {
       parent_sku: 'COC',
       name: 'Cốc',
       description: 'Gỗ',
+      weight: '250',
       price: '89000',
       stock: '30',
     };
@@ -78,6 +80,7 @@ describe('buildImportGroups', () => {
       parentSku: 'COC',
       name: 'Cốc',
       description: 'Gỗ',
+      weight: 250,
       tierVariations: [],
       models: [{ tierIndex: [], price: 89000, stock: 30 }],
     });
@@ -115,5 +118,34 @@ describe('buildImportGroups', () => {
     expect(() => buildImportGroups([['Mã sản phẩm', 'parent_sku']])).toThrow(
       /Missing columns: "Tên sản phẩm", "Mô tả"/,
     );
+  });
+
+  it('requires one weight per product code', () => {
+    const groups = buildImportGroups([
+      header,
+      row({ parent_sku: 'A', name: 'A', weight: '', price: '1', stock: '1' }),
+      row({
+        parent_sku: 'B',
+        name: 'B',
+        tier1_name: 'Màu',
+        tier1_option: 'Đỏ',
+        weight: '300',
+        price: '1',
+        stock: '1',
+      }),
+      row({
+        parent_sku: 'B',
+        name: 'B',
+        tier1_name: 'Màu',
+        tier1_option: 'Xanh',
+        weight: '400',
+        price: '1',
+        stock: '1',
+      }),
+    ]);
+    expect(groups.map((g) => g.error)).toEqual([
+      'Row 2: "Cân nặng (g)" must be a whole number',
+      'Row 4: "Cân nặng (g)" differs from row 3 of the same "Mã sản phẩm"',
+    ]);
   });
 });

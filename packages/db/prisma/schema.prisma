@@ -35,6 +35,8 @@ model User {
   shop              Shop?
   cartItems         CartItem[]
   addresses         Address[]
+  orders            Order[]
+  checkouts         Checkout[]
 
   @@map("users")
 }
@@ -77,6 +79,7 @@ model Shop {
   owner         User         @relation(fields: [ownerId], references: [id])
   items         Item[]
   address       ShopAddress?
+  orders        Order[]
 
   @@index([status])
   @@map("shops")
@@ -97,6 +100,8 @@ model Item {
   parentSku      String?         @map("parent_sku")
   name           String
   description    String?
+  // Packed weight in grams, used for shipping fees.
+  weight         Int
   status         ItemStatus      @default(active)
   createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
@@ -133,19 +138,23 @@ model TierOption {
 }
 
 model Model {
-  id        String              @id @default(uuid(7)) @db.Uuid
-  itemId    String              @map("item_id") @db.Uuid
-  tierIndex Int[]               @map("tier_index")
-  sku       String?
-  price     Int
-  createdAt DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
-  item      Item                @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  inventory Inventory?
-  movements InventoryMovement[]
-  cartItems CartItem[]
+  id         String              @id @default(uuid(7)) @db.Uuid
+  itemId     String              @map("item_id") @db.Uuid
+  tierIndex  Int[]               @map("tier_index")
+  sku        String?
+  price      Int
+  // Set when variations are replaced; kept because order items reference it.
+  // tier_index is unique per item among live models (partial index models_live_tier_index).
+  deletedAt  DateTime?           @map("deleted_at") @db.Timestamptz(3)
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  item       Item                @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  inventory  Inventory?
+  movements  InventoryMovement[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
 
-  @@unique([itemId, tierIndex])
+  @@index([itemId])
   @@map("models")
 }
 
@@ -172,6 +181,8 @@ enum InventoryReason {
 }
 
 // Append-only history of every change to Inventory.onHand or reserved.
+// delta is the change to on_hand for restock/adjust/sale/return and to reserved for reserve/release;
+// a sale also releases the same quantity from reserved.
 model InventoryMovement {
   id             String          @id @default(uuid(7)) @db.Uuid
   modelId        String          @map("model_id") @db.Uuid
@@ -266,4 +277,82 @@ model ShopAddress {
   ward        Ward     @relation(fields: [wardCode], references: [code])
 
   @@map("shop_addresses")
+}
+
+enum OrderStatus {
+  to_ship
+  shipping
+  completed
+  cancelled
+
+  @@map("order_status")
+}
+
+// One buyer action that may create several orders (one per shop); replays return the same orders.
+model Checkout {
+  id             String   @id @default(uuid(7)) @db.Uuid
+  buyerId        String   @map("buyer_id") @db.Uuid
+  idempotencyKey String   @map("idempotency_key")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  buyer          User     @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  orders         Order[]
+
+  @@unique([buyerId, idempotencyKey])
+  @@map("checkouts")
+}
+
+// Addresses, names and prices are snapshots, so later edits never change a placed order.
+model Order {
+  id              String               @id @default(uuid(7)) @db.Uuid
+  checkoutId      String               @map("checkout_id") @db.Uuid
+  buyerId         String               @map("buyer_id") @db.Uuid
+  shopId          String               @map("shop_id") @db.Uuid
+  status          OrderStatus          @default(to_ship)
+  itemsTotal      Int                  @map("items_total")
+  shippingFee     Int                  @map("shipping_fee")
+  total           Int
+  shippingAddress Json                 @map("shipping_address")
+  pickupAddress   Json                 @map("pickup_address")
+  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  checkout        Checkout             @relation(fields: [checkoutId], references: [id])
+  buyer           User                 @relation(fields: [buyerId], references: [id])
+  shop            Shop                 @relation(fields: [shopId], references: [id])
+  items           OrderItem[]
+  history         OrderStatusHistory[]
+
+  @@index([buyerId, status])
+  @@index([shopId, status])
+  @@index([checkoutId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  orderId   String  @map("order_id") @db.Uuid
+  modelId   String  @map("model_id") @db.Uuid
+  itemName  String  @map("item_name")
+  modelName String? @map("model_name")
+  sku       String?
+  price     Int
+  quantity  Int
+  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  model     Model   @relation(fields: [modelId], references: [id])
+
+  @@index([orderId])
+  @@index([modelId])
+  @@map("order_items")
+}
+
+model OrderStatusHistory {
+  id         String       @id @default(uuid(7)) @db.Uuid
+  orderId    String       @map("order_id") @db.Uuid
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus  @map("to_status")
+  actorId    String?      @map("actor_id") @db.Uuid
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_status_history")
 }

@@ -2,6 +2,7 @@ export const COLUMNS = [
   'parent_sku',
   'name',
   'description',
+  'weight',
   'tier1_name',
   'tier1_option',
   'tier2_name',
@@ -18,6 +19,7 @@ export const LABELS: { [K in Column]: string } = {
   parent_sku: 'Mã sản phẩm',
   name: 'Tên sản phẩm',
   description: 'Mô tả',
+  weight: 'Cân nặng (g)',
   tier1_name: 'Tên phân loại 1',
   tier1_option: 'Phân loại 1',
   tier2_name: 'Tên phân loại 2',
@@ -36,6 +38,7 @@ export interface ImportItem {
   parentSku: string;
   name: string;
   description?: string;
+  weight: number;
   tierVariations: { name: string; options: string[] }[];
   models: { tierIndex: number[]; price: number; stock: number; sku?: string }[];
 }
@@ -62,7 +65,12 @@ const toInt = (value: string, column: Column, row: number) => {
 function buildItem(parentSku: string, records: Record[]): ImportItem {
   const [first] = records;
   for (const r of records) {
-    for (const column of ['name', 'tier1_name', 'tier2_name'] as const) {
+    for (const column of [
+      'name',
+      'weight',
+      'tier1_name',
+      'tier2_name',
+    ] as const) {
       if (r[column] !== first[column]) {
         throw new ImportFormatError(
           `Row ${r.row}: ${label(column)} differs from row ${first.row} of the same ${label('parent_sku')}`,
@@ -101,6 +109,7 @@ function buildItem(parentSku: string, records: Record[]): ImportItem {
     parentSku,
     name: first.name,
     ...(first.description && { description: first.description }),
+    weight: toInt(first.weight, 'weight', first.row),
     tierVariations: tierNames.map((name, t) => ({ name, options: options[t] })),
     models,
   };
