@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
+import { OrdersService } from '../../../src/modules/orders/orders.service.js';
 import { PrismaService } from '../../../src/prisma/prisma.service.js';
 import {
   bearer,
@@ -12,6 +13,7 @@ import {
 
 type Account = Awaited<ReturnType<typeof signUp>>;
 
+const DAY_MS = 24 * 60 * 60 * 1000;
 const HANOI_WARD = '00004';
 const HCM_WARD = '26740';
 
@@ -517,6 +519,69 @@ describe('Orders (e2e)', () => {
       expect(
         await prisma.shipment.count({ where: { orderId: second.order.id } }),
       ).toBe(0);
+    });
+
+    it('cancels orders the seller leaves unarranged past the deadline', async () => {
+      const orders = app.get(OrdersService);
+      const late = new Date(Date.now() + 4 * DAY_MS);
+      const idle = await placed();
+      const arranged = await placed();
+      await as(arranged.s)
+        .post(`/orders/${arranged.order.id}/ship`)
+        .expect(200);
+      const unpaid = await placed('online');
+
+      await orders.cancelUnshipped();
+      expect(
+        (await as(idle.b).get(`/orders/${idle.order.id}`).expect(200)).body
+          .status,
+      ).toBe('to_ship');
+
+      expect(await orders.cancelUnshipped(late)).toBeGreaterThanOrEqual(1);
+      const cancelled = await as(idle.b)
+        .get(`/orders/${idle.order.id}`)
+        .expect(200);
+      expect(cancelled.body).toMatchObject({
+        status: 'cancelled',
+        cancelReason: null,
+      });
+      expect(cancelled.body.history.at(-1)).toMatchObject({
+        from: 'to_ship',
+        to: 'cancelled',
+      });
+      expect(await stock(idle.modelId)).toEqual({ onHand: 5, reserved: 0 });
+      for (const kept of [arranged, unpaid]) {
+        const order = await prisma.order.findUniqueOrThrow({
+          where: { id: kept.order.id },
+        });
+        expect(order.status).toBe(kept.order.status);
+      }
+    });
+
+    it('completes delivered orders the buyer has not confirmed', async () => {
+      const orders = app.get(OrdersService);
+      const { s, b, order } = await placed();
+      const shipmentId = (
+        await as(s).post(`/orders/${order.id}/ship`).expect(200)
+      ).body.shipment.id;
+      await carrier(shipmentId, 'picked_up').expect(200);
+      await carrier(shipmentId, 'delivered').expect(200);
+
+      await orders.completeDelivered();
+      expect(
+        (await as(b).get(`/orders/${order.id}`).expect(200)).body.status,
+      ).toBe('delivered');
+
+      await orders.completeDelivered(new Date(Date.now() + 4 * DAY_MS));
+      expect(
+        (await as(b).get(`/orders/${order.id}`).expect(200)).body.status,
+      ).toBe('completed');
+      expect(
+        await prisma.ledgerEntry.count({
+          where: { idempotencyKey: `order:${order.id}:settlement` },
+        }),
+      ).toBe(1);
+      await as(b).post(`/orders/${order.id}/receive`).expect(409);
     });
 
     it('keeps the order snapshot when the seller edits the item', async () => {

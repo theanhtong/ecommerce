@@ -37,6 +37,13 @@ const RELEASE: StockEffect = {
   reserved: -1,
 };
 
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Assumption: a seller has 3 days from when an order becomes payable to arrange shipment.
+const SHIP_DEADLINE_MS = 3 * DAY_MS;
+// A delivered order completes on its own 3 days later if the buyer does not confirm it first.
+const AUTO_COMPLETE_AFTER_MS = 3 * DAY_MS;
+const SWEEP_BATCH = 100;
+
 type CarrierStatus = Exclude<ShipmentStatus, 'awaiting_pickup'>;
 
 const CARRIER_STEPS: Record<
@@ -217,6 +224,72 @@ export class OrdersService {
         where: { id: shipmentId },
       }),
     );
+  }
+
+  cancelUnshipped(now = new Date()) {
+    const cutoff = new Date(now.getTime() - SHIP_DEADLINE_MS);
+    return this.sweep(
+      {
+        status: OrderStatus.to_ship,
+        shipment: { is: null },
+        history: {
+          some: { toStatus: OrderStatus.to_ship, createdAt: { lt: cutoff } },
+        },
+      },
+      OrderStatus.cancelled,
+      { stock: RELEASE },
+    );
+  }
+
+  completeDelivered(now = new Date()) {
+    const cutoff = new Date(now.getTime() - AUTO_COMPLETE_AFTER_MS);
+    return this.sweep(
+      {
+        status: OrderStatus.delivered,
+        shipment: { is: { deliveredAt: { lt: cutoff } } },
+      },
+      OrderStatus.completed,
+      { after: (tx, order) => this.ledger.settleOrder(tx, order) },
+    );
+  }
+
+  // Moves every order matching `where`; the match is repeated under the row lock, so an order a
+  // user changed in the meantime is skipped. Returns how many orders moved.
+  private async sweep(
+    where: Prisma.OrderWhereInput,
+    to: OrderStatus,
+    rule: {
+      stock?: StockEffect;
+      after?: (
+        tx: Prisma.TransactionClient,
+        order: Prisma.OrderGetPayload<{ include: { items: true } }>,
+      ) => Promise<void>;
+    },
+  ) {
+    let moved = 0;
+    for (;;) {
+      const orders = await this.prisma.order.findMany({
+        where,
+        include: { items: true },
+        orderBy: { id: 'asc' },
+        take: SWEEP_BATCH,
+      });
+      for (const order of orders) {
+        await this.prisma.$transaction(async (tx) => {
+          await this.lockOrder(tx, order.id);
+          if (!(await tx.order.count({ where: { ...where, id: order.id } }))) {
+            return;
+          }
+          await this.move(tx, order, order.status, to, {
+            actorId: null,
+            stock: rule.stock,
+          });
+          await rule.after?.(tx, order);
+          moved++;
+        });
+      }
+      if (orders.length < SWEEP_BATCH) return moved;
+    }
   }
 
   private async list(where: Prisma.OrderWhereInput, query: ListOrdersQuery) {
