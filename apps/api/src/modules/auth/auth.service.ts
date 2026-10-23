@@ -48,7 +48,7 @@ export class AuthService {
     const passwordHash = await argon2.hash(dto.password);
     try {
       const user = await this.prisma.user.create({
-        data: { email: dto.email, passwordHash },
+        data: { email: dto.email, username: dto.username, passwordHash },
       });
       return await this.startSession(user, meta);
     } catch (error) {
@@ -56,7 +56,12 @@ export class AuthService {
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
       ) {
-        throw new ConflictException('Email already registered');
+        const emailTaken = await this.prisma.user.count({
+          where: { email: dto.email },
+        });
+        throw new ConflictException(
+          emailTaken ? 'Email already registered' : 'Username already taken',
+        );
       }
       throw error;
     }

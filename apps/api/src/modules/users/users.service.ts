@@ -1,11 +1,14 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma, UserStatus } from '@ecommerce/db';
 import * as argon2 from 'argon2';
+import { withinChangeCooldown } from '../../common/cooldown.js';
+import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuthService } from '../auth/auth.service.js';
 import type { ChangePasswordDto } from './dto/change-password.dto.js';
@@ -15,7 +18,8 @@ import type { UpdateProfileDto } from './dto/update-profile.dto.js';
 const profileSelect = {
   id: true,
   email: true,
-  displayName: true,
+  username: true,
+  usernameChangedAt: true,
   role: true,
   status: true,
   createdAt: true,
@@ -42,16 +46,33 @@ export class UsersService {
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
+    const user = await this.getProfile(userId);
+    if (dto.username === undefined || dto.username === user.username) {
+      return user;
+    }
+    const now = new Date();
+    if (withinChangeCooldown(user.usernameChangedAt, now)) {
+      throw new ConflictException(
+        'Username can only be changed once every 30 days',
+      );
+    }
     try {
-      return await this.prisma.user.update({
-        where: { id: userId, status: UserStatus.active },
-        data: { displayName: dto.displayName },
-        select: profileSelect,
+      // Matching the previous change time makes concurrent changes race-safe.
+      const { count } = await this.prisma.user.updateMany({
+        where: { id: userId, usernameChangedAt: user.usernameChangedAt },
+        data: { username: dto.username, usernameChangedAt: now },
       });
+      if (count === 0) throw new ConflictException('Username changed, retry');
     } catch (error) {
-      if (isNotFound(error)) throw new UnauthorizedException();
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new ConflictException('Username already taken');
+      }
       throw error;
     }
+    return this.getProfile(userId);
   }
 
   async changePassword(
@@ -77,13 +98,9 @@ export class UsersService {
     const users = await this.prisma.user.findMany({
       where: { status: query.status },
       select: profileSelect,
-      orderBy: { id: 'asc' },
-      take: query.limit + 1,
-      ...(query.cursor && { cursor: { id: query.cursor }, skip: 1 }),
+      ...cursorArgs(query),
     });
-    const hasMore = users.length > query.limit;
-    const items = hasMore ? users.slice(0, query.limit) : users;
-    return { items, nextCursor: hasMore ? items.at(-1)!.id : null };
+    return toPage(users, query.limit);
   }
 
   async updateStatus(actorId: string, userId: string, status: UserStatus) {
