@@ -1,4 +1,4 @@
-import { OrderStatus } from '@ecommerce/db';
+import { OrderStatus, PaymentMethod } from '@ecommerce/db';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -20,6 +20,9 @@ export class CheckoutDto {
 
   @IsUUID()
   addressId: string;
+
+  @IsEnum(PaymentMethod)
+  paymentMethod: PaymentMethod;
 }
 
 export class ListOrdersQuery extends CursorQuery {

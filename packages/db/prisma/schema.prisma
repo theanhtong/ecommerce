@@ -280,6 +280,7 @@ model ShopAddress {
 }
 
 enum OrderStatus {
+  unpaid
   to_ship
   shipping
   completed
@@ -288,13 +289,22 @@ enum OrderStatus {
   @@map("order_status")
 }
 
+enum PaymentMethod {
+  cod
+  online
+
+  @@map("payment_method")
+}
+
 // One buyer action that may create several orders (one per shop); replays return the same orders.
+// The buyer pays once for the whole checkout, so the payment method lives here.
 model Checkout {
-  id             String   @id @default(uuid(7)) @db.Uuid
-  buyerId        String   @map("buyer_id") @db.Uuid
-  idempotencyKey String   @map("idempotency_key")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  buyer          User     @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  id             String        @id @default(uuid(7)) @db.Uuid
+  buyerId        String        @map("buyer_id") @db.Uuid
+  idempotencyKey String        @map("idempotency_key")
+  paymentMethod  PaymentMethod @map("payment_method")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  buyer          User          @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   orders         Order[]
 
   @@unique([buyerId, idempotencyKey])

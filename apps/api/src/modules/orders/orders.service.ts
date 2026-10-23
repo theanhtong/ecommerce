@@ -33,17 +33,16 @@ export class OrdersService {
 
   async ship(userId: string, id: string) {
     return this.transition(userId, id, {
-      by: ['seller'],
-      from: OrderStatus.to_ship,
+      from: { to_ship: ['seller'] },
       to: OrderStatus.shipping,
       stock: { reason: InventoryReason.sale, onHand: -1, reserved: -1 },
     });
   }
 
+  // An unpaid order is the buyer's to abandon; once payable it can be cancelled by either side.
   async cancel(userId: string, id: string) {
     return this.transition(userId, id, {
-      by: ['buyer', 'seller'],
-      from: OrderStatus.to_ship,
+      from: { unpaid: ['buyer'], to_ship: ['buyer', 'seller'] },
       to: OrderStatus.cancelled,
       stock: { reason: InventoryReason.release, onHand: 0, reserved: -1 },
     });
@@ -51,8 +50,7 @@ export class OrdersService {
 
   async receive(userId: string, id: string) {
     return this.transition(userId, id, {
-      by: ['buyer'],
-      from: OrderStatus.shipping,
+      from: { shipping: ['buyer'] },
       to: OrderStatus.completed,
     });
   }
@@ -89,31 +87,32 @@ export class OrdersService {
     userId: string,
     id: string,
     rule: {
-      by: Party[];
-      from: OrderStatus;
+      // Who may make this move from each allowed status.
+      from: Partial<Record<OrderStatus, Party[]>>;
       to: OrderStatus;
       stock?: { reason: InventoryReason; onHand: number; reserved: number };
     },
   ) {
     const { party, order } = await this.involved(userId, id);
-    if (!rule.by.includes(party)) {
+    const from = order.status;
+    const allowed = rule.from[from];
+    if (!allowed) throw new ConflictException(`Order is ${from}`);
+    if (!allowed.includes(party)) {
       throw new ForbiddenException(
-        `Only the ${rule.by.join(' or ')} can do this`,
+        `Only the ${allowed.join(' or ')} can do this`,
       );
     }
 
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.order.updateMany({
-        where: { id, status: rule.from },
+        where: { id, status: from },
         data: { status: rule.to },
       });
-      if (count === 0) {
-        throw new ConflictException(`Order is not ${rule.from}`);
-      }
+      if (count === 0) throw new ConflictException('Order changed, reload it');
       await tx.orderStatusHistory.create({
         data: {
           orderId: id,
-          fromStatus: rule.from,
+          fromStatus: from,
           toStatus: rule.to,
           actorId: userId,
         },

@@ -1,6 +1,7 @@
 import type { Prisma } from '@ecommerce/db';
 
 export const orderInclude = {
+  checkout: { select: { paymentMethod: true } },
   shop: { select: { id: true, name: true } },
   items: { orderBy: { id: 'asc' } },
   history: { orderBy: { id: 'asc' } },
@@ -10,11 +11,17 @@ type OrderWithDetails = Prisma.OrderGetPayload<{
   include: typeof orderInclude;
 }>;
 
-export const orderView = ({ items, history, ...order }: OrderWithDetails) => ({
+export const orderView = ({
+  items,
+  history,
+  checkout,
+  ...order
+}: OrderWithDetails) => ({
   id: order.id,
   checkoutId: order.checkoutId,
   shop: order.shop,
   status: order.status,
+  paymentMethod: checkout.paymentMethod,
   itemsTotal: order.itemsTotal,
   shippingFee: order.shippingFee,
   total: order.total,
