@@ -47,6 +47,7 @@ describe('Orders (e2e)', () => {
       http().patch(url).set(bearer(account.token)).send(body),
     put: (url: string, body: object) =>
       http().put(url).set(bearer(account.token)).send(body),
+    delete: (url: string) => http().delete(url).set(bearer(account.token)),
   });
 
   async function seller(wardCode = HANOI_WARD) {
@@ -464,6 +465,37 @@ describe('Orders (e2e)', () => {
       await carrier(shipmentId, 'awaiting_pickup').expect(400);
       await carrier(randomUUID(), 'picked_up').expect(404);
       await carrier(shipmentId, 'picked_up').expect(200);
+    });
+
+    it('lets admins list any buyer or shop orders', async () => {
+      const { s, b, order } = await placed();
+      const byBuyer = await as(admin)
+        .get(`/admin/orders?buyerId=${b.id}`)
+        .expect(200);
+      expect(byBuyer.body.items).toEqual([
+        expect.objectContaining({
+          id: order.id,
+          buyer: { id: b.id, email: b.email, username: b.username },
+        }),
+      ]);
+      const byShop = await as(admin)
+        .get(`/admin/orders?shopId=${s.shopId}&status=to_ship`)
+        .expect(200);
+      expect(byShop.body.items.map((o: { id: string }) => o.id)).toEqual([
+        order.id,
+      ]);
+      await as(admin).get('/admin/orders?shopId=nope').expect(400);
+      await as(b).get(`/admin/orders?buyerId=${b.id}`).expect(403);
+    });
+
+    it('keeps items that have ever been ordered', async () => {
+      const { s, b, itemId, order } = await placed();
+      await as(s).delete(`/items/${itemId}`).expect(409);
+      await as(b)
+        .post(`/orders/${order.id}/cancel`, { reason: 'changed_mind' })
+        .expect(200);
+      await as(s).delete(`/items/${itemId}`).expect(409);
+      await http().get(`/items/${itemId}`).expect(200);
     });
 
     it('releases the reservation when either side cancels before shipping', async () => {

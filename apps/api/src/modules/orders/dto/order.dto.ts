@@ -35,6 +35,16 @@ export class ListOrdersQuery extends CursorQuery {
   status?: OrderStatus;
 }
 
+export class AdminListOrdersQuery extends ListOrdersQuery {
+  @IsOptional()
+  @IsUUID()
+  buyerId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  shopId?: string;
+}
+
 export class CancelOrderDto {
   @IsOptional()
   @IsEnum(CancelReason)

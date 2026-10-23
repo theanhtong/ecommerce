@@ -15,7 +15,7 @@ import {
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
-import type { ListOrdersQuery } from './dto/order.dto.js';
+import type { AdminListOrdersQuery, ListOrdersQuery } from './dto/order.dto.js';
 import { orderInclude, orderView } from './order-view.js';
 
 type Party = 'buyer' | 'seller';
@@ -87,6 +87,22 @@ export class OrdersService {
 
   async listForBuyer(buyerId: string, query: ListOrdersQuery) {
     return this.list({ buyerId }, query);
+  }
+
+  async listForAdmin({ buyerId, shopId, ...query }: AdminListOrdersQuery) {
+    const orders = await this.prisma.order.findMany({
+      where: { buyerId, shopId, status: query.status },
+      include: {
+        ...orderInclude,
+        buyer: { select: { id: true, email: true, username: true } },
+      },
+      ...cursorArgs(query, 'desc'),
+    });
+    const page = toPage(orders, query.limit);
+    return {
+      ...page,
+      items: page.items.map(({ buyer, ...o }) => ({ ...orderView(o), buyer })),
+    };
   }
 
   async listForShop(ownerId: string, query: ListOrdersQuery) {
