@@ -2,14 +2,19 @@ import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
-import { PrismaService } from '../src/prisma/prisma.service.js';
-import { createTestApp, refreshCookie } from './helpers.js';
+import { PrismaService } from '../../../src/prisma/prisma.service.js';
+import {
+  createTestApp,
+  refreshCookie,
+  testUsername,
+} from '../../support/helpers.js';
 
 describe('Auth (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
   const email = `user-${randomUUID()}@example.com`;
   const password = 'correct horse battery';
+  const username = testUsername();
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -26,7 +31,11 @@ describe('Auth (e2e)', () => {
   it('registers, normalizes email, returns tokens and a hardened refresh cookie', async () => {
     const res = await http()
       .post('/auth/register')
-      .send({ email: `  ${email.toUpperCase()} `, password })
+      .send({
+        email: `  ${email.toUpperCase()} `,
+        username: `  ${username.toUpperCase()} `,
+        password,
+      })
       .expect(201);
 
     expect(res.body.accessToken).toEqual(expect.any(String));
@@ -40,28 +49,43 @@ describe('Auth (e2e)', () => {
 
     const user = await prisma.user.findUnique({ where: { email } });
     expect(user?.passwordHash).toMatch(/^\$argon2id\$/);
+    expect(user?.username).toBe(username);
     const session = await prisma.session.findFirst({
       where: { userId: user!.id },
     });
     expect(session?.tokenHash).not.toBe(refreshCookie(res).split('=')[1]);
   });
 
-  it('rejects a duplicate email', () =>
-    http().post('/auth/register').send({ email, password }).expect(409));
+  it('rejects a duplicate email or username', async () => {
+    const dupEmail = await http()
+      .post('/auth/register')
+      .send({ email, username: testUsername(), password })
+      .expect(409);
+    expect(dupEmail.body.message).toBe('Email already registered');
+
+    const dupUsername = await http()
+      .post('/auth/register')
+      .send({ email: `x-${randomUUID()}@example.com`, username, password })
+      .expect(409);
+    expect(dupUsername.body.message).toBe('Username already taken');
+  });
 
   it('rejects unknown fields and weak input', async () => {
-    await http()
-      .post('/auth/register')
-      .send({ email: `x-${randomUUID()}@example.com`, password, role: 'admin' })
-      .expect(400);
-    await http()
-      .post('/auth/register')
-      .send({ email: 'not-an-email', password })
-      .expect(400);
-    await http()
-      .post('/auth/register')
-      .send({ email: `x-${randomUUID()}@example.com`, password: 'short' })
-      .expect(400);
+    const valid = () => ({
+      email: `x-${randomUUID()}@example.com`,
+      username: testUsername(),
+      password,
+    });
+    const register = (body: Record<string, unknown>) =>
+      http().post('/auth/register').send(body).expect(400);
+
+    await register({ ...valid(), role: 'admin' });
+    await register({ ...valid(), email: 'not-an-email' });
+    await register({ ...valid(), password: 'short' });
+    await register({ ...valid(), username: undefined });
+    for (const bad of ['abcd', 'has space', 'bad-dash', 'a'.repeat(31)]) {
+      await register({ ...valid(), username: bad });
+    }
   });
 
   it('returns the same error for a wrong password and an unknown email', async () => {

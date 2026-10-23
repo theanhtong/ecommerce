@@ -71,6 +71,9 @@ importers:
       '@types/node':
         specifier: ^24.0.0
         version: 24.19.2
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
       '@types/supertest':
         specifier: ^7.0.0
         version: 7.2.1
@@ -83,6 +86,9 @@ importers:
       oxlint-tsgolint:
         specifier: ^7.0.2001
         version: 7.0.2004
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
       prettier:
         specifier: ^3.4.2
         version: 3.9.10

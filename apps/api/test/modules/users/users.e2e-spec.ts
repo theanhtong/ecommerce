@@ -2,45 +2,24 @@ import { INestApplication } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
-import { PrismaService } from '../src/prisma/prisma.service.js';
-import { createTestApp, refreshCookie } from './helpers.js';
+import { PrismaService } from '../../../src/prisma/prisma.service.js';
+import {
+  bearer,
+  createTestApp,
+  refreshCookie,
+  signUp as signUp_,
+  TEST_PASSWORD,
+  testUsername,
+} from '../../support/helpers.js';
 
 describe('Users (e2e)', () => {
   let app: INestApplication<App>;
   let prisma: PrismaService;
-  const password = 'correct horse battery';
+  const password = TEST_PASSWORD;
   const emails: string[] = [];
 
   const http = () => request(app.getHttpServer());
-  const bearer = (token: string) => ({ Authorization: `Bearer ${token}` });
-
-  async function signUp(role: 'user' | 'admin' = 'user') {
-    const email = `user-${randomUUID()}@example.com`;
-    emails.push(email);
-    const reg = await http()
-      .post('/auth/register')
-      .send({ email, password })
-      .expect(201);
-    if (role === 'user') {
-      return {
-        email,
-        id: (await prisma.user.findUniqueOrThrow({ where: { email } })).id,
-        token: reg.body.accessToken as string,
-        cookie: refreshCookie(reg),
-      };
-    }
-    const user = await prisma.user.update({ where: { email }, data: { role } });
-    const login = await http()
-      .post('/auth/login')
-      .send({ email, password })
-      .expect(200);
-    return {
-      email,
-      id: user.id,
-      token: login.body.accessToken as string,
-      cookie: refreshCookie(login),
-    };
-  }
+  const signUp = (role?: 'user' | 'admin') => signUp_(app, emails, role);
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -48,56 +27,59 @@ describe('Users (e2e)', () => {
   });
 
   afterAll(async () => {
+    await prisma.shop.deleteMany({
+      where: { owner: { email: { in: emails } } },
+    });
     await prisma.user.deleteMany({ where: { email: { in: emails } } });
     await app.close();
   });
 
   describe('profile', () => {
-    it('updates and clears profile fields', async () => {
-      const { email, token } = await signUp();
+    const patchMe = (token: string, body: Record<string, unknown>) =>
+      http().patch('/users/me').set(bearer(token)).send(body);
 
-      const updated = await http()
-        .patch('/users/me')
-        .set(bearer(token))
-        .send({ displayName: '  An Nguyen ' })
-        .expect(200);
-      expect(updated.body).toMatchObject({
-        email,
-        displayName: 'An Nguyen',
-      });
+    it('lets any user change the username once per 30 days', async () => {
+      const { id, email, token } = await signUp();
+      const wanted = testUsername();
+
+      const updated = await patchMe(token, {
+        username: wanted.toUpperCase(),
+      }).expect(200);
+      expect(updated.body).toMatchObject({ email, username: wanted });
+      expect(updated.body.usernameChangedAt).toEqual(expect.any(String));
       expect(updated.body).not.toHaveProperty('passwordHash');
 
-      const cleared = await http()
-        .patch('/users/me')
-        .set(bearer(token))
-        .send({ displayName: null })
-        .expect(200);
-      expect(cleared.body).toMatchObject({ displayName: null });
-      expect(cleared.body).not.toHaveProperty('phone');
+      await patchMe(token, { username: wanted }).expect(200);
+      await patchMe(token, { username: testUsername() }).expect(409);
+
+      await prisma.user.update({
+        where: { id },
+        data: {
+          usernameChangedAt: new Date(Date.now() - 31 * 24 * 60 * 60 * 1000),
+        },
+      });
+      await patchMe(token, { username: testUsername() }).expect(200);
+    });
+
+    it('rejects a taken username', async () => {
+      const other = await signUp();
+      const { token } = await signUp();
+      await patchMe(token, { username: other.username }).expect(409);
     });
 
     it('rejects invalid input and protected fields', async () => {
       const { token } = await signUp();
-      await http()
-        .patch('/users/me')
-        .set(bearer(token))
-        .send({ phone: '0912345678' })
-        .expect(400);
-      await http()
-        .patch('/users/me')
-        .set(bearer(token))
-        .send({ displayName: '   ' })
-        .expect(400);
-      await http()
-        .patch('/users/me')
-        .set(bearer(token))
-        .send({ role: 'admin' })
-        .expect(400);
-      await http()
-        .patch('/users/me')
-        .set(bearer(token))
-        .send({ email: 'x@example.com' })
-        .expect(400);
+      for (const username of [
+        'abcd',
+        'has space',
+        'bad-dash',
+        'a'.repeat(31),
+      ]) {
+        await patchMe(token, { username }).expect(400);
+      }
+      await patchMe(token, { displayName: 'An' }).expect(400);
+      await patchMe(token, { role: 'admin' }).expect(400);
+      await patchMe(token, { email: 'x@example.com' }).expect(400);
     });
   });
 
