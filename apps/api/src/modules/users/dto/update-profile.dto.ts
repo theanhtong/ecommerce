@@ -1,8 +1,8 @@
-import { IsOptional } from 'class-validator';
+import { Omittable } from '../../../common/omittable.js';
 import { IsUsername } from '../../../common/username.js';
 
 export class UpdateProfileDto {
-  @IsOptional()
+  @Omittable()
   @IsUsername()
   username?: string;
 }
