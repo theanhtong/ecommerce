@@ -6,7 +6,11 @@ import {
 } from '@nestjs/common';
 import { ItemStatus, Prisma, ShopStatus } from '@ecommerce/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import { available, publicWhere } from '../catalog/items.service.js';
+import {
+  available,
+  publicWhere,
+  variationName,
+} from '../catalog/items.service.js';
 import type { AddCartItemDto } from './dto/cart-item.dto.js';
 
 export const MAX_CART_MODELS = 200;
@@ -39,10 +43,7 @@ const lineView = ({ model, ...line }: Line) => {
     modelId: model.id,
     itemId: item.id,
     itemName: item.name,
-    variation:
-      model.tierIndex
-        .map((option, t) => item.tierVariations[t]?.options[option]?.option)
-        .join(', ') || null,
+    variation: variationName(model.tierIndex, item.tierVariations),
     addedPrice: line.addedPrice,
     price: model.price,
     priceChange: model.price - line.addedPrice,
@@ -83,7 +84,7 @@ export class CartService {
 
   async add(userId: string, dto: AddCartItemDto) {
     const model = await this.prisma.model.findFirst({
-      where: { id: dto.modelId, item: publicWhere },
+      where: { id: dto.modelId, deletedAt: null, item: publicWhere },
       include: { inventory: true, item: { include: { shop: true } } },
     });
     if (!model) throw new NotFoundException('Model not found');

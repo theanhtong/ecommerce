@@ -16,19 +16,21 @@ interface CallOptions {
   token?: string;
   body?: unknown;
   form?: FormData;
+  headers?: Record<string, string>;
 }
 
 async function call(
   method: string,
   path: string,
   expected: number,
-  { token, body, form }: CallOptions = {},
+  { token, body, form, headers }: CallOptions = {},
 ) {
   const res = await fetch(`${API}${path}`, {
     method,
     headers: {
       ...(body !== undefined && { 'Content-Type': 'application/json' }),
       ...(token && { Authorization: `Bearer ${token}` }),
+      ...headers,
     },
     body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
   });
@@ -60,12 +62,15 @@ async function resetDatabase() {
     await db.query('BEGIN');
     // Items cascade to variations, models, inventory and stock movements; shops to their address;
     // users to sessions, carts and addresses. Provinces and wards are reference data and stay.
+    // Orders reference models and shops, so they go first (items and history cascade).
+    const orders = await db.query('DELETE FROM orders');
+    await db.query('DELETE FROM checkouts');
     const items = await db.query('DELETE FROM items');
     const shops = await db.query('DELETE FROM shops');
     const users = await db.query("DELETE FROM users WHERE role <> 'admin'");
     await db.query('COMMIT');
     console.log(
-      `  deleted ${items.rowCount} items, ${shops.rowCount} shops, ${users.rowCount} non-admin users (and their sessions)`,
+      `  deleted ${orders.rowCount} orders, ${items.rowCount} items, ${shops.rowCount} shops, ${users.rowCount} non-admin users (and their sessions)`,
     );
   } catch (error) {
     await db.query('ROLLBACK');
@@ -154,6 +159,7 @@ async function main() {
     body: {
       name: 'Áo thun cotton',
       description: 'Cotton 100%, form rộng',
+      weight: 300,
       tierVariations: [
         { name: 'Màu', options: ['Trắng', 'Đen'] },
         { name: 'Size', options: ['M', 'L'] },
@@ -170,6 +176,7 @@ async function main() {
     token: seller.accessToken,
     body: {
       name: 'Cốc gỗ khắc tên',
+      weight: 250,
       tierVariations: [],
       models: [{ tierIndex: [], price: 89000, stock: 30 }],
     },
@@ -239,6 +246,7 @@ async function main() {
     token: buyer.accessToken,
     body: {
       name: 'Không có shop',
+      weight: 100,
       tierVariations: [],
       models: [{ tierIndex: [], price: 1000, stock: 1 }],
     },
@@ -374,6 +382,54 @@ async function main() {
       `    ${a.isDefault ? '*' : ' '} ${a.recipientName}, ${a.phone}, ${a.street}, ${a.ward.name}, ${a.province.name}`,
     );
   }
+
+  step('13. Buyer checks out the whole cart; one order per shop');
+  const placed = await call('POST', '/checkout', 201, {
+    token: buyer.accessToken,
+    body: {
+      cartItemIds: cart.shops.flatMap((g: { items: { id: string }[] }) =>
+        g.items.map((l) => l.id),
+      ),
+      addressId: workAddress.id,
+    },
+    headers: { 'Idempotency-Key': `demo-${Date.now()}` },
+  });
+  for (const o of placed.orders) {
+    console.log(
+      `    ${o.shop.name.padEnd(14)} items ${o.itemsTotal}đ + ship ${o.shippingFee}đ = ${o.total}đ (${o.pickupAddress.province.name} → ${o.shippingAddress.province.name})`,
+    );
+  }
+  await call('GET', '/cart', 200, { token: buyer.accessToken });
+
+  step('14. Seller 1 ships and the buyer confirms; seller 2 cancels');
+  const order1 = placed.orders.find(
+    (o: { shop: { id: string } }) => o.shop.id === shop.id,
+  );
+  const order2 = placed.orders.find(
+    (o: { shop: { id: string } }) => o.shop.id === shop2.id,
+  );
+  await call('POST', `/orders/${order1.id}/ship`, 403, {
+    token: buyer.accessToken,
+  });
+  await call('POST', `/orders/${order1.id}/ship`, 200, {
+    token: seller.accessToken,
+  });
+  const received = await call('POST', `/orders/${order1.id}/receive`, 200, {
+    token: buyer.accessToken,
+  });
+  console.log(
+    `    ${order1.shop.name}: ${received.history.map((h: { to: string }) => h.to).join(' → ')}`,
+  );
+  const cancelled = await call('POST', `/orders/${order2.id}/cancel`, 200, {
+    token: seller2.accessToken,
+  });
+  console.log(
+    `    ${order2.shop.name}: ${cancelled.history.map((h: { to: string }) => h.to).join(' → ')}`,
+  );
+  const shirtAfter = await call('GET', `/items/${shirt.id}`, 200);
+  console.log(
+    `    white/M stock after shipping 3: ${shirtAfter.models.find((m: { id: string }) => m.id === whiteM.id).stock}`,
+  );
 
   console.log(
     `\nDone. Data is kept in the dev database; open it with pnpm db:studio.`,

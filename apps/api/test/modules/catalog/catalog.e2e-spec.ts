@@ -9,6 +9,7 @@ type Account = Awaited<ReturnType<typeof signUp>>;
 
 const shirt = () => ({
   name: `Áo thun ${randomUUID().slice(0, 6)}`,
+  weight: 300,
   description: 'Cotton 100%',
   tierVariations: [
     { name: 'Màu', options: ['Đỏ', 'Xanh'] },
@@ -24,6 +25,7 @@ const shirt = () => ({
 
 const mug = () => ({
   name: `Cốc sứ ${randomUUID().slice(0, 6)}`,
+  weight: 250,
   tierVariations: [],
   models: [{ tierIndex: [], price: 50000, stock: 20 }],
 });
@@ -206,7 +208,22 @@ describe('Catalog (e2e)', () => {
       expect(replaced.body.models).toEqual([
         expect.objectContaining({ tierIndex: [0], price: 99000 }),
       ]);
-      expect(await prisma.model.count({ where: { itemId: item.id } })).toBe(1);
+      // Old models are kept for past orders but are no longer sellable or editable.
+      expect(
+        await prisma.model.count({
+          where: { itemId: item.id, deletedAt: { not: null } },
+        }),
+      ).toBe(4);
+      await as(s)
+        .patch(`/models/${item.models[0].id}`, { price: 1000 })
+        .expect(404);
+      const again = await as(s)
+        .put(`/items/${item.id}/variations`, {
+          tierVariations: [{ name: 'Màu', options: ['Đen'] }],
+          models: [{ tierIndex: [0], price: 99000, stock: 1 }],
+        })
+        .expect(200);
+      expect(again.body.models).toHaveLength(1);
     });
 
     it("hides other sellers' items and models behind 404", async () => {

@@ -1,15 +1,15 @@
-﻿Mã sản phẩm,Tên sản phẩm,Mô tả,Tên phân loại 1,Phân loại 1,Tên phân loại 2,Phân loại 2,Giá,Tồn kho,SKU phân loại
-GHE-001,Ghế đẩu gỗ,"Gỗ cao su, chân chống trượt",Màu,Tự nhiên,Chiều cao,45 cm,180000,10,GHE-TN-45
-GHE-001,Ghế đẩu gỗ,"Gỗ cao su, chân chống trượt",Màu,Tự nhiên,Chiều cao,60 cm,210000,8,GHE-TN-60
-GHE-001,Ghế đẩu gỗ,"Gỗ cao su, chân chống trượt",Màu,Nâu,Chiều cao,45 cm,190000,5,GHE-NAU-45
-GHE-001,Ghế đẩu gỗ,"Gỗ cao su, chân chống trượt",Màu,Nâu,Chiều cao,60 cm,220000,0,GHE-NAU-60
-KE-001,Kệ sách gỗ thông,Lắp ráp dễ dàng,Số tầng,3 tầng,,,450000,12,KE-3T
-KE-001,Kệ sách gỗ thông,Lắp ráp dễ dàng,Số tầng,4 tầng,,,550000,15,KE-4T
-KE-001,Kệ sách gỗ thông,Lắp ráp dễ dàng,Số tầng,5 tầng,,,650000,9,KE-5T
-COC-001,Cốc gỗ khắc tên,Gỗ thông tự nhiên,,,,,89000,30,COC-GO
-BAN-001,Bàn học gỗ sồi,"Kích thước 120 x 60 cm, chịu lực 50kg",Màu,Sồi tự nhiên,,,1250000,4,BAN-SOI
-BAN-001,Bàn học gỗ sồi,"Kích thước 120 x 60 cm, chịu lực 50kg",Màu,Óc chó,,,1450000,2,BAN-OCCHO
-DEN-001,Đèn ngủ gỗ để bàn,,Màu,Vàng,Kiểu,Tròn,210000,6,DEN-VANG-TRON
-DEN-001,Đèn ngủ gỗ để bàn,,Màu,Vàng,Kiểu,Vuông,230000,3,DEN-VANG-VUONG
-DEN-001,Đèn ngủ gỗ để bàn,,Màu,Trắng,Kiểu,Tròn,210000,7,DEN-TRANG-TRON
-DEN-001,Đèn ngủ gỗ để bàn,,Màu,Trắng,Kiểu,Vuông,230000,0,DEN-TRANG-VUONG
+﻿Mã sản phẩm,Tên sản phẩm,Mô tả,Cân nặng (g),Tên phân loại 1,Phân loại 1,Tên phân loại 2,Phân loại 2,Giá,Tồn kho,SKU phân loại
+GHE-001,Ghế đẩu gỗ,"Gỗ cao su, chân chống trượt",3000,Màu,Tự nhiên,Chiều cao,45 cm,180000,10,GHE-TN-45
+GHE-001,Ghế đẩu gỗ,"Gỗ cao su, chân chống trượt",3000,Màu,Tự nhiên,Chiều cao,60 cm,210000,8,GHE-TN-60
+GHE-001,Ghế đẩu gỗ,"Gỗ cao su, chân chống trượt",3000,Màu,Nâu,Chiều cao,45 cm,190000,5,GHE-NAU-45
+GHE-001,Ghế đẩu gỗ,"Gỗ cao su, chân chống trượt",3000,Màu,Nâu,Chiều cao,60 cm,220000,0,GHE-NAU-60
+KE-001,Kệ sách gỗ thông,Lắp ráp dễ dàng,8000,Số tầng,3 tầng,,,450000,12,KE-3T
+KE-001,Kệ sách gỗ thông,Lắp ráp dễ dàng,8000,Số tầng,4 tầng,,,550000,15,KE-4T
+KE-001,Kệ sách gỗ thông,Lắp ráp dễ dàng,8000,Số tầng,5 tầng,,,650000,9,KE-5T
+COC-001,Cốc gỗ khắc tên,Gỗ thông tự nhiên,250,,,,,89000,30,COC-GO
+BAN-001,Bàn học gỗ sồi,"Kích thước 120 x 60 cm, chịu lực 50kg",15000,Màu,Sồi tự nhiên,,,1250000,4,BAN-SOI
+BAN-001,Bàn học gỗ sồi,"Kích thước 120 x 60 cm, chịu lực 50kg",15000,Màu,Óc chó,,,1450000,2,BAN-OCCHO
+DEN-001,Đèn ngủ gỗ để bàn,,1200,Màu,Vàng,Kiểu,Tròn,210000,6,DEN-VANG-TRON
+DEN-001,Đèn ngủ gỗ để bàn,,1200,Màu,Vàng,Kiểu,Vuông,230000,3,DEN-VANG-VUONG
+DEN-001,Đèn ngủ gỗ để bàn,,1200,Màu,Trắng,Kiểu,Tròn,210000,7,DEN-TRANG-TRON
+DEN-001,Đèn ngủ gỗ để bàn,,1200,Màu,Trắng,Kiểu,Vuông,230000,0,DEN-TRANG-VUONG

@@ -10,6 +10,7 @@ type Account = Awaited<ReturnType<typeof signUp>>;
 
 const shirt = () => ({
   name: `Áo thun ${randomUUID().slice(0, 6)}`,
+  weight: 300,
   tierVariations: [
     { name: 'Màu', options: ['Đỏ', 'Xanh'] },
     { name: 'Size', options: ['M', 'L'] },
@@ -24,6 +25,7 @@ const shirt = () => ({
 
 const mug = () => ({
   name: `Cốc sứ ${randomUUID().slice(0, 6)}`,
+  weight: 250,
   tierVariations: [],
   models: [{ tierIndex: [], price: 50000, stock: 20 }],
 });

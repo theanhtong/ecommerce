@@ -23,11 +23,15 @@ const detailInclude = {
     orderBy: { position: 'asc' },
     include: { options: { orderBy: { position: 'asc' } } },
   },
-  models: { orderBy: { id: 'asc' }, include: modelInclude },
+  models: {
+    where: { deletedAt: null },
+    orderBy: { id: 'asc' },
+    include: modelInclude,
+  },
 } satisfies Prisma.ItemInclude;
 
 const summaryInclude = {
-  models: { include: modelInclude },
+  models: { where: { deletedAt: null }, include: modelInclude },
 } satisfies Prisma.ItemInclude;
 
 type ModelWithInventory = Prisma.ModelGetPayload<{
@@ -35,6 +39,15 @@ type ModelWithInventory = Prisma.ModelGetPayload<{
 }>;
 type ItemDetail = Prisma.ItemGetPayload<{ include: typeof detailInclude }>;
 type ItemSummary = Prisma.ItemGetPayload<{ include: typeof summaryInclude }>;
+
+// "Đỏ, M" for a two-tier model, null for an item without variations.
+export const variationName = (
+  tierIndex: number[],
+  tierVariations: { options: { option: string }[] }[],
+) =>
+  tierIndex
+    .map((option, t) => tierVariations[t]?.options[option]?.option)
+    .join(', ') || null;
 
 export const available = (m: ModelWithInventory) =>
   m.inventory ? m.inventory.onHand - m.inventory.reserved : 0;
@@ -135,6 +148,7 @@ export class ItemsService {
           parentSku: dto.parentSku,
           name: dto.name,
           description: dto.description,
+          weight: dto.weight,
           ...variationsCreate(dto, ownerId),
         },
         include: detailInclude,
@@ -152,7 +166,11 @@ export class ItemsService {
     await this.writableItem(ownerId, id);
     const item = await this.prisma.item.update({
       where: { id },
-      data: { name: dto.name, description: dto.description },
+      data: {
+        name: dto.name,
+        description: dto.description,
+        weight: dto.weight,
+      },
       include: detailInclude,
     });
     return detailView(item, true);
@@ -172,8 +190,15 @@ export class ItemsService {
     await this.writableItem(ownerId, id);
     validateVariations(dto.tierVariations, dto.models);
     const item = await this.prisma.$transaction(async (tx) => {
+      // Old models stay for the orders that reference them; carts drop them.
+      await tx.cartItem.deleteMany({
+        where: { model: { itemId: id, deletedAt: null } },
+      });
+      await tx.model.updateMany({
+        where: { itemId: id, deletedAt: null },
+        data: { deletedAt: new Date() },
+      });
       await tx.tierVariation.deleteMany({ where: { itemId: id } });
-      await tx.model.deleteMany({ where: { itemId: id } });
       return tx.item.update({
         where: { id },
         data: variationsCreate(dto, ownerId),
@@ -305,7 +330,7 @@ export class ItemsService {
 
   private async writableModel(ownerId: string, modelId: string) {
     const model = await this.prisma.model.findFirst({
-      where: { id: modelId, item: { shop: { ownerId } } },
+      where: { id: modelId, deletedAt: null, item: { shop: { ownerId } } },
       include: { item: { include: { shop: true } } },
     });
     if (!model) throw new NotFoundException('Model not found');

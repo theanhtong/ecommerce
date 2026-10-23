@@ -8,7 +8,7 @@ import { bearer, createTestApp, signUp } from '../../support/helpers.js';
 type Account = Awaited<ReturnType<typeof signUp>>;
 
 const HEADER =
-  'Mã sản phẩm,Tên sản phẩm,Mô tả,Tên phân loại 1,Phân loại 1,Tên phân loại 2,Phân loại 2,Giá,Tồn kho,SKU phân loại';
+  'Mã sản phẩm,Tên sản phẩm,Mô tả,Cân nặng (g),Tên phân loại 1,Phân loại 1,Tên phân loại 2,Phân loại 2,Giá,Tồn kho,SKU phân loại';
 
 describe('Catalog CSV import (e2e)', () => {
   let app: INestApplication<App>;
@@ -113,13 +113,13 @@ describe('Catalog CSV import (e2e)', () => {
     const s = await seller();
     const csv = [
       HEADER,
-      'OK-1,"Bàn gỗ, sồi",Chắc chắn,,,,,1200000,3,',
-      'BAD-PRICE,Ghế,,,,,,0,3,',
-      'BAD-NUM,Kệ,,,,,,"1.000",3,',
-      'GAP,Áo,,Màu,Đỏ,Size,M,100000,1,',
-      'GAP,Áo,,Màu,Xanh,Size,L,100000,1,',
-      ',Không mã,,,,,,1000,1,',
-      `LONG,Tên dài,,Màu,${'x'.repeat(31)},,,1000,1,`,
+      'OK-1,"Bàn gỗ, sồi",Chắc chắn,500,,,,,1200000,3,',
+      'BAD-PRICE,Ghế,,500,,,,,0,3,',
+      'BAD-NUM,Kệ,,500,,,,,"1.000",3,',
+      'GAP,Áo,,500,Màu,Đỏ,Size,M,100000,1,',
+      'GAP,Áo,,500,Màu,Xanh,Size,L,100000,1,',
+      ',Không mã,,500,,,,,1000,1,',
+      `LONG,Tên dài,,500,Màu,${'x'.repeat(31)},,,1000,1,`,
     ].join('\n');
 
     const res = await upload(s, csv).expect(200);
@@ -145,7 +145,7 @@ describe('Catalog CSV import (e2e)', () => {
 
   it('refuses to import the same parent_sku twice', async () => {
     const s = await seller();
-    const csv = `${HEADER}\nDUP-1,Đèn bàn,,,,,,250000,4,\n`;
+    const csv = `${HEADER}\nDUP-1,Đèn bàn,,500,,,,,250000,4,\n`;
     await upload(s, csv).expect(200);
     const again = await upload(s, csv).expect(200);
     expect(again.body).toMatchObject({ created: 0, failed: 1 });
@@ -163,19 +163,22 @@ describe('Catalog CSV import (e2e)', () => {
     await upload(s, 'parent_sku,name\nA,B\n').expect(400);
     await upload(s, `${HEADER}\n`).expect(400);
     await upload(s, `${HEADER}\nA,"broken`).expect(400);
-    await upload(s, `${HEADER}\nA,B,,,,,,1,1,`, 'items.xlsx').expect(400);
+    await upload(s, `${HEADER}\nA,B,,500,,,,,1,1,`, 'items.xlsx').expect(400);
     await http().post('/items/imports').set(bearer(s.token)).expect(400);
 
     const tooMany = [
       HEADER,
-      ...Array.from({ length: 1001 }, (_, i) => `P${i},Sp ${i},,,,,,1000,1,`),
+      ...Array.from(
+        { length: 1001 },
+        (_, i) => `P${i},Sp ${i},,500,,,,,1000,1,`,
+      ),
     ];
     await upload(s, tooMany.join('\n')).expect(400);
     expect(await prisma.item.count({ where: { shopId: s.shopId } })).toBe(0);
   });
 
   it('requires an active shop', async () => {
-    const csv = `${HEADER}\nX-1,Sản phẩm,,,,,,1000,1,\n`;
+    const csv = `${HEADER}\nX-1,Sản phẩm,,500,,,,,1000,1,\n`;
     const buyer = await signUp(app, emails);
     await upload(buyer, csv).expect(403);
     await upload(await seller(false), csv).expect(403);

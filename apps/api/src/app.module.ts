@@ -6,6 +6,7 @@ import { AppService } from './app.service.js';
 import { AddressesModule } from './modules/addresses/addresses.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CartModule } from './modules/cart/cart.module.js';
+import { OrdersModule } from './modules/orders/orders.module.js';
 import { RegionsModule } from './modules/regions/regions.module.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { ShopsModule } from './modules/shops/shops.module.js';
@@ -23,6 +24,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     CartModule,
     RegionsModule,
     AddressesModule,
+    OrdersModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
