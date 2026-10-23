@@ -105,6 +105,33 @@ describe('Roles: admin, buyer and seller (e2e)', () => {
   });
 
   describe('admin', () => {
+    it('cannot buy or sell, but still reads public pages', async () => {
+      const blocked: [string, string][] = [
+        ['get', '/cart'],
+        ['post', '/cart/items'],
+        ['post', '/checkout'],
+        ['get', '/orders'],
+        ['get', '/addresses'],
+        ['post', '/shops'],
+        ['get', '/shops/me'],
+        ['get', '/shops/me/orders'],
+        ['get', '/shops/me/wallet'],
+        ['post', '/items'],
+        ['get', '/items/mine'],
+        ['get', '/items/imports/template'],
+      ];
+      for (const [method, url] of blocked) {
+        const res =
+          method === 'get'
+            ? await as(admin).get(url)
+            : await as(admin).post(url, {});
+        expect([url, res.status]).toEqual([url, 403]);
+      }
+      await as(admin).get('/items').expect(200);
+      await as(admin).get(`/shops/${shopId}`).expect(200);
+      await as(admin).get('/users/me').expect(200);
+    });
+
     it('sees both accounts and the shop', async () => {
       const users = await as(admin).get('/admin/users?limit=100').expect(200);
       const ids = users.body.items.map((u: { id: string }) => u.id);

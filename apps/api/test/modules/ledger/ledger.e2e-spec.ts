@@ -147,7 +147,46 @@ describe('Ledger (e2e)', () => {
 
     const platform = await as(admin).get('/admin/ledger/accounts').expect(200);
     expect(platform.body.total).toBe(0);
+    expect(
+      platform.body.items.find(
+        (a: { shop: { id: string } | null }) => a.shop?.id === placed.shop.id,
+      ),
+    ).toMatchObject({ type: 'wallet', shop: placed.shop });
     await as(s).get('/admin/ledger/accounts').expect(403);
+
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+    }).format(new Date());
+    const daily = await as(admin)
+      .get('/admin/ledger/report?range=30d')
+      .expect(200);
+    expect(daily.body.series).toHaveLength(30);
+    const current = daily.body.series.at(-1);
+    expect(current.period).toBe(today);
+    expect(current.orders).toBeGreaterThanOrEqual(1);
+    expect(current.profit).toBeGreaterThanOrEqual(5_000);
+    expect(daily.body.totals).toMatchObject({
+      orders: expect.any(Number),
+      averageOrder: expect.any(Number),
+      newUsers: expect.any(Number),
+      newShops: expect.any(Number),
+      cancelledOrders: expect.any(Number),
+    });
+    expect(daily.body.totals.profit).toBeGreaterThanOrEqual(current.profit);
+
+    const hourly = await as(admin)
+      .get('/admin/ledger/report?range=today')
+      .expect(200);
+    expect(hourly.body.series).toHaveLength(24);
+    const monthly = await as(admin)
+      .get('/admin/ledger/report?range=12m')
+      .expect(200);
+    expect(monthly.body.series).toHaveLength(12);
+    expect(monthly.body.series.at(-1).profit).toBeGreaterThanOrEqual(
+      current.profit,
+    );
+    await as(admin).get('/admin/ledger/report?range=1y').expect(400);
+    await as(s).get('/admin/ledger/report?range=30d').expect(403);
   });
 
   it('posts nothing for orders that do not complete', async () => {
