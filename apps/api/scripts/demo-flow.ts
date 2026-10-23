@@ -1,4 +1,4 @@
-// Resets the dev database (keeps admins) and drives the marketplace flow through the running API.
+// Resets the dev database (keeps admins, provinces and wards) and drives the marketplace flow through the running API.
 import { existsSync, readFileSync } from 'node:fs';
 import pg from 'pg';
 
@@ -51,8 +51,15 @@ async function resetDatabase() {
   const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
   await db.connect();
   try {
+    const { rows } = await db.query<{ wards: number }>(
+      'SELECT count(*)::int AS wards FROM wards',
+    );
+    if (!rows[0].wards) {
+      throw new Error('No wards loaded; run pnpm db:seed first');
+    }
     await db.query('BEGIN');
-    // Items cascade to variations, models, inventory and stock movements.
+    // Items cascade to variations, models, inventory and stock movements; shops to their address;
+    // users to sessions, carts and addresses. Provinces and wards are reference data and stay.
     const items = await db.query('DELETE FROM items');
     const shops = await db.query('DELETE FROM shops');
     const users = await db.query("DELETE FROM users WHERE role <> 'admin'");
@@ -99,6 +106,18 @@ async function main() {
     body: { name: 'Cửa Hàng Demo', description: 'Đồ gỗ thủ công' },
   });
   await call('GET', `/shops/${shop.id}`, 404);
+  const pickup = await call('PUT', '/shops/me/address', 200, {
+    token: seller.accessToken,
+    body: {
+      contactName: 'Kho Cửa Hàng Demo',
+      phone: '0901 234 567',
+      wardCode: '00070',
+      street: '12 Hàng Bài',
+    },
+  });
+  console.log(
+    `    pickup and return address: ${pickup.street}, ${pickup.ward.name}, ${pickup.province.name}`,
+  );
 
   step('3. Admin logs in and approves the shop');
   const admin = await call('POST', '/auth/login', 200, {
@@ -237,6 +256,15 @@ async function main() {
     token: admin.accessToken,
     body: { status: 'active' },
   });
+  await call('PUT', '/shops/me/address', 200, {
+    token: seller2.accessToken,
+    body: {
+      contactName: 'Xưởng Nhà Gỗ Demo',
+      phone: '0377 888 999',
+      wardCode: '26740',
+      street: '45 Nguyễn Huệ',
+    },
+  });
   const template = await call('GET', '/items/imports/template', 200, {
     token: seller2.accessToken,
   });
@@ -315,6 +343,36 @@ async function main() {
         `      ${line.itemName} (${line.variation ?? '-'}) x${line.quantity}, ${line.price}đ${line.priceChange ? ` (${line.priceChange > 0 ? '+' : ''}${line.priceChange}đ since added at ${line.addedPrice}đ)` : ''}`,
       );
     }
+  }
+
+  step('12. Buyer saves two delivery addresses');
+  const address = (body: object) =>
+    call('POST', '/addresses', 201, { token: buyer.accessToken, body });
+  const homeAddress = await address({
+    recipientName: 'Nguyễn Văn Demo',
+    phone: '0912 345 678',
+    wardCode: '00004',
+    street: '144 Xuân Thủy',
+  });
+  const workAddress = await address({
+    recipientName: 'Nguyễn Văn Demo',
+    phone: '0389123456',
+    wardCode: '26740',
+    street: '2 Hải Triều',
+  });
+  await call('DELETE', `/addresses/${homeAddress.id}`, 409, {
+    token: buyer.accessToken,
+  });
+  await call('PUT', `/addresses/${workAddress.id}/default`, 200, {
+    token: buyer.accessToken,
+  });
+  const book = await call('GET', '/addresses', 200, {
+    token: buyer.accessToken,
+  });
+  for (const a of book) {
+    console.log(
+      `    ${a.isDefault ? '*' : ' '} ${a.recipientName}, ${a.phone}, ${a.street}, ${a.ward.name}, ${a.province.name}`,
+    );
   }
 
   console.log(
