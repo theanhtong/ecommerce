@@ -29,6 +29,11 @@ export class AdminUsersController {
     return this.users.list(query);
   }
 
+  @Get(':id')
+  get(@Param('id', ParseUUIDPipe) id: string) {
+    return this.users.getForAdmin(id);
+  }
+
   @Patch(':id/status')
   updateStatus(
     @CurrentUser() admin: AccessTokenPayload,
