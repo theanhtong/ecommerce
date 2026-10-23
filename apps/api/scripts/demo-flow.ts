@@ -62,6 +62,7 @@ async function resetDatabase() {
     await db.query('BEGIN');
     // Items cascade to variations, models, inventory and stock movements; shops to their address;
     // users to sessions, carts and addresses. Provinces and wards are reference data and stay.
+    await db.query('TRUNCATE ledger_lines, ledger_entries, ledger_accounts');
     // Orders reference models and shops, so they go first (items and history cascade).
     const orders = await db.query('DELETE FROM orders');
     await db.query('DELETE FROM checkouts');
@@ -433,6 +434,12 @@ async function main() {
   });
   console.log(
     `    ${order1.shop.name}: ${received.history.map((h: { to: string }) => h.to).join(' → ')}`,
+  );
+  const wallet = await call('GET', '/shops/me/wallet', 200, {
+    token: seller.accessToken,
+  });
+  console.log(
+    `    ${order1.shop.name} wallet: ${wallet.balance}đ (items ${received.itemsTotal}đ minus commission)`,
   );
   const cancelled = await call('POST', `/orders/${order2.id}/cancel`, 200, {
     token: seller2.accessToken,
