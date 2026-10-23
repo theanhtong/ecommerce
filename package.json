@@ -5,6 +5,8 @@
   "scripts": {
     "dev:api": "pnpm --filter @ecommerce/api start:dev",
     "dev:worker": "pnpm --filter @ecommerce/worker start:dev",
+    "dev:web": "pnpm --filter @ecommerce/web dev",
+    "dev": "pnpm run \"/^dev:(api|web)$/\"",
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @ecommerce/api test:e2e",
