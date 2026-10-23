@@ -33,6 +33,7 @@ model User {
   updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
   sessions          Session[]
   shop              Shop?
+  cartItems         CartItem[]
 
   @@map("users")
 }
@@ -140,6 +141,7 @@ model Model {
   item      Item                @relation(fields: [itemId], references: [id], onDelete: Cascade)
   inventory Inventory?
   movements InventoryMovement[]
+  cartItems CartItem[]
 
   @@unique([itemId, tierIndex])
   @@map("models")
@@ -182,4 +184,22 @@ model InventoryMovement {
 
   @@index([modelId, createdAt])
   @@map("inventory_movements")
+}
+
+// One line per user and model; stock is not reserved until checkout.
+model CartItem {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  modelId    String   @map("model_id") @db.Uuid
+  quantity   Int
+  // Model price when last added, so the cart can show how the price moved since.
+  addedPrice Int      @map("added_price")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  model      Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, modelId])
+  @@index([modelId])
+  @@map("cart_items")
 }

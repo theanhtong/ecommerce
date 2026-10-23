@@ -282,6 +282,41 @@ async function main() {
     );
   }
 
+  step('11. Buyer fills a cart from both shops; seller then cuts a price');
+  const whiteM = shirt.models.find(
+    (m: { tierIndex: number[] }) => m.tierIndex.join() === '0,0',
+  );
+  const deskId = listing2.items.find(
+    (i: { name: string }) => i.name === 'Bàn học gỗ sồi',
+  ).id;
+  const desk = await call('GET', `/items/${deskId}`, 200);
+  const cartAdd = (modelId: string, quantity: number, expected: number) =>
+    call('POST', '/cart/items', expected, {
+      token: buyer.accessToken,
+      body: { modelId, quantity },
+    });
+  await cartAdd(whiteM.id, 2, 201);
+  await cartAdd(whiteM.id, 1, 201);
+  await cartAdd(desk.models[0].id, 1, 201);
+  await cartAdd(desk.models[1].id, 5, 409);
+  await call('POST', '/cart/items', 403, {
+    token: seller.accessToken,
+    body: { modelId: whiteM.id, quantity: 1 },
+  });
+  await call('PATCH', `/models/${whiteM.id}`, 200, {
+    token: seller.accessToken,
+    body: { price: 139000 },
+  });
+  const cart = await call('GET', '/cart', 200, { token: buyer.accessToken });
+  for (const group of cart.shops) {
+    console.log(`    ${group.shop.name}`);
+    for (const line of group.items) {
+      console.log(
+        `      ${line.itemName} (${line.variation ?? '-'}) x${line.quantity}, ${line.price}đ${line.priceChange ? ` (${line.priceChange > 0 ? '+' : ''}${line.priceChange}đ since added at ${line.addedPrice}đ)` : ''}`,
+      );
+    }
+  }
+
   console.log(
     `\nDone. Data is kept in the dev database; open it with pnpm db:studio.`,
   );

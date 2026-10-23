@@ -36,7 +36,7 @@ type ModelWithInventory = Prisma.ModelGetPayload<{
 type ItemDetail = Prisma.ItemGetPayload<{ include: typeof detailInclude }>;
 type ItemSummary = Prisma.ItemGetPayload<{ include: typeof summaryInclude }>;
 
-const available = (m: ModelWithInventory) =>
+export const available = (m: ModelWithInventory) =>
   m.inventory ? m.inventory.onHand - m.inventory.reserved : 0;
 
 // Buyers only see what can be bought; sellers also see on-hand and reserved stock.
@@ -103,7 +103,7 @@ const variationsCreate = (dto: VariationsDto, actorId: string) => ({
   },
 });
 
-const publicWhere = {
+export const publicWhere = {
   status: ItemStatus.active,
   shop: { status: ShopStatus.active },
 } satisfies Prisma.ItemWhereInput;
