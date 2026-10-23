@@ -8,6 +8,7 @@ import {
   InventoryReason,
   ItemStatus,
   OrderStatus,
+  PaymentMethod,
   Prisma,
   ShopStatus,
 } from '@ecommerce/db';
@@ -85,8 +86,13 @@ export class CheckoutService {
     for (const line of lines) this.assertPurchasable(buyerId, line);
 
     const checkout = await tx.checkout.create({
-      data: { buyerId, idempotencyKey },
+      data: { buyerId, idempotencyKey, paymentMethod: dto.paymentMethod },
     });
+    // Cash on delivery can ship right away; online orders wait for payment, holding their stock.
+    const initialStatus =
+      dto.paymentMethod === PaymentMethod.cod
+        ? OrderStatus.to_ship
+        : OrderStatus.unpaid;
 
     for (const line of [...lines].sort((a, b) =>
       a.modelId.localeCompare(b.modelId),
@@ -140,6 +146,7 @@ export class CheckoutService {
           buyerId,
           shopId: shop.id,
           itemsTotal,
+          status: initialStatus,
           shippingFee: fee,
           total: itemsTotal + fee,
           shippingAddress,
@@ -163,7 +170,7 @@ export class CheckoutService {
             })),
           },
           history: {
-            create: { toStatus: OrderStatus.to_ship, actorId: buyerId },
+            create: { toStatus: initialStatus, actorId: buyerId },
           },
         },
       });

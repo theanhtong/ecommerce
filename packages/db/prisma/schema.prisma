@@ -68,18 +68,19 @@ enum ShopStatus {
 }
 
 model Shop {
-  id            String       @id @default(uuid(7)) @db.Uuid
-  ownerId       String       @unique @map("owner_id") @db.Uuid
-  name          String       @unique
-  nameChangedAt DateTime?    @map("name_changed_at") @db.Timestamptz(3)
+  id            String         @id @default(uuid(7)) @db.Uuid
+  ownerId       String         @unique @map("owner_id") @db.Uuid
+  name          String         @unique
+  nameChangedAt DateTime?      @map("name_changed_at") @db.Timestamptz(3)
   description   String?
-  status        ShopStatus   @default(pending)
-  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
-  owner         User         @relation(fields: [ownerId], references: [id])
+  status        ShopStatus     @default(pending)
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  owner         User           @relation(fields: [ownerId], references: [id])
   items         Item[]
   address       ShopAddress?
   orders        Order[]
+  ledgerAccount LedgerAccount?
 
   @@index([status])
   @@map("shops")
@@ -280,21 +281,32 @@ model ShopAddress {
 }
 
 enum OrderStatus {
+  unpaid
   to_ship
   shipping
+  delivered
   completed
   cancelled
 
   @@map("order_status")
 }
 
+enum PaymentMethod {
+  cod
+  online
+
+  @@map("payment_method")
+}
+
 // One buyer action that may create several orders (one per shop); replays return the same orders.
+// The buyer pays once for the whole checkout, so the payment method lives here.
 model Checkout {
-  id             String   @id @default(uuid(7)) @db.Uuid
-  buyerId        String   @map("buyer_id") @db.Uuid
-  idempotencyKey String   @map("idempotency_key")
-  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  buyer          User     @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  id             String        @id @default(uuid(7)) @db.Uuid
+  buyerId        String        @map("buyer_id") @db.Uuid
+  idempotencyKey String        @map("idempotency_key")
+  paymentMethod  PaymentMethod @map("payment_method")
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  buyer          User          @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   orders         Order[]
 
   @@unique([buyerId, idempotencyKey])
@@ -320,6 +332,7 @@ model Order {
   shop            Shop                 @relation(fields: [shopId], references: [id])
   items           OrderItem[]
   history         OrderStatusHistory[]
+  shipment        Shipment?
 
   @@index([buyerId, status])
   @@index([shopId, status])
@@ -355,4 +368,73 @@ model OrderStatusHistory {
 
   @@index([orderId])
   @@map("order_status_history")
+}
+
+enum ShipmentStatus {
+  awaiting_pickup
+  picked_up
+  delivered
+
+  @@map("shipment_status")
+}
+
+// Created when the seller arranges shipment; the carrier service moves it forward.
+model Shipment {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  orderId     String         @unique @map("order_id") @db.Uuid
+  status      ShipmentStatus @default(awaiting_pickup)
+  pickedUpAt  DateTime?      @map("picked_up_at") @db.Timestamptz(3)
+  deliveredAt DateTime?      @map("delivered_at") @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("shipments")
+}
+
+enum LedgerAccountType {
+  receivable
+  commission
+  shipping
+  wallet
+
+  @@map("ledger_account_type")
+}
+
+model LedgerAccount {
+  id        String            @id @default(uuid(7)) @db.Uuid
+  type      LedgerAccountType
+  shopId    String?           @unique @map("shop_id") @db.Uuid
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  shop      Shop?             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  lines     LedgerLine[]
+
+  @@map("ledger_accounts")
+}
+
+// Balanced entries and append-only rows are enforced by triggers in the migration.
+model LedgerEntry {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  idempotencyKey String       @unique @map("idempotency_key")
+  refType        String       @map("ref_type")
+  refId          String       @map("ref_id") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  lines          LedgerLine[]
+
+  @@index([refType, refId])
+  @@map("ledger_entries")
+}
+
+// Positive debits, negative credits.
+model LedgerLine {
+  id        String        @id @default(uuid(7)) @db.Uuid
+  entryId   String        @map("entry_id") @db.Uuid
+  accountId String        @map("account_id") @db.Uuid
+  amount    Int
+  entry     LedgerEntry   @relation(fields: [entryId], references: [id])
+  account   LedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([entryId])
+  @@index([accountId, id])
+  @@map("ledger_lines")
 }

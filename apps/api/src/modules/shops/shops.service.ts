@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, ShopStatus } from '@ecommerce/db';
+import { LedgerAccountType, Prisma, ShopStatus } from '@ecommerce/db';
 import { withinChangeCooldown } from '../../common/cooldown.js';
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -63,6 +63,7 @@ export class ShopsService {
           ownerId,
           name: dto.name,
           description: dto.description,
+          ledgerAccount: { create: { type: LedgerAccountType.wallet } },
         },
       });
     } catch (error) {

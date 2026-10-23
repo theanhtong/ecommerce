@@ -105,10 +105,12 @@ describe('Orders (e2e)', () => {
     account: Account & { addressId: string },
     cartItemIds: string[],
     key: string | null = randomUUID(),
+    paymentMethod = 'cod',
   ) => {
     const req = as(account).post('/checkout', {
       cartItemIds,
       addressId: account.addressId,
+      paymentMethod,
     });
     return key === null ? req : req.set('Idempotency-Key', key);
   };
@@ -119,6 +121,12 @@ describe('Orders (e2e)', () => {
       select: { onHand: true, reserved: true },
     });
 
+  const carrier = (shipmentId: string, status: string, key?: string) =>
+    http()
+      .post(`/carrier/shipments/${shipmentId}/status`)
+      .set('X-Carrier-Key', key ?? process.env.CARRIER_API_KEY!)
+      .send({ status });
+
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
@@ -127,6 +135,7 @@ describe('Orders (e2e)', () => {
 
   afterAll(async () => {
     const users = { email: { in: emails } };
+    await prisma.$executeRaw`TRUNCATE ledger_lines, ledger_entries, ledger_accounts`;
     await prisma.order.deleteMany({ where: { buyer: users } });
     await prisma.checkout.deleteMany({ where: { buyer: users } });
     await prisma.item.deleteMany({ where: { shop: { owner: users } } });
@@ -284,9 +293,10 @@ describe('Orders (e2e)', () => {
       expect([shipped.status, cancelled.status].sort((x, y) => x - y)).toEqual([
         200, 409,
       ]);
+      // Arranging shipment keeps the reservation; only pickup takes stock out.
       expect(await stock(modelIds[0])).toEqual(
         shipped.status === 200
-          ? { onHand: 8, reserved: 0 }
+          ? { onHand: 10, reserved: 2 }
           : { onHand: 10, reserved: 0 },
       );
     });
@@ -311,31 +321,90 @@ describe('Orders (e2e)', () => {
   });
 
   describe('lifecycle', () => {
-    async function placed() {
+    async function placed(paymentMethod = 'cod') {
       const [s, b] = [await seller(), await buyer()];
       const { itemId, modelIds } = await listed(s, shirt());
       const line = await addToCart(b, modelIds[0], 2);
-      const res = await checkout(b, [line]).expect(201);
+      const res = await checkout(b, [line], randomUUID(), paymentMethod).expect(
+        201,
+      );
       return { s, b, itemId, modelId: modelIds[0], order: res.body.orders[0] };
     }
 
-    it('ships, then lets the buyer confirm receipt', async () => {
+    it('holds online orders as unpaid until payment', async () => {
+      const { s, b, modelId, order } = await placed('online');
+      expect(order).toMatchObject({
+        status: 'unpaid',
+        paymentMethod: 'online',
+        history: [{ from: null, to: 'unpaid' }],
+      });
+      expect(await stock(modelId)).toEqual({ onHand: 5, reserved: 2 });
+
+      await as(s).post(`/orders/${order.id}/ship`).expect(409);
+      await as(s).post(`/orders/${order.id}/cancel`).expect(403);
+      const unpaid = await as(s).get('/shops/me/orders?status=unpaid');
+      expect(unpaid.body.items.map((o: { id: string }) => o.id)).toEqual([
+        order.id,
+      ]);
+
+      const cancelled = await as(b)
+        .post(`/orders/${order.id}/cancel`)
+        .expect(200);
+      expect(cancelled.body.history.map((h: { to: string }) => h.to)).toEqual([
+        'unpaid',
+        'cancelled',
+      ]);
+      expect(await stock(modelId)).toEqual({ onHand: 5, reserved: 0 });
+    });
+
+    it('requires a known payment method', async () => {
+      const [s, b] = [await seller(), await buyer()];
+      const { modelIds } = await listed(s, mug());
+      const line = await addToCart(b, modelIds[0], 1);
+      await checkout(b, [line], randomUUID(), 'card').expect(400);
+      const cod = await checkout(b, [line]).expect(201);
+      expect(cod.body.orders[0]).toMatchObject({
+        status: 'to_ship',
+        paymentMethod: 'cod',
+      });
+    });
+
+    it('moves through seller, carrier and buyer steps', async () => {
       const { s, b, modelId, order } = await placed();
 
       await as(b).post(`/orders/${order.id}/ship`).expect(403);
-      await as(b).post(`/orders/${order.id}/receive`).expect(409);
-      const shipped = await as(s).post(`/orders/${order.id}/ship`).expect(200);
-      expect(shipped.body.status).toBe('shipping');
-      expect(await stock(modelId)).toEqual({ onHand: 3, reserved: 0 });
-
+      const arranged = await as(s).post(`/orders/${order.id}/ship`).expect(200);
+      expect(arranged.body).toMatchObject({
+        status: 'to_ship',
+        shipment: { status: 'awaiting_pickup', pickedUpAt: null },
+      });
+      const shipmentId = arranged.body.shipment.id;
+      expect(await stock(modelId)).toEqual({ onHand: 5, reserved: 2 });
       await as(s).post(`/orders/${order.id}/ship`).expect(409);
       await as(b).post(`/orders/${order.id}/cancel`).expect(409);
+      await as(s).post(`/orders/${order.id}/cancel`).expect(409);
+
+      await carrier(shipmentId, 'delivered').expect(409);
+      const picked = await carrier(shipmentId, 'picked_up').expect(200);
+      expect(picked.body).toMatchObject({
+        orderId: order.id,
+        status: 'picked_up',
+        pickedUpAt: expect.any(String),
+      });
+      expect(await stock(modelId)).toEqual({ onHand: 3, reserved: 0 });
+      await as(b).post(`/orders/${order.id}/receive`).expect(409);
+
+      await carrier(shipmentId, 'delivered').expect(200);
       await as(s).post(`/orders/${order.id}/receive`).expect(403);
       const done = await as(b).post(`/orders/${order.id}/receive`).expect(200);
-      expect(done.body.status).toBe('completed');
+      expect(done.body).toMatchObject({
+        status: 'completed',
+        shipment: { status: 'delivered', deliveredAt: expect.any(String) },
+      });
       expect(done.body.history.map((h: { to: string }) => h.to)).toEqual([
         'to_ship',
         'shipping',
+        'delivered',
         'completed',
       ]);
 
@@ -349,6 +418,49 @@ describe('Orders (e2e)', () => {
       ]);
     });
 
+    it('applies a repeated carrier callback once', async () => {
+      const { s, modelId, order } = await placed();
+      const shipmentId = (
+        await as(s).post(`/orders/${order.id}/ship`).expect(200)
+      ).body.shipment.id;
+
+      const results = await Promise.all(
+        Array.from({ length: 5 }, () => carrier(shipmentId, 'picked_up')),
+      );
+      expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
+      await carrier(shipmentId, 'picked_up').expect(200);
+      expect(await stock(modelId)).toEqual({ onHand: 3, reserved: 0 });
+      expect(
+        await prisma.inventoryMovement.count({
+          where: { modelId, reason: 'sale' },
+        }),
+      ).toBe(1);
+      expect(
+        await prisma.orderStatusHistory.count({ where: { orderId: order.id } }),
+      ).toBe(2);
+    });
+
+    it('accepts carrier calls only with the shared key', async () => {
+      const { s, order } = await placed();
+      const shipmentId = (
+        await as(s).post(`/orders/${order.id}/ship`).expect(200)
+      ).body.shipment.id;
+
+      await http()
+        .post(`/carrier/shipments/${shipmentId}/status`)
+        .send({ status: 'picked_up' })
+        .expect(401);
+      await carrier(shipmentId, 'picked_up', 'x'.repeat(43)).expect(401);
+      await http()
+        .post(`/carrier/shipments/${shipmentId}/status`)
+        .set(bearer(s.token))
+        .send({ status: 'picked_up' })
+        .expect(401);
+      await carrier(shipmentId, 'awaiting_pickup').expect(400);
+      await carrier(randomUUID(), 'picked_up').expect(404);
+      await carrier(shipmentId, 'picked_up').expect(200);
+    });
+
     it('releases the reservation when either side cancels before shipping', async () => {
       const first = await placed();
       await as(first.b).post(`/orders/${first.order.id}/cancel`).expect(200);
@@ -360,6 +472,9 @@ describe('Orders (e2e)', () => {
         .expect(200);
       expect(cancelled.body.status).toBe('cancelled');
       await as(second.s).post(`/orders/${second.order.id}/ship`).expect(409);
+      expect(
+        await prisma.shipment.count({ where: { orderId: second.order.id } }),
+      ).toBe(0);
     });
 
     it('keeps the order snapshot when the seller edits the item', async () => {
@@ -376,7 +491,8 @@ describe('Orders (e2e)', () => {
       const after = await as(b).get(`/orders/${order.id}`).expect(200);
       expect(after.body.items).toEqual(order.items);
       expect(after.body.total).toBe(order.total);
-      await as(s).post(`/orders/${order.id}/ship`).expect(200);
+      const arranged = await as(s).post(`/orders/${order.id}/ship`).expect(200);
+      await carrier(arranged.body.shipment.id, 'picked_up').expect(200);
       expect(await stock(modelId)).toEqual({ onHand: 3, reserved: 0 });
     });
 

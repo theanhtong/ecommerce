@@ -62,6 +62,7 @@ async function resetDatabase() {
     await db.query('BEGIN');
     // Items cascade to variations, models, inventory and stock movements; shops to their address;
     // users to sessions, carts and addresses. Provinces and wards are reference data and stay.
+    await db.query('TRUNCATE ledger_lines, ledger_entries, ledger_accounts');
     // Orders reference models and shops, so they go first (items and history cascade).
     const orders = await db.query('DELETE FROM orders');
     await db.query('DELETE FROM checkouts');
@@ -391,17 +392,20 @@ async function main() {
         g.items.map((l) => l.id),
       ),
       addressId: workAddress.id,
+      paymentMethod: 'cod',
     },
     headers: { 'Idempotency-Key': `demo-${Date.now()}` },
   });
   for (const o of placed.orders) {
     console.log(
-      `    ${o.shop.name.padEnd(14)} items ${o.itemsTotal}đ + ship ${o.shippingFee}đ = ${o.total}đ (${o.pickupAddress.province.name} → ${o.shippingAddress.province.name})`,
+      `    ${o.shop.name.padEnd(14)} ${o.paymentMethod} ${o.status} items ${o.itemsTotal}đ + ship ${o.shippingFee}đ = ${o.total}đ (${o.pickupAddress.province.name} → ${o.shippingAddress.province.name})`,
     );
   }
   await call('GET', '/cart', 200, { token: buyer.accessToken });
 
-  step('14. Seller 1 ships and the buyer confirms; seller 2 cancels');
+  step(
+    '14. Seller 1 arranges shipment, the carrier service picks up and delivers, the buyer confirms; seller 2 cancels',
+  );
   const order1 = placed.orders.find(
     (o: { shop: { id: string } }) => o.shop.id === shop.id,
   );
@@ -411,14 +415,31 @@ async function main() {
   await call('POST', `/orders/${order1.id}/ship`, 403, {
     token: buyer.accessToken,
   });
-  await call('POST', `/orders/${order1.id}/ship`, 200, {
+  const arranged = await call('POST', `/orders/${order1.id}/ship`, 200, {
     token: seller.accessToken,
   });
+  // Stands in for the separate carrier service.
+  const carrierHeaders = { 'X-Carrier-Key': process.env.CARRIER_API_KEY ?? '' };
+  for (const status of ['picked_up', 'delivered']) {
+    const shipment = await call(
+      'POST',
+      `/carrier/shipments/${arranged.shipment.id}/status`,
+      200,
+      { body: { status }, headers: carrierHeaders },
+    );
+    console.log(`    carrier: shipment ${shipment.status}`);
+  }
   const received = await call('POST', `/orders/${order1.id}/receive`, 200, {
     token: buyer.accessToken,
   });
   console.log(
     `    ${order1.shop.name}: ${received.history.map((h: { to: string }) => h.to).join(' → ')}`,
+  );
+  const wallet = await call('GET', '/shops/me/wallet', 200, {
+    token: seller.accessToken,
+  });
+  console.log(
+    `    ${order1.shop.name} wallet: ${wallet.balance}đ (items ${received.itemsTotal}đ minus commission)`,
   );
   const cancelled = await call('POST', `/orders/${order2.id}/cancel`, 200, {
     token: seller2.accessToken,
