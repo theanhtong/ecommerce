@@ -32,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { OrderDetail, OrderList } from '@/pages/buyer';
+import { OrderDetail, OrderTable } from '@/pages/buyer';
 import { api, download } from '@/lib/api';
 import { dateTime, money } from '@/lib/format';
 import { useInfiniteQuery } from '@tanstack/react-query';
@@ -97,7 +97,7 @@ export function ImportCsv() {
         }
       >
         <Download />
-        Tải CSV
+        Tải
       </Button>
       <input
         ref={file}
@@ -116,7 +116,7 @@ export function ImportCsv() {
         onClick={() => file.current?.click()}
       >
         <Upload />
-        {upload.isPending ? 'Đang nhập…' : 'Nhập CSV'}
+        {upload.isPending ? 'Đang nhập…' : 'Nhập'}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
@@ -165,10 +165,7 @@ export function SellerOrdersPage() {
   return (
     <>
       <PageHeader title="Đơn hàng" />
-      <OrderList
-        basePath="/shops/me/orders"
-        linkPrefix="/account/seller/orders"
-      />
+      <OrderTable party="seller" />
     </>
   );
 }

@@ -85,9 +85,32 @@ export function LoginPage() {
         { name: 'password', label: 'Mật khẩu', type: 'password' },
       ]}
       footer={
-        <Button asChild variant="outline" className="w-full">
-          <Link to="/register">Tạo tài khoản</Link>
-        </Button>
+        <>
+          <Button asChild variant="outline" className="w-full">
+            <Link to="/register">Tạo tài khoản</Link>
+          </Button>
+          {__DEMO_ACCOUNTS__.length > 0 && (
+            <div className="grid w-full gap-2 pt-2">
+              <p className="text-center text-xs text-muted-foreground">
+                Tài khoản demo
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                {__DEMO_ACCOUNTS__.map(({ label, email, password }) => (
+                  <Button
+                    key={email}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={mutation.isPending}
+                    onClick={() => mutation.mutate({ email, password })}
+                  >
+                    {label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       }
     />
   );

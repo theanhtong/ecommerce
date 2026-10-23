@@ -5,9 +5,13 @@ import {
 } from '@tanstack/react-query';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { createBrowserRouter, RouterProvider } from 'react-router';
+import { createBrowserRouter, Navigate, RouterProvider } from 'react-router';
 import { toast } from 'sonner';
-import { RequireAdmin, RequireUser } from '@/components/guards';
+import {
+  RequireAdmin,
+  RequireNonAdmin,
+  RequireUser,
+} from '@/components/guards';
 import { Layout } from '@/components/layout';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/lib/auth';
@@ -15,7 +19,9 @@ import { AccountLayout, AccountPage, AddressesPage } from '@/pages/account';
 import {
   AdminLayout,
   AdminLedgerPage,
+  AdminShopPage,
   AdminShopsPage,
+  AdminUserPage,
   AdminUsersPage,
 } from '@/pages/admin';
 import { LoginPage, RegisterPage } from '@/pages/auth';
@@ -42,7 +48,10 @@ const router = createBrowserRouter([
   {
     element: <Layout />,
     children: [
-      { index: true, element: <HomePage /> },
+      {
+        element: <RequireNonAdmin />,
+        children: [{ index: true, element: <HomePage /> }],
+      },
       { path: 'items/:id', element: <ItemPage /> },
       { path: 'shops/:id', element: <ShopPage /> },
       { path: 'login', element: <LoginPage /> },
@@ -55,24 +64,34 @@ const router = createBrowserRouter([
             element: <AccountLayout />,
             children: [
               { index: true, element: <AccountPage /> },
-              { path: 'addresses', element: <AddressesPage /> },
               {
-                path: 'seller',
-                element: <SellerLayout />,
+                element: <RequireNonAdmin />,
                 children: [
-                  { index: true, element: <SellerShopPage /> },
-                  { path: 'items', element: <SellerItemsPage /> },
-                  { path: 'items/:id', element: <SellerItemPage /> },
-                  { path: 'orders', element: <SellerOrdersPage /> },
-                  { path: 'orders/:id', element: <SellerOrderPage /> },
+                  { path: 'addresses', element: <AddressesPage /> },
+                  {
+                    path: 'seller',
+                    element: <SellerLayout />,
+                    children: [
+                      { index: true, element: <SellerShopPage /> },
+                      { path: 'items', element: <SellerItemsPage /> },
+                      { path: 'items/:id', element: <SellerItemPage /> },
+                      { path: 'orders', element: <SellerOrdersPage /> },
+                      { path: 'orders/:id', element: <SellerOrderPage /> },
+                    ],
+                  },
                 ],
               },
             ],
           },
-          { path: 'cart', element: <CartPage /> },
-          { path: 'checkout', element: <CheckoutPage /> },
-          { path: 'orders', element: <OrdersPage /> },
-          { path: 'orders/:id', element: <BuyerOrderPage /> },
+          {
+            element: <RequireNonAdmin />,
+            children: [
+              { path: 'cart', element: <CartPage /> },
+              { path: 'checkout', element: <CheckoutPage /> },
+              { path: 'orders', element: <OrdersPage /> },
+              { path: 'orders/:id', element: <BuyerOrderPage /> },
+            ],
+          },
           {
             path: 'admin',
             element: <RequireAdmin />,
@@ -80,8 +99,12 @@ const router = createBrowserRouter([
               {
                 element: <AdminLayout />,
                 children: [
+                  { index: true, element: <Navigate to="ledger" replace /> },
+                  { path: 'account', element: <AccountPage /> },
                   { path: 'shops', element: <AdminShopsPage /> },
+                  { path: 'shops/:id', element: <AdminShopPage /> },
                   { path: 'users', element: <AdminUsersPage /> },
+                  { path: 'users/:id', element: <AdminUserPage /> },
                   { path: 'ledger', element: <AdminLedgerPage /> },
                 ],
               },

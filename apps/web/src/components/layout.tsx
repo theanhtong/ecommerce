@@ -3,7 +3,6 @@ import {
   House,
   LogOut,
   ReceiptText,
-  Shield,
   ShoppingCart,
   User,
   type LucideIcon,
@@ -28,16 +27,18 @@ export function Layout() {
     <div className="app-bg min-h-svh">
       <header className="sticky top-0 z-10 border-t-2 border-b border-t-primary bg-card">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4">
-          <Link to="/" className="mr-4 text-base font-medium">
+          <Link
+            to={user?.role === 'admin' ? '/admin' : '/'}
+            className="mr-4 text-base font-medium"
+          >
             Marketplace
           </Link>
           <nav className="flex flex-1 items-center gap-1">
-            {nav('/', 'Trang chủ', House)}
-            {user && nav('/cart', 'Giỏ hàng', ShoppingCart)}
-            {user && nav('/orders', 'Đơn mua', ReceiptText)}
-            {user?.role === 'admin' && nav('/admin/shops', 'Quản trị', Shield)}
+            {user?.role !== 'admin' && nav('/', 'Trang chủ', House)}
+            {user?.role === 'user' && nav('/cart', 'Giỏ hàng', ShoppingCart)}
+            {user?.role === 'user' && nav('/orders', 'Đơn mua', ReceiptText)}
           </nav>
-          {user ? (
+          {user?.role === 'admin' ? null : user ? (
             <div className="flex items-center gap-2">
               <Button asChild variant="ghost" className="h-auto py-1.5">
                 <Link to="/account">

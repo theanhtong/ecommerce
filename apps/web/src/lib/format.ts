@@ -2,7 +2,7 @@ import type { CancelReason, Location, OrderStatus, ShopStatus } from './types';
 
 const vnd = new Intl.NumberFormat('vi-VN');
 
-export const money = (amount: number) => `₫${vnd.format(amount)}`;
+export const money = (amount: number) => `${vnd.format(amount)}₫`;
 
 export const priceRange = (min: number, max: number) =>
   min === max ? money(min) : `${money(min)} - ${money(max)}`;
@@ -28,6 +28,12 @@ export const CANCEL_REASON: Record<CancelReason, string> = {
   changed_mind: 'Đổi ý, không muốn mua nữa',
   other: 'Lý do khác',
 };
+
+export const SHIPMENT_STATUS = {
+  awaiting_pickup: 'Chờ lấy hàng',
+  picked_up: 'Đã lấy hàng',
+  delivered: 'Đã giao',
+} as const;
 
 export const ORDER_STATUS: Record<OrderStatus, string> = {
   unpaid: 'Chờ thanh toán',

@@ -161,41 +161,47 @@ export function ItemPage() {
               </div>
             </div>
           ))}
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-muted-foreground">Số lượng</span>
-            <QuantityInput
-              value={qty}
-              max={maxAdd || undefined}
-              onChange={setQuantity}
-            />
-            <span className="text-sm">
-              <StockLabel
-                stock={model?.stock ?? models.reduce((n, m) => n + m.stock, 0)}
-              />
-              {inCart > 0 && (
-                <span className="text-muted-foreground">
-                  {' '}
-                  · Trong giỏ {inCart}
+          {user?.role !== 'admin' && (
+            <>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-muted-foreground">Số lượng</span>
+                <QuantityInput
+                  value={qty}
+                  max={maxAdd || undefined}
+                  onChange={setQuantity}
+                />
+                <span className="text-sm">
+                  <StockLabel
+                    stock={
+                      model?.stock ?? models.reduce((n, m) => n + m.stock, 0)
+                    }
+                  />
+                  {inCart > 0 && (
+                    <span className="text-muted-foreground">
+                      {' '}
+                      · Trong giỏ {inCart}
+                    </span>
+                  )}
                 </span>
-              )}
-            </span>
-          </div>
-          <Button
-            size="lg"
-            className="w-fit"
-            disabled={!model || maxAdd === 0 || addToCart.isPending}
-            onClick={() => {
-              if (!user)
-                navigate('/login', { state: { from: `/items/${id}` } });
-              else if (model) addToCart.mutate(model.id);
-            }}
-          >
-            {model?.stock === 0
-              ? 'Hết hàng'
-              : maxAdd === 0
-                ? 'Đã đạt số lượng tối đa'
-                : 'Thêm vào giỏ hàng'}
-          </Button>
+              </div>
+              <Button
+                size="lg"
+                className="w-fit"
+                disabled={!model || maxAdd === 0 || addToCart.isPending}
+                onClick={() => {
+                  if (!user)
+                    navigate('/login', { state: { from: `/items/${id}` } });
+                  else if (model) addToCart.mutate(model.id);
+                }}
+              >
+                {model?.stock === 0
+                  ? 'Hết hàng'
+                  : maxAdd === 0
+                    ? 'Đã đạt số lượng tối đa'
+                    : 'Thêm vào giỏ hàng'}
+              </Button>
+            </>
+          )}
           {item.data.description && (
             <>
               <Separator />

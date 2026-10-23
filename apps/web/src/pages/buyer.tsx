@@ -1,5 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ChevronLeft, MapPin, Store } from 'lucide-react';
+import {
+  ChevronLeft,
+  MapPin,
+  PackageCheck,
+  Store,
+  UserRound,
+} from 'lucide-react';
 import { useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
@@ -47,6 +53,7 @@ import {
   PAYMENT_METHOD,
   phone,
   place,
+  SHIPMENT_STATUS,
 } from '@/lib/format';
 import { useCart, usePaged } from '@/lib/queries';
 import type {
@@ -432,7 +439,7 @@ export function CheckoutPage() {
   );
 }
 
-const TABS: (OrderStatus | 'all')[] = [
+const ORDER_TABS: (OrderStatus | 'all')[] = [
   'all',
   'unpaid',
   'to_ship',
@@ -442,20 +449,113 @@ const TABS: (OrderStatus | 'all')[] = [
   'cancelled',
 ];
 
-export function OrderList({
-  basePath,
-  linkPrefix,
+export function CancelOrderDialog({
+  orderId,
+  open,
+  onOpenChange,
 }: {
-  basePath: string;
-  linkPrefix: string;
+  orderId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState<CancelReason>();
+  const [note, setNote] = useState('');
+  const cancel = useMutation({
+    mutationFn: () =>
+      api<Order>(`/orders/${orderId}/cancel`, {
+        method: 'POST',
+        body: reason === 'other' ? { reason, note } : { reason },
+      }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['order', orderId], data);
+      void queryClient.invalidateQueries({ queryKey: ['orders'] });
+      onOpenChange(false);
+    },
+  });
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (next) {
+          setReason(undefined);
+          setNote('');
+        }
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Lý do hủy đơn</DialogTitle>
+        </DialogHeader>
+        <RadioGroup
+          value={reason ?? ''}
+          onValueChange={(v) => setReason(v as CancelReason)}
+        >
+          {(Object.keys(CANCEL_REASON) as CancelReason[]).map((r) => (
+            <Label
+              key={r}
+              className="flex items-center gap-3 rounded-md border p-3 font-normal has-data-[state=checked]:border-primary"
+            >
+              <RadioGroupItem value={r} />
+              {CANCEL_REASON[r]}
+            </Label>
+          ))}
+        </RadioGroup>
+        {reason === 'other' && (
+          <Textarea
+            aria-label="Lý do khác"
+            maxLength={500}
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+          />
+        )}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Không hủy</Button>
+          </DialogClose>
+          <Button
+            variant="destructive"
+            disabled={
+              !reason ||
+              (reason === 'other' && !note.trim()) ||
+              cancel.isPending
+            }
+            onClick={() => cancel.mutate()}
+          >
+            Hủy đơn
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+const ORDER_COLS =
+  'flex flex-wrap items-start gap-4 md:grid md:grid-cols-[1fr_8rem_8rem_8rem_10rem]';
+
+export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
+  const queryClient = useQueryClient();
+  const basePath = party === 'buyer' ? '/orders' : '/shops/me/orders';
+  const linkPrefix = party === 'buyer' ? '/orders' : '/account/seller/orders';
   const [status, setStatus] = useState<OrderStatus | 'all'>('all');
+  const [cancelId, setCancelId] = useState<string | null>(null);
   const path = status === 'all' ? basePath : `${basePath}?status=${status}`;
   const page = usePaged<Order>(['orders', basePath, status], path);
+  const act = useMutation({
+    mutationFn: ({ id, path }: { id: string; path: 'ship' | 'receive' }) =>
+      api<Order>(`/orders/${id}/${path}`, { method: 'POST' }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['order', data.id], data);
+      void queryClient.invalidateQueries({ queryKey: ['orders'] });
+    },
+  });
+
   return (
     <>
       <div className="mb-4 flex flex-wrap gap-2">
-        {TABS.map((t) => (
+        {ORDER_TABS.map((t) => (
           <Button
             key={t}
             size="sm"
@@ -474,53 +574,124 @@ export function OrderList({
         <Empty>Chưa có đơn hàng</Empty>
       ) : (
         <div className="space-y-3">
-          {page.items.map((o) => (
-            <Card key={o.id}>
-              <CardHeader className="border-b">
-                <CardTitle className="flex items-center gap-2">
-                  <Store className="size-4 text-muted-foreground" />
-                  {o.shop.name}
-                </CardTitle>
-                <CardAction className="flex items-center gap-3">
-                  <span className="hidden text-sm text-muted-foreground sm:inline">
-                    {dateTime(o.createdAt)}
+          <Card size="sm" className="hidden md:flex">
+            <CardContent
+              className={`${ORDER_COLS} text-sm text-muted-foreground`}
+            >
+              <span>Sản phẩm</span>
+              <span className="text-right">Tổng tiền</span>
+              <span>Trạng thái</span>
+              <span>Vận chuyển</span>
+              <span className="text-right">Thao tác</span>
+            </CardContent>
+          </Card>
+          {page.items.map((o) => {
+            const cancellable =
+              party === 'buyer' &&
+              (o.status === 'unpaid' ||
+                (o.status === 'to_ship' && !o.shipment));
+            return (
+              <Card key={o.id} className="gap-0 py-0">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-(--card-spacing) py-2.5 text-sm">
+                  {party === 'buyer' ? (
+                    <span className="flex items-center gap-2 font-medium">
+                      <Store className="size-4 text-muted-foreground" />
+                      {o.shop.name}
+                    </span>
+                  ) : (
+                    <span className="flex items-center gap-2">
+                      <UserRound className="size-4 text-muted-foreground" />
+                      <span className="font-medium">
+                        {o.shippingAddress.recipientName}
+                      </span>
+                      <span className="text-muted-foreground">
+                        · {o.shippingAddress.province.name}
+                      </span>
+                    </span>
+                  )}
+                  <span className="text-muted-foreground">
+                    Mã đơn{' '}
+                    <span className="font-mono text-foreground">
+                      {o.id.slice(-8).toUpperCase()}
+                    </span>{' '}
+                    · {dateTime(o.createdAt)}
                   </span>
-                  <OrderStatusBadge status={o.status} />
-                </CardAction>
-              </CardHeader>
-              <CardContent className="divide-y">
-                {o.items.map((i) => (
-                  <div
-                    key={i.modelId}
-                    className="flex items-center gap-3 py-3 first:pt-0"
-                  >
-                    <ItemImage className="size-16" />
-                    <div className="min-w-0 flex-1">
-                      <p className="line-clamp-1 font-medium">{i.itemName}</p>
-                      {i.modelName && (
-                        <p className="text-sm text-muted-foreground">
-                          {i.modelName}
-                        </p>
-                      )}
-                      <p className="text-sm">× {i.quantity}</p>
-                    </div>
-                    <p>{money(i.price)}</p>
+                </div>
+                <CardContent className={`${ORDER_COLS} py-4`}>
+                  <div className="grid min-w-56 flex-1 gap-3">
+                    {o.items.map((i) => (
+                      <div key={i.modelId} className="flex items-center gap-3">
+                        <ItemImage className="size-14" />
+                        <div className="min-w-0 flex-1">
+                          <p className="line-clamp-1">{i.itemName}</p>
+                          {i.modelName && (
+                            <p className="text-sm text-muted-foreground">
+                              {i.modelName}
+                            </p>
+                          )}
+                        </div>
+                        <span className="text-sm text-muted-foreground">
+                          × {i.quantity}
+                        </span>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </CardContent>
-              <CardFooter className="justify-end gap-4 border-t pt-(--card-spacing)">
-                <span className="text-sm">
-                  <span className="text-muted-foreground">Thành tiền </span>
-                  <span className="text-lg font-medium text-primary">
-                    {money(o.total)}
-                  </span>
-                </span>
-                <Button asChild variant="outline" size="sm">
-                  <Link to={`${linkPrefix}/${o.id}`}>Xem chi tiết</Link>
-                </Button>
-              </CardFooter>
-            </Card>
-          ))}
+                  <div className="text-right">
+                    <p className="font-medium text-primary tabular-nums">
+                      {money(o.total)}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      {PAYMENT_METHOD[o.paymentMethod]}
+                    </p>
+                  </div>
+                  <div>
+                    <OrderStatusBadge status={o.status} />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {o.shipment ? SHIPMENT_STATUS[o.shipment.status] : '—'}
+                  </p>
+                  <div className="flex flex-col items-end gap-2">
+                    {party === 'seller' &&
+                      o.status === 'to_ship' &&
+                      !o.shipment && (
+                        <Button
+                          size="sm"
+                          disabled={act.isPending}
+                          onClick={() => act.mutate({ id: o.id, path: 'ship' })}
+                        >
+                          <PackageCheck />
+                          Chuẩn bị hàng
+                        </Button>
+                      )}
+                    {party === 'buyer' && o.status === 'delivered' && (
+                      <Button
+                        size="sm"
+                        disabled={act.isPending}
+                        onClick={() =>
+                          act.mutate({ id: o.id, path: 'receive' })
+                        }
+                      >
+                        <PackageCheck />
+                        Đã nhận được hàng
+                      </Button>
+                    )}
+                    {cancellable && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setCancelId(o.id)}
+                      >
+                        Hủy đơn
+                      </Button>
+                    )}
+                    <Button asChild variant="outline" size="sm">
+                      <Link to={`${linkPrefix}/${o.id}`}>Xem chi tiết</Link>
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
       <LoadMore
@@ -528,6 +699,13 @@ export function OrderList({
         loading={page.isFetchingNextPage}
         onClick={() => void page.fetchNextPage()}
       />
+      {cancelId && (
+        <CancelOrderDialog
+          orderId={cancelId}
+          open
+          onOpenChange={(open) => !open && setCancelId(null)}
+        />
+      )}
     </>
   );
 }
@@ -536,7 +714,7 @@ export function OrdersPage() {
   return (
     <>
       <PageHeader title="Đơn mua" />
-      <OrderList basePath="/orders" linkPrefix="/orders" />
+      <OrderTable party="buyer" />
     </>
   );
 }
@@ -559,16 +737,13 @@ export function OrderDetail({
     queryKey: ['order', id],
     queryFn: () => api<Order>(`/orders/${id}`),
   });
-  const [reasonFor, setReasonFor] = useState<string | null>(null);
-  const [reason, setReason] = useState<CancelReason>();
-  const [note, setNote] = useState('');
+  const [cancelling, setCancelling] = useState(false);
   const act = useMutation({
-    mutationFn: ({ path, body }: { path: string; body?: object }) =>
-      api<Order>(`/orders/${id}/${path}`, { method: 'POST', body }),
+    mutationFn: (path: string) =>
+      api<Order>(`/orders/${id}/${path}`, { method: 'POST' }),
     onSuccess: (data) => {
       queryClient.setQueryData(['order', id], data);
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
-      setReasonFor(null);
     },
   });
 
@@ -592,69 +767,19 @@ export function OrderDetail({
             key={x.path}
             variant={x.variant ?? 'default'}
             disabled={act.isPending}
-            onClick={() => {
-              if (!x.askReason) return act.mutate({ path: x.path });
-              setReason(undefined);
-              setNote('');
-              setReasonFor(x.path);
-            }}
+            onClick={() =>
+              x.askReason ? setCancelling(true) : act.mutate(x.path)
+            }
           >
             {x.label}
           </Button>
         ))}
       />
-      <Dialog
-        open={reasonFor !== null}
-        onOpenChange={(open) => !open && setReasonFor(null)}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Lý do hủy đơn</DialogTitle>
-          </DialogHeader>
-          <RadioGroup
-            value={reason ?? ''}
-            onValueChange={(v) => setReason(v as CancelReason)}
-          >
-            {(Object.keys(CANCEL_REASON) as CancelReason[]).map((r) => (
-              <Label
-                key={r}
-                className="flex items-center gap-3 rounded-md border p-3 font-normal has-data-[state=checked]:border-primary"
-              >
-                <RadioGroupItem value={r} />
-                {CANCEL_REASON[r]}
-              </Label>
-            ))}
-          </RadioGroup>
-          {reason === 'other' && (
-            <Textarea
-              aria-label="Lý do khác"
-              maxLength={500}
-              value={note}
-              onChange={(e) => setNote(e.target.value)}
-            />
-          )}
-          <DialogFooter>
-            <DialogClose asChild>
-              <Button variant="ghost">Không hủy</Button>
-            </DialogClose>
-            <Button
-              variant="destructive"
-              disabled={
-                !reason || (reason === 'other' && !note.trim()) || act.isPending
-              }
-              onClick={() =>
-                reasonFor &&
-                act.mutate({
-                  path: reasonFor,
-                  body: reason === 'other' ? { reason, note } : { reason },
-                })
-              }
-            >
-              Hủy đơn
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CancelOrderDialog
+        orderId={o.id}
+        open={cancelling}
+        onOpenChange={setCancelling}
+      />
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-4">
           <Card size="sm" className="hidden md:flex">

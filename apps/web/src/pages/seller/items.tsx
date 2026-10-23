@@ -1,12 +1,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import {
   ChevronLeft,
-  ExternalLink,
   Eye,
   EyeOff,
+  Pencil,
   Plus,
   Trash2,
   X,
@@ -57,6 +57,57 @@ import { priceRange } from '@/lib/format';
 import { usePaged } from '@/lib/queries';
 import type { ItemDetail, ItemSummary, Model } from '@/lib/types';
 
+function DeleteItem({
+  id,
+  name,
+  onDeleted,
+}: {
+  id: string;
+  name: string;
+  onDeleted?: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const remove = useMutation({
+    mutationFn: () => api(`/items/${id}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      setOpen(false);
+      toast.success('Đã xóa sản phẩm');
+      queryClient.removeQueries({ queryKey: ['my-item', id] });
+      void queryClient.invalidateQueries({ queryKey: ['my-items'] });
+      onDeleted?.();
+    },
+  });
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="ghost" size="sm">
+          <Trash2 />
+          Xóa
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Xóa sản phẩm?</DialogTitle>
+        </DialogHeader>
+        <p className="text-sm text-muted-foreground">{name}</p>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Hủy</Button>
+          </DialogClose>
+          <Button
+            variant="destructive"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            Xóa
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 const ITEM_STATUS = { active: 'Đang bán', hidden: 'Đã ẩn', banned: 'Bị khóa' };
 
 export function SellerItemsPage() {
@@ -100,10 +151,18 @@ export function SellerItemsPage() {
                     <TableCell>
                       <Badge variant="secondary">{ITEM_STATUS[i.status]}</Badge>
                     </TableCell>
-                    <TableCell className="text-right">
-                      <Button asChild variant="outline" size="sm">
-                        <Link to={`/account/seller/items/${i.id}`}>Sửa</Link>
-                      </Button>
+                    <TableCell>
+                      <div className="flex justify-end gap-1">
+                        <Button asChild variant="outline" size="sm">
+                          <Link to={`/account/seller/items/${i.id}`}>
+                            <Pencil />
+                            Sửa
+                          </Link>
+                        </Button>
+                        {i.status !== 'banned' && (
+                          <DeleteItem id={i.id} name={i.name} />
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -513,6 +572,7 @@ function ModelRow({
 
 export function SellerItemPage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const item = useQuery({
     queryKey: ['my-item', id],
@@ -558,13 +618,12 @@ export function SellerItemPage() {
         title={i.name}
         actions={
           <>
-            {i.status === 'active' && (
-              <Button asChild variant="ghost">
-                <Link to={`/items/${i.id}`}>
-                  <ExternalLink />
-                  Xem trang sản phẩm
-                </Link>
-              </Button>
+            {i.status !== 'banned' && (
+              <DeleteItem
+                id={i.id}
+                name={i.name}
+                onDeleted={() => navigate('/account/seller/items')}
+              />
             )}
             {i.status !== 'banned' && (
               <Button

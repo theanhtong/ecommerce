@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MapPin, Pencil, Plus, Store, Trash2, User } from 'lucide-react';
 import { useState, type SubmitEvent } from 'react';
-import { NavLink, Outlet } from 'react-router';
+import { Navigate, NavLink, Outlet } from 'react-router';
 import { toast } from 'sonner';
 import {
   AddressBlock,
@@ -55,22 +55,26 @@ const TABS = [
 ] as const;
 
 export function AccountLayout() {
+  const { user } = useAuth();
+  if (user?.role === 'admin') return <Navigate to="/admin/account" replace />;
   return (
     <div className="grid gap-5 md:grid-cols-[12rem_1fr]">
       <nav className="flex gap-2 md:flex-col">
-        {TABS.map(([to, label, Icon]) => (
-          <Button
-            asChild
-            key={to}
-            variant="ghost"
-            className="justify-start aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
-          >
-            <NavLink to={to} end={to === '/account'}>
-              <Icon />
-              {label}
-            </NavLink>
-          </Button>
-        ))}
+        {TABS.filter(([to]) => user?.role !== 'admin' || to === '/account').map(
+          ([to, label, Icon]) => (
+            <Button
+              asChild
+              key={to}
+              variant="ghost"
+              className="justify-start aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
+            >
+              <NavLink to={to} end={to === '/account'}>
+                <Icon />
+                {label}
+              </NavLink>
+            </Button>
+          ),
+        )}
       </nav>
       <div>
         <Outlet />
