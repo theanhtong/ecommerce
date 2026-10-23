@@ -15,8 +15,11 @@ export class CursorQuery {
 }
 
 // Ids are uuid v7, so ordering by id is ordering by creation time.
-export const cursorArgs = ({ cursor, limit }: CursorQuery) => ({
-  orderBy: { id: 'asc' as const },
+export const cursorArgs = (
+  { cursor, limit }: CursorQuery,
+  order: 'asc' | 'desc' = 'asc',
+) => ({
+  orderBy: { id: order },
   take: limit + 1,
   ...(cursor && { cursor: { id: cursor }, skip: 1 }),
 });

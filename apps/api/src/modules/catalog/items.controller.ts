@@ -39,6 +39,20 @@ export class ItemsController {
     return this.items.listMine(user.sub, query);
   }
 
+  @Get('items/mine/:id')
+  @UseGuards(JwtAuthGuard)
+  mineById(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.items.getMine(user.sub, id);
+  }
+
+  @Get('items')
+  list(@Query() query: CursorQuery) {
+    return this.items.listPublic(query);
+  }
+
   @Get('items/:id')
   byId(@Param('id', ParseUUIDPipe) id: string) {
     return this.items.getPublic(id);
