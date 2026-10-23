@@ -50,6 +50,7 @@ describe('Catalog (e2e)', () => {
       http().patch(url).set(bearer(account.token)).send(body),
     put: (url: string, body: object) =>
       http().put(url).set(bearer(account.token)).send(body),
+    delete: (url: string) => http().delete(url).set(bearer(account.token)),
   });
 
   async function seller(status: 'active' | 'pending' = 'active') {
@@ -200,6 +201,26 @@ describe('Catalog (e2e)', () => {
       await as(s).patch(`/models/${model.id}`, { stock: 7 }).expect(400);
     });
 
+    it('deletes an unordered item together with its cart lines', async () => {
+      const [s, other, b] = [
+        await seller(),
+        await seller(),
+        await signUp(app, emails),
+      ];
+      const item = (await as(s).post('/items', shirt()).expect(201)).body;
+      const modelId = item.models[0].id;
+      await as(b).post('/cart/items', { modelId, quantity: 1 }).expect(201);
+
+      await as(other).delete(`/items/${item.id}`).expect(404);
+      await http().delete(`/items/${item.id}`).expect(401);
+      await as(s).delete(`/items/${item.id}`).expect(204);
+
+      await http().get(`/items/${item.id}`).expect(404);
+      await as(s).delete(`/items/${item.id}`).expect(404);
+      expect(await prisma.cartItem.count({ where: { modelId } })).toBe(0);
+      expect(await prisma.model.count({ where: { itemId: item.id } })).toBe(0);
+    });
+
     it('replaces the variation structure', async () => {
       const s = await seller();
       const item = (await as(s).post('/items', shirt()).expect(201)).body;
@@ -305,7 +326,7 @@ describe('Catalog (e2e)', () => {
         status: 'hidden',
         models: [{}, {}, {}, {}],
       });
-      await as(admin).get(`/items/mine/${hidden.id}`).expect(404);
+      await as(admin).get(`/items/mine/${hidden.id}`).expect(403);
 
       const newer = (await as(s).post('/items', mug()).expect(201)).body;
       const all = await http().get('/items?limit=100').expect(200);
@@ -339,6 +360,13 @@ describe('Catalog (e2e)', () => {
         .patch(`/admin/items/${item.id}/status`, { status: 'banned' })
         .expect(200);
       await http().get(`/items/${item.id}`).expect(404);
+      const listed = await as(admin)
+        .get(`/admin/items?shopId=${s.shopId}&status=banned`)
+        .expect(200);
+      expect(listed.body.items).toEqual([
+        expect.objectContaining({ id: item.id, status: 'banned' }),
+      ]);
+      await as(s).get(`/admin/items?shopId=${s.shopId}`).expect(403);
       await as(s)
         .patch(`/items/${item.id}/status`, { status: 'active' })
         .expect(403);

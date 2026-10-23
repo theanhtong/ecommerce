@@ -1,15 +1,19 @@
+import { ItemStatus } from '@ecommerce/db';
 import { Transform } from 'class-transformer';
 import {
+  IsEnum,
   IsIn,
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Length,
   Max,
   MaxLength,
   Min,
 } from 'class-validator';
 import { Omittable } from '../../../common/omittable.js';
+import { CursorQuery } from '../../../common/pagination.js';
 import { trim } from '../../../common/transforms.js';
 import { VariationsDto } from './variations.dto.js';
 
@@ -66,4 +70,14 @@ export class SellerItemStatusDto {
 export class AdminItemStatusDto {
   @IsIn(['active', 'banned'])
   status: 'active' | 'banned';
+}
+
+export class AdminListItemsQuery extends CursorQuery {
+  @IsOptional()
+  @IsUUID()
+  shopId?: string;
+
+  @IsOptional()
+  @IsEnum(ItemStatus)
+  status?: ItemStatus;
 }

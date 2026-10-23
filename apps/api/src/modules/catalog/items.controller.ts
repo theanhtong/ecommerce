@@ -1,19 +1,21 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Put,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { CursorQuery } from '../../common/pagination.js';
 import type { AccessTokenPayload } from '../auth/auth.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { MemberOnly } from '../auth/decorators/member-only.decorator.js';
 import {
   CreateItemDto,
   SellerItemStatusDto,
@@ -27,20 +29,20 @@ export class ItemsController {
   constructor(private readonly items: ItemsService) {}
 
   @Post('items')
-  @UseGuards(JwtAuthGuard)
+  @MemberOnly()
   create(@CurrentUser() user: AccessTokenPayload, @Body() dto: CreateItemDto) {
     return this.items.create(user.sub, dto);
   }
 
   // Declared before 'items/:id' so it does not capture that route.
   @Get('items/mine')
-  @UseGuards(JwtAuthGuard)
+  @MemberOnly()
   mine(@CurrentUser() user: AccessTokenPayload, @Query() query: CursorQuery) {
     return this.items.listMine(user.sub, query);
   }
 
   @Get('items/mine/:id')
-  @UseGuards(JwtAuthGuard)
+  @MemberOnly()
   mineById(
     @CurrentUser() user: AccessTokenPayload,
     @Param('id', ParseUUIDPipe) id: string,
@@ -59,7 +61,7 @@ export class ItemsController {
   }
 
   @Patch('items/:id')
-  @UseGuards(JwtAuthGuard)
+  @MemberOnly()
   update(
     @CurrentUser() user: AccessTokenPayload,
     @Param('id', ParseUUIDPipe) id: string,
@@ -68,8 +70,18 @@ export class ItemsController {
     return this.items.update(user.sub, id, dto);
   }
 
+  @Delete('items/:id')
+  @MemberOnly()
+  @HttpCode(HttpStatus.NO_CONTENT)
+  remove(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.items.remove(user.sub, id);
+  }
+
   @Patch('items/:id/status')
-  @UseGuards(JwtAuthGuard)
+  @MemberOnly()
   setStatus(
     @CurrentUser() user: AccessTokenPayload,
     @Param('id', ParseUUIDPipe) id: string,
@@ -79,7 +91,7 @@ export class ItemsController {
   }
 
   @Put('items/:id/variations')
-  @UseGuards(JwtAuthGuard)
+  @MemberOnly()
   replaceVariations(
     @CurrentUser() user: AccessTokenPayload,
     @Param('id', ParseUUIDPipe) id: string,
