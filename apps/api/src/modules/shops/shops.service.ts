@@ -150,13 +150,67 @@ export class ShopsService {
     return shop;
   }
 
+  async getForAdmin(id: string) {
+    const shop = await this.prisma.shop.findUnique({
+      where: { id },
+      omit: shopQuery.omit,
+      include: {
+        ...shopQuery.include,
+        owner: { select: { id: true, email: true, username: true } },
+        ledgerAccount: { select: { id: true } },
+        _count: { select: { items: true, orders: true } },
+      },
+    });
+    if (!shop) throw new NotFoundException('Shop not found');
+    const { owner, ledgerAccount, _count, ...rest } = shop;
+    const wallet = ledgerAccount
+      ? await this.prisma.ledgerLine.aggregate({
+          where: { accountId: ledgerAccount.id },
+          _sum: { amount: true },
+        })
+      : null;
+    return {
+      ...shopView(rest),
+      owner,
+      itemCount: _count.items,
+      orderCount: _count.orders,
+      // Wallet lines are credit-negative; the shop sees what it is owed.
+      walletBalance: -(wallet?._sum.amount ?? 0),
+    };
+  }
+
   async list(query: ListShopsQuery) {
     const shops = await this.prisma.shop.findMany({
       where: { status: query.status },
-      include: { owner: { select: { id: true, email: true, username: true } } },
+      include: {
+        owner: { select: { id: true, email: true, username: true } },
+        ward: { select: { province: { select: { fullName: true } } } },
+        ledgerAccount: { select: { id: true } },
+        _count: { select: { items: true, orders: true } },
+      },
       ...cursorArgs(query),
     });
-    return toPage(shops, query.limit);
+    const page = toPage(shops, query.limit);
+    const sums = await this.prisma.ledgerLine.groupBy({
+      by: ['accountId'],
+      where: {
+        accountId: {
+          in: page.items.flatMap((s) => s.ledgerAccount?.id ?? []),
+        },
+      },
+      _sum: { amount: true },
+    });
+    const owed = new Map(sums.map((s) => [s.accountId, -(s._sum.amount ?? 0)]));
+    return {
+      ...page,
+      items: page.items.map(({ ward, ledgerAccount, _count, ...shop }) => ({
+        ...shop,
+        province: ward.province.fullName,
+        itemCount: _count.items,
+        orderCount: _count.orders,
+        walletBalance: (ledgerAccount && owed.get(ledgerAccount.id)) || 0,
+      })),
+    };
   }
 
   async updateStatus(id: string, status: ShopStatus) {

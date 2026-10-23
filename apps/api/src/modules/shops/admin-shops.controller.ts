@@ -27,6 +27,11 @@ export class AdminShopsController {
     return this.shops.list(query);
   }
 
+  @Get(':id')
+  get(@Param('id', ParseUUIDPipe) id: string) {
+    return this.shops.getForAdmin(id);
+  }
+
   @Patch(':id/status')
   updateStatus(
     @Param('id', ParseUUIDPipe) id: string,
