@@ -184,6 +184,8 @@ describe('Catalog (e2e)', () => {
         sku: 'AO-XANH-M',
       });
       await as(s).patch(`/models/${model.id}`, { price: 0 }).expect(400);
+      await as(s).patch(`/models/${model.id}`, { price: null }).expect(400);
+      await as(s).patch(`/items/${item.id}`, { name: null }).expect(400);
       // Stock only changes through stock adjustments.
       await as(s).patch(`/models/${model.id}`, { stock: 7 }).expect(400);
     });

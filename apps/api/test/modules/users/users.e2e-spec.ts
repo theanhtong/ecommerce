@@ -77,6 +77,7 @@ describe('Users (e2e)', () => {
       ]) {
         await patchMe(token, { username }).expect(400);
       }
+      await patchMe(token, { username: null }).expect(400);
       await patchMe(token, { displayName: 'An' }).expect(400);
       await patchMe(token, { role: 'admin' }).expect(400);
       await patchMe(token, { email: 'x@example.com' }).expect(400);

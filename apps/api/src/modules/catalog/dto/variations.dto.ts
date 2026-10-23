@@ -12,6 +12,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { Omittable } from '../../../common/omittable.js';
 import { trim } from '../../../common/transforms.js';
 
 const trimEach = ({ value }: { value: unknown }) =>
@@ -20,7 +21,7 @@ const trimEach = ({ value }: { value: unknown }) =>
     : value;
 
 export class ModelFieldsDto {
-  @IsOptional()
+  @Omittable()
   @IsInt()
   @Min(1)
   @Max(1_000_000_000)

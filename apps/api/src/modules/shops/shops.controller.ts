@@ -6,12 +6,14 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   UseGuards,
 } from '@nestjs/common';
 import type { AccessTokenPayload } from '../auth/auth.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { CreateShopDto } from './dto/create-shop.dto.js';
+import { ShopAddressDto } from './dto/shop-address.dto.js';
 import { UpdateShopDto } from './dto/update-shop.dto.js';
 import { ShopsService } from './shops.service.js';
 
@@ -38,6 +40,21 @@ export class ShopsController {
     @Body() dto: UpdateShopDto,
   ) {
     return this.shops.updateMine(user.sub, dto);
+  }
+
+  @Get('me/address')
+  @UseGuards(JwtAuthGuard)
+  address(@CurrentUser() user: AccessTokenPayload) {
+    return this.shops.getAddress(user.sub);
+  }
+
+  @Put('me/address')
+  @UseGuards(JwtAuthGuard)
+  setAddress(
+    @CurrentUser() user: AccessTokenPayload,
+    @Body() dto: ShopAddressDto,
+  ) {
+    return this.shops.setAddress(user.sub, dto);
   }
 
   // Declared after 'me' so it does not capture that route.

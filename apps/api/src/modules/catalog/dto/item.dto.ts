@@ -1,5 +1,6 @@
 import { Transform } from 'class-transformer';
 import { IsIn, IsOptional, IsString, Length, MaxLength } from 'class-validator';
+import { Omittable } from '../../../common/omittable.js';
 import { trim } from '../../../common/transforms.js';
 import { VariationsDto } from './variations.dto.js';
 
@@ -23,7 +24,7 @@ export class CreateItemDto extends VariationsDto {
 }
 
 export class UpdateItemDto {
-  @IsOptional()
+  @Omittable()
   @Transform(trim)
   @IsString()
   @Length(1, 120)

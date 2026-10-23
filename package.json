@@ -12,6 +12,7 @@
     "lint": "pnpm -r lint",
     "db:generate": "pnpm --filter @ecommerce/db generate",
     "db:migrate": "pnpm --filter @ecommerce/db migrate:dev",
+    "db:seed": "pnpm --filter @ecommerce/api db:seed",
     "db:studio": "pnpm --filter @ecommerce/db studio",
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down"

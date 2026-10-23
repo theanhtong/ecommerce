@@ -95,6 +95,7 @@ describe('Shops (e2e)', () => {
     const { token } = await user();
     const shop = (await openShop(token).expect(201)).body;
 
+    await updateShop(token, { name: null }).expect(400);
     await updateShop(token, { name: `Tên Mới ${unique()}` }).expect(200);
     await updateShop(token, { name: `Tên Khác ${unique()}` }).expect(409);
 
@@ -133,6 +134,54 @@ describe('Shops (e2e)', () => {
     await updateShop(owner.token, { description: 'x' }).expect(403);
 
     await setStatus(shop.id, 'active').expect(200);
+  });
+
+  it('keeps one pickup and return address per shop', async () => {
+    const { token } = await user();
+    const address = () => http().get('/shops/me/address').set(bearer(token));
+    const setAddress = (body: object) =>
+      http().put('/shops/me/address').set(bearer(token)).send(body);
+    const warehouse = {
+      contactName: 'Kho Demo',
+      phone: '0912345678',
+      wardCode: '00004',
+      street: '1 Phố Kho',
+    };
+
+    await setAddress(warehouse).expect(404);
+    const shop = (await openShop(token).expect(201)).body;
+    await address().expect(404);
+
+    const set = await setAddress(warehouse).expect(200);
+    expect(set.body).toEqual({
+      contactName: 'Kho Demo',
+      phone: '+84912345678',
+      street: '1 Phố Kho',
+      ward: { code: '00004', name: 'Phường Ba Đình' },
+      province: { code: '01', name: 'Thành phố Hà Nội' },
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+    });
+
+    await setAddress({ ...warehouse, wardCode: '26740' }).expect(200);
+    const moved = await address().expect(200);
+    expect(moved.body.province).toEqual({
+      code: '79',
+      name: 'Thành phố Hồ Chí Minh',
+    });
+    expect(await prisma.shopAddress.count({ where: { shopId: shop.id } })).toBe(
+      1,
+    );
+
+    await setAddress({ ...warehouse, wardCode: '99999' }).expect(400);
+    await setAddress({ ...warehouse, street: undefined }).expect(400);
+    await setAddress({ ...warehouse, isPickup: true }).expect(400);
+
+    await setStatus(shop.id, 'active').expect(200);
+    await setStatus(shop.id, 'banned').expect(200);
+    await setAddress(warehouse).expect(403);
+    await address().expect(200);
+    await http().get('/shops/me/address').expect(401);
   });
 
   it('restricts admin endpoints and validates transitions', async () => {
