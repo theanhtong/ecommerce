@@ -8,18 +8,17 @@ import {
   Patch,
   Post,
   Query,
-  UseGuards,
 } from '@nestjs/common';
 import { CursorQuery } from '../../common/pagination.js';
 import type { AccessTokenPayload } from '../auth/auth.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { MemberOnly } from '../auth/decorators/member-only.decorator.js';
 import { StockAdjustmentDto } from './dto/stock-adjustment.dto.js';
 import { ModelFieldsDto } from './dto/variations.dto.js';
 import { ItemsService } from './items.service.js';
 
 @Controller('models')
-@UseGuards(JwtAuthGuard)
+@MemberOnly()
 export class ModelsController {
   constructor(private readonly items: ItemsService) {}
 

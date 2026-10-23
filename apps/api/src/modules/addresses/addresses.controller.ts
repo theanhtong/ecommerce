@@ -10,16 +10,15 @@ import {
   Patch,
   Post,
   Put,
-  UseGuards,
 } from '@nestjs/common';
 import type { AccessTokenPayload } from '../auth/auth.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { MemberOnly } from '../auth/decorators/member-only.decorator.js';
 import { AddressesService } from './addresses.service.js';
 import { CreateAddressDto, UpdateAddressDto } from './dto/address.dto.js';
 
 @Controller('addresses')
-@UseGuards(JwtAuthGuard)
+@MemberOnly()
 export class AddressesController {
   constructor(private readonly addresses: AddressesService) {}
 

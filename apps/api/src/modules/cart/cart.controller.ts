@@ -7,16 +7,15 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
-  UseGuards,
 } from '@nestjs/common';
 import type { AccessTokenPayload } from '../auth/auth.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { MemberOnly } from '../auth/decorators/member-only.decorator.js';
 import { CartService } from './cart.service.js';
 import { AddCartItemDto, UpdateCartItemDto } from './dto/cart-item.dto.js';
 
 @Controller('cart')
-@UseGuards(JwtAuthGuard)
+@MemberOnly()
 export class CartController {
   constructor(private readonly cart: CartService) {}
 
