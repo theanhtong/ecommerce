@@ -7,6 +7,7 @@ import {
   bearer,
   createTestApp,
   refreshCookie,
+  SHOP_ADDRESS,
   signUp as signUp_,
   TEST_PASSWORD,
   testUsername,
@@ -154,6 +155,88 @@ describe('Users (e2e)', () => {
         .get('/admin/users?limit=500')
         .set(bearer(admin.token))
         .expect(400);
+    });
+
+    it('filters users by whether they own a shop', async () => {
+      const admin = await signUp('admin');
+      const [seller, buyer] = [await signUp(), await signUp()];
+      const shop = await http()
+        .post('/shops')
+        .set(bearer(seller.token))
+        .send({ ...SHOP_ADDRESS, name: `Shop ${randomUUID().slice(0, 8)}` })
+        .expect(201);
+
+      const all = async (filter: string) => {
+        const users: { id: string; shop: unknown }[] = [];
+        let cursor = '';
+        do {
+          const res = await http()
+            .get(
+              `/admin/users?limit=100&shop=${filter}${cursor && `&cursor=${cursor}`}`,
+            )
+            .set(bearer(admin.token))
+            .expect(200);
+          users.push(...res.body.items);
+          cursor = res.body.nextCursor ?? '';
+        } while (cursor);
+        return users;
+      };
+      const withShop = await all('with');
+      const withoutShop = await all('without');
+
+      expect(withShop.find((u) => u.id === seller.id)?.shop).toEqual({
+        id: shop.body.id,
+        name: shop.body.name,
+        status: 'pending',
+      });
+      expect(withShop.some((u) => u.id === buyer.id)).toBe(false);
+      expect(withoutShop.find((u) => u.id === buyer.id)).toMatchObject({
+        orderCount: 0,
+      });
+      expect(withShop.every((u) => u.shop)).toBe(true);
+      expect(withoutShop.find((u) => u.id === buyer.id)?.shop).toBeNull();
+      expect(withoutShop.some((u) => u.id === seller.id)).toBe(false);
+      await http()
+        .get('/admin/users?shop=maybe')
+        .set(bearer(admin.token))
+        .expect(400);
+
+      const admins = await http()
+        .get('/admin/users?role=admin&limit=100')
+        .set(bearer(admin.token))
+        .expect(200);
+      expect(
+        admins.body.items.every((u: { role: string }) => u.role === 'admin'),
+      ).toBe(true);
+      await http()
+        .get('/admin/users?role=owner')
+        .set(bearer(admin.token))
+        .expect(400);
+    });
+
+    it('shows one user with their shop and activity counts', async () => {
+      const admin = await signUp('admin');
+      const user = await signUp();
+      const detail = await http()
+        .get(`/admin/users/${user.id}`)
+        .set(bearer(admin.token))
+        .expect(200);
+      expect(detail.body).toMatchObject({
+        id: user.id,
+        role: 'user',
+        status: 'active',
+        shop: null,
+        orderCount: 0,
+      });
+      expect(detail.body).not.toHaveProperty('passwordHash');
+      await http()
+        .get(`/admin/users/${randomUUID()}`)
+        .set(bearer(admin.token))
+        .expect(404);
+      await http()
+        .get(`/admin/users/${user.id}`)
+        .set(bearer(user.token))
+        .expect(403);
     });
 
     it('bans a user, revoking their sessions, and can unban', async () => {

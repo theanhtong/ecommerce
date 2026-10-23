@@ -11,7 +11,11 @@ import {
   type CursorQuery,
 } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
-import type { CreateItemDto, UpdateItemDto } from './dto/item.dto.js';
+import type {
+  AdminListItemsQuery,
+  CreateItemDto,
+  UpdateItemDto,
+} from './dto/item.dto.js';
 import type { StockAdjustmentDto } from './dto/stock-adjustment.dto.js';
 import type { ModelFieldsDto, VariationsDto } from './dto/variations.dto.js';
 import { validateVariations } from './variations.js';
@@ -19,6 +23,7 @@ import { validateVariations } from './variations.js';
 const modelInclude = { inventory: true } satisfies Prisma.ModelInclude;
 
 const detailInclude = {
+  shop: { select: { id: true, name: true } },
   tierVariations: {
     orderBy: { position: 'asc' },
     include: { options: { orderBy: { position: 'asc' } } },
@@ -31,6 +36,7 @@ const detailInclude = {
 } satisfies Prisma.ItemInclude;
 
 const summaryInclude = {
+  shop: { select: { id: true, name: true } },
   models: { where: { deletedAt: null }, include: modelInclude },
 } satisfies Prisma.ItemInclude;
 
@@ -83,6 +89,7 @@ const summaryView = ({ models, ...item }: ItemSummary) => {
     id: item.id,
     name: item.name,
     status: item.status,
+    shop: item.shop,
     priceMin: Math.min(...prices),
     priceMax: Math.max(...prices),
     stock: models.reduce((sum, m) => sum + available(m), 0),
@@ -124,6 +131,10 @@ export const publicWhere = {
 const isUniqueViolation = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError &&
   error.code === 'P2002';
+
+const isForeignKeyViolation = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError &&
+  error.code === 'P2003';
 
 @Injectable()
 export class ItemsService {
@@ -174,6 +185,25 @@ export class ItemsService {
       include: detailInclude,
     });
     return detailView(item, true);
+  }
+
+  // Ordered items stay: order_items reference their models. Everything else cascades,
+  // including cart lines and inventory.
+  async remove(ownerId: string, id: string) {
+    await this.writableItem(ownerId, id);
+    const ordered = () =>
+      new ConflictException('Item has orders and cannot be deleted');
+    if (
+      await this.prisma.orderItem.count({ where: { model: { itemId: id } } })
+    ) {
+      throw ordered();
+    }
+    try {
+      await this.prisma.item.delete({ where: { id } });
+    } catch (error) {
+      if (isForeignKeyViolation(error)) throw ordered();
+      throw error;
+    }
   }
 
   async setStatus(ownerId: string, id: string, status: ItemStatus) {
@@ -289,6 +319,15 @@ export class ItemsService {
     return { ...page, items: page.items.map(summaryView) };
   }
 
+  async getMine(ownerId: string, id: string) {
+    const item = await this.prisma.item.findFirst({
+      where: { id, shop: { ownerId } },
+      include: detailInclude,
+    });
+    if (!item) throw new NotFoundException('Item not found');
+    return detailView(item, true);
+  }
+
   async getPublic(id: string) {
     const item = await this.prisma.item.findFirst({
       where: { id, ...publicWhere },
@@ -296,6 +335,26 @@ export class ItemsService {
     });
     if (!item) throw new NotFoundException('Item not found');
     return detailView(item, false);
+  }
+
+  async listForAdmin({ shopId, status, ...query }: AdminListItemsQuery) {
+    const items = await this.prisma.item.findMany({
+      where: { shopId, status },
+      include: summaryInclude,
+      ...cursorArgs(query, 'desc'),
+    });
+    const page = toPage(items, query.limit);
+    return { ...page, items: page.items.map(summaryView) };
+  }
+
+  async listPublic(query: CursorQuery) {
+    const items = await this.prisma.item.findMany({
+      where: publicWhere,
+      include: summaryInclude,
+      ...cursorArgs(query, 'desc'),
+    });
+    const page = toPage(items, query.limit);
+    return { ...page, items: page.items.map(summaryView) };
   }
 
   async listByShop(shopId: string, query: CursorQuery) {

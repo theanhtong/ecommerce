@@ -1,4 +1,4 @@
-import { OrderStatus, PaymentMethod } from '@ecommerce/db';
+import { CancelReason, OrderStatus, PaymentMethod } from '@ecommerce/db';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -6,9 +6,13 @@ import {
   IsArray,
   IsEnum,
   IsOptional,
+  IsString,
   IsUUID,
+  MaxLength,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { CursorQuery } from '../../../common/pagination.js';
+import { trim } from '../../../common/transforms.js';
 
 export class CheckoutDto {
   @IsArray()
@@ -29,4 +33,26 @@ export class ListOrdersQuery extends CursorQuery {
   @IsOptional()
   @IsEnum(OrderStatus)
   status?: OrderStatus;
+}
+
+export class AdminListOrdersQuery extends ListOrdersQuery {
+  @IsOptional()
+  @IsUUID()
+  buyerId?: string;
+
+  @IsOptional()
+  @IsUUID()
+  shopId?: string;
+}
+
+export class CancelOrderDto {
+  @IsOptional()
+  @IsEnum(CancelReason)
+  reason?: CancelReason;
+
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }

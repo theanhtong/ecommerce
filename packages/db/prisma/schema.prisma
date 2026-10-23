@@ -74,11 +74,16 @@ model Shop {
   nameChangedAt DateTime?      @map("name_changed_at") @db.Timestamptz(3)
   description   String?
   status        ShopStatus     @default(pending)
+  // Pickup and return address: one per shop.
+  contactName   String         @map("contact_name")
+  phone         String
+  wardCode      String         @map("ward_code")
+  street        String
   createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
   owner         User           @relation(fields: [ownerId], references: [id])
+  ward          Ward           @relation(fields: [wardCode], references: [code])
   items         Item[]
-  address       ShopAddress?
   orders        Order[]
   ledgerAccount LedgerAccount?
 
@@ -236,14 +241,14 @@ model Province {
 }
 
 model Ward {
-  code          String        @id
-  name          String
-  fullName      String        @map("full_name")
-  provinceCode  String        @map("province_code")
-  type          WardType
-  province      Province      @relation(fields: [provinceCode], references: [code])
-  addresses     Address[]
-  shopAddresses ShopAddress[]
+  code         String    @id
+  name         String
+  fullName     String    @map("full_name")
+  provinceCode String    @map("province_code")
+  type         WardType
+  province     Province  @relation(fields: [provinceCode], references: [code])
+  addresses    Address[]
+  shops        Shop[]
 
   @@index([provinceCode])
   @@map("wards")
@@ -264,20 +269,6 @@ model Address {
 
   @@index([userId])
   @@map("addresses")
-}
-
-model ShopAddress {
-  shopId      String   @id @map("shop_id") @db.Uuid
-  contactName String   @map("contact_name")
-  phone       String
-  wardCode    String   @map("ward_code")
-  street      String
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
-  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  ward        Ward     @relation(fields: [wardCode], references: [code])
-
-  @@map("shop_addresses")
 }
 
 enum OrderStatus {
@@ -325,6 +316,8 @@ model Order {
   total           Int
   shippingAddress Json                 @map("shipping_address")
   pickupAddress   Json                 @map("pickup_address")
+  cancelReason    CancelReason?        @map("cancel_reason")
+  cancelNote      String?              @map("cancel_note")
   createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
   checkout        Checkout             @relation(fields: [checkoutId], references: [id])
@@ -355,6 +348,18 @@ model OrderItem {
   @@index([orderId])
   @@index([modelId])
   @@map("order_items")
+}
+
+// Assumption: the buyer picks one fixed reason when cancelling; the platform does not publish its list.
+enum CancelReason {
+  change_address
+  change_items
+  change_voucher
+  found_cheaper
+  changed_mind
+  other
+
+  @@map("cancel_reason")
 }
 
 model OrderStatusHistory {

@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { PrismaService } from '../../../src/prisma/prisma.service.js';
-import { bearer, createTestApp, signUp } from '../../support/helpers.js';
+import {
+  bearer,
+  createTestApp,
+  SHOP_ADDRESS,
+  signUp,
+} from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
 
@@ -28,7 +33,7 @@ describe('Catalog CSV import (e2e)', () => {
     const shop = await http()
       .post('/shops')
       .set(bearer(account.token))
-      .send({ name: `Shop ${randomUUID().slice(0, 8)}` })
+      .send({ ...SHOP_ADDRESS, name: `Shop ${randomUUID().slice(0, 8)}` })
       .expect(201);
     if (active) {
       await http()
@@ -68,6 +73,12 @@ describe('Catalog CSV import (e2e)', () => {
 
     const res = await upload(s, template.text).expect(200);
     expect(res.body).toMatchObject({ created: 2, failed: 0 });
+    const exported = await http()
+      .get('/items/imports/export')
+      .set(bearer(s.token))
+      .expect(200)
+      .expect('Content-Disposition', /items\.csv/);
+    expect(exported.text).toBe(template.text);
     expect(
       res.body.results.map((r: { parentSku: string; rows: number[] }) => [
         r.parentSku,

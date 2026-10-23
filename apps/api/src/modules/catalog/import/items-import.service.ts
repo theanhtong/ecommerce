@@ -2,6 +2,7 @@ import { BadRequestException, HttpException, Injectable } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate, type ValidationError } from 'class-validator';
 import { CreateItemDto } from '../dto/item.dto.js';
+import { PrismaService } from '../../../prisma/prisma.service.js';
 import { ItemsService } from '../items.service.js';
 import {
   buildImportGroups,
@@ -117,11 +118,48 @@ const TEMPLATE_ROWS = [
 
 @Injectable()
 export class ItemsImportService {
-  constructor(private readonly items: ItemsService) {}
+  constructor(
+    private readonly items: ItemsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   // UTF-8 BOM so Excel opens the Vietnamese text correctly.
   template() {
     return '﻿' + toCsv([COLUMNS.map((c) => LABELS[c]), ...TEMPLATE_ROWS]);
+  }
+
+  // Same columns as the template, one row per live model; stock is on-hand.
+  async export(ownerId: string) {
+    const items = await this.prisma.item.findMany({
+      where: { shop: { ownerId } },
+      orderBy: { id: 'asc' },
+      include: {
+        tierVariations: {
+          orderBy: { position: 'asc' },
+          include: { options: { orderBy: { position: 'asc' } } },
+        },
+        models: { where: { deletedAt: null }, include: { inventory: true } },
+      },
+    });
+    const rows = items.flatMap((item) => {
+      const [t1, t2] = item.tierVariations;
+      return [...item.models]
+        .sort((a, b) => a.tierIndex.join().localeCompare(b.tierIndex.join()))
+        .map((m) => [
+          item.parentSku,
+          item.name,
+          item.description,
+          item.weight,
+          t1?.name,
+          t1?.options[m.tierIndex[0]]?.option,
+          t2?.name,
+          t2?.options[m.tierIndex[1]]?.option,
+          m.price,
+          m.inventory?.onHand ?? 0,
+          m.sku,
+        ]);
+    });
+    return '﻿' + toCsv([COLUMNS.map((c) => LABELS[c]), ...rows]);
   }
 
   // shortcut: runs inside the request, fine up to MAX_IMPORT_ROWS; move to a worker queue for larger files.

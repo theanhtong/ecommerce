@@ -25,6 +25,11 @@ const profileSelect = {
   createdAt: true,
 } satisfies Prisma.UserSelect;
 
+const adminSelect = {
+  ...profileSelect,
+  shop: { select: { id: true, name: true, status: true } },
+} satisfies Prisma.UserSelect;
+
 const isNotFound = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError &&
   error.code === 'P2025';
@@ -94,13 +99,39 @@ export class UsersService {
     });
   }
 
+  async getForAdmin(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        ...adminSelect,
+        _count: { select: { orders: true } },
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    const { _count, ...profile } = user;
+    return { ...profile, orderCount: _count.orders };
+  }
+
   async list(query: ListUsersQuery) {
     const users = await this.prisma.user.findMany({
-      where: { status: query.status },
-      select: profileSelect,
+      where: {
+        status: query.status,
+        role: query.role,
+        ...(query.shop && {
+          shop: query.shop === 'with' ? { isNot: null } : { is: null },
+        }),
+      },
+      select: { ...adminSelect, _count: { select: { orders: true } } },
       ...cursorArgs(query),
     });
-    return toPage(users, query.limit);
+    const page = toPage(users, query.limit);
+    return {
+      ...page,
+      items: page.items.map(({ _count, ...user }) => ({
+        ...user,
+        orderCount: _count.orders,
+      })),
+    };
   }
 
   async updateStatus(actorId: string, userId: string, status: UserStatus) {

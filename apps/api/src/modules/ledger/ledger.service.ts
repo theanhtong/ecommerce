@@ -24,6 +24,19 @@ function commissionRateBps() {
 }
 
 // shortcut: no holding period, payouts, refunds or vouchers; add them with those features.
+export const REPORT_RANGES = ['today', '30d', '12m'] as const;
+export type ReportRange = (typeof REPORT_RANGES)[number];
+
+// span is how far before the current bucket the first bucket starts.
+const RANGES: Record<
+  ReportRange,
+  { unit: string; span: string; label: string }
+> = {
+  today: { unit: 'hour', span: '23 hours', label: 'HH24' },
+  '30d': { unit: 'day', span: '29 days', label: 'YYYY-MM-DD' },
+  '12m': { unit: 'month', span: '11 months', label: 'YYYY-MM' },
+};
+
 @Injectable()
 export class LedgerService {
   private readonly rateBps = commissionRateBps();
@@ -98,7 +111,10 @@ export class LedgerService {
 
   async balances() {
     const [accounts, sums] = await Promise.all([
-      this.prisma.ledgerAccount.findMany({ orderBy: { id: 'asc' } }),
+      this.prisma.ledgerAccount.findMany({
+        orderBy: { id: 'asc' },
+        include: { shop: { select: { id: true, name: true } } },
+      }),
       this.prisma.ledgerLine.groupBy({
         by: ['accountId'],
         _sum: { amount: true },
@@ -108,12 +124,87 @@ export class LedgerService {
     const items = accounts.map((a) => ({
       id: a.id,
       type: a.type,
-      shopId: a.shopId,
+      shop: a.shop,
       balance: byAccount.get(a.id) ?? 0,
     }));
     return {
       items,
       total: items.reduce((sum, a) => sum + a.balance, 0),
+    };
+  }
+
+  // Platform profit is its commission; it bears no other costs yet. Buckets follow
+  // Vietnam time and include empty periods so charts have no gaps.
+  async report(range: ReportRange) {
+    const { unit, span, label } = RANGES[range];
+    const tz = Prisma.sql`'Asia/Ho_Chi_Minh'`;
+    const end = Prisma.sql`date_trunc(${unit}, now() AT TIME ZONE ${tz})`;
+    const start = Prisma.sql`${end} - ${span}::interval`;
+    const until = Prisma.sql`${end} + ('1 ' || ${unit})::interval`;
+    const local = (column: Prisma.Sql) =>
+      Prisma.sql`${column} AT TIME ZONE ${tz}`;
+
+    const [rows, [counts]] = await Promise.all([
+      this.prisma.$queryRaw<
+        {
+          period: string;
+          orders: bigint;
+          commission: bigint;
+          sellers: bigint;
+          shipping: bigint;
+        }[]
+      >`
+        SELECT to_char(b.bucket, ${label}) AS period,
+               count(DISTINCT e.id) FILTER (WHERE e.ref_type = 'order') AS orders,
+               coalesce(-sum(l.amount) FILTER (WHERE a.type = 'commission'), 0) AS commission,
+               coalesce(-sum(l.amount) FILTER (WHERE a.type = 'wallet'), 0) AS sellers,
+               coalesce(-sum(l.amount) FILTER (WHERE a.type = 'shipping'), 0) AS shipping
+        FROM generate_series(${start}, ${end}, ('1 ' || ${unit})::interval) AS b(bucket)
+        LEFT JOIN ledger_entries e
+          ON date_trunc(${unit}, ${local(Prisma.sql`e.created_at`)}) = b.bucket
+        LEFT JOIN ledger_lines l ON l.entry_id = e.id
+        LEFT JOIN ledger_accounts a ON a.id = l.account_id
+        GROUP BY b.bucket
+        ORDER BY b.bucket`,
+      this.prisma.$queryRaw<
+        { cancelled: bigint; users: bigint; shops: bigint }[]
+      >`
+        SELECT
+          (SELECT count(*) FROM order_status_history h
+            WHERE h.to_status = 'cancelled'
+              AND ${local(Prisma.sql`h.created_at`)} >= ${start}
+              AND ${local(Prisma.sql`h.created_at`)} < ${until}) AS cancelled,
+          (SELECT count(*) FROM users u
+            WHERE ${local(Prisma.sql`u.created_at`)} >= ${start}
+              AND ${local(Prisma.sql`u.created_at`)} < ${until}) AS users,
+          (SELECT count(*) FROM shops s
+            WHERE ${local(Prisma.sql`s.created_at`)} >= ${start}
+              AND ${local(Prisma.sql`s.created_at`)} < ${until}) AS shops`,
+    ]);
+
+    const series = rows.map((r) => ({
+      period: r.period,
+      orders: Number(r.orders),
+      itemsTotal: Number(r.commission + r.sellers),
+      shippingFees: Number(r.shipping),
+      profit: Number(r.commission),
+    }));
+    const sum = (key: 'orders' | 'itemsTotal' | 'shippingFees' | 'profit') =>
+      series.reduce((n, p) => n + p[key], 0);
+    const orders = sum('orders');
+    return {
+      range,
+      totals: {
+        profit: sum('profit'),
+        itemsTotal: sum('itemsTotal'),
+        shippingFees: sum('shippingFees'),
+        orders,
+        averageOrder: orders ? Math.round(sum('itemsTotal') / orders) : 0,
+        cancelledOrders: Number(counts.cancelled),
+        newUsers: Number(counts.users),
+        newShops: Number(counts.shops),
+      },
+      series,
     };
   }
 

@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { PrismaService } from '../../../src/prisma/prisma.service.js';
-import { bearer, createTestApp, signUp } from '../../support/helpers.js';
+import {
+  bearer,
+  createTestApp,
+  SHOP_ADDRESS,
+  signUp,
+} from '../../support/helpers.js';
 
 const unique = () => randomUUID().replaceAll('-', '').slice(0, 10);
 
@@ -19,7 +24,7 @@ describe('Shops (e2e)', () => {
     http()
       .post('/shops')
       .set(bearer(token))
-      .send({ name: `Cửa Hàng ${unique()}`, ...fields });
+      .send({ ...SHOP_ADDRESS, name: `Cửa Hàng ${unique()}`, ...fields });
   const updateShop = (token: string, fields: Record<string, unknown>) =>
     http().patch('/shops/me').set(bearer(token)).send(fields);
   const setStatus = (id: string, status: string) =>
@@ -136,9 +141,8 @@ describe('Shops (e2e)', () => {
     await setStatus(shop.id, 'active').expect(200);
   });
 
-  it('keeps one pickup and return address per shop', async () => {
+  it('keeps one pickup and return address on the shop', async () => {
     const { token } = await user();
-    const address = () => http().get('/shops/me/address').set(bearer(token));
     const setAddress = (body: object) =>
       http().put('/shops/me/address').set(bearer(token)).send(body);
     const warehouse = {
@@ -149,29 +153,24 @@ describe('Shops (e2e)', () => {
     };
 
     await setAddress(warehouse).expect(404);
-    const shop = (await openShop(token).expect(201)).body;
-    await address().expect(404);
-
-    const set = await setAddress(warehouse).expect(200);
-    expect(set.body).toEqual({
+    await openShop(token, { wardCode: '99999' }).expect(400);
+    await openShop(token, { street: undefined }).expect(400);
+    const shop = (await openShop(token, warehouse).expect(201)).body;
+    expect(shop).toMatchObject({
       contactName: 'Kho Demo',
       phone: '+84912345678',
       street: '1 Phố Kho',
       ward: { code: '00004', name: 'Phường Ba Đình' },
       province: { code: '01', name: 'Thành phố Hà Nội' },
-      createdAt: expect.any(String),
-      updatedAt: expect.any(String),
     });
+    expect(shop).not.toHaveProperty('wardCode');
 
     await setAddress({ ...warehouse, wardCode: '26740' }).expect(200);
-    const moved = await address().expect(200);
+    const moved = await http().get('/shops/me').set(bearer(token)).expect(200);
     expect(moved.body.province).toEqual({
       code: '79',
       name: 'Thành phố Hồ Chí Minh',
     });
-    expect(await prisma.shopAddress.count({ where: { shopId: shop.id } })).toBe(
-      1,
-    );
 
     await setAddress({ ...warehouse, wardCode: '99999' }).expect(400);
     await setAddress({ ...warehouse, street: undefined }).expect(400);
@@ -180,8 +179,60 @@ describe('Shops (e2e)', () => {
     await setStatus(shop.id, 'active').expect(200);
     await setStatus(shop.id, 'banned').expect(200);
     await setAddress(warehouse).expect(403);
-    await address().expect(200);
-    await http().get('/shops/me/address').expect(401);
+    await http().put('/shops/me/address').send(warehouse).expect(401);
+  });
+
+  it('shows admins one shop with its owner, address and counts', async () => {
+    const owner = await user();
+    const shop = (await openShop(owner.token).expect(201)).body;
+    const detail = await http()
+      .get(`/admin/shops/${shop.id}`)
+      .set(bearer(admin.token))
+      .expect(200);
+    expect(detail.body).toMatchObject({
+      id: shop.id,
+      name: shop.name,
+      status: 'pending',
+      owner: { id: owner.id, email: owner.email },
+      ward: { code: '00004' },
+      province: { code: '01' },
+      itemCount: 0,
+      orderCount: 0,
+      walletBalance: 0,
+    });
+    expect(detail.body).not.toHaveProperty('wardCode');
+    await http()
+      .get(`/admin/shops/${randomUUID()}`)
+      .set(bearer(admin.token))
+      .expect(404);
+    await http()
+      .get(`/admin/shops/${shop.id}`)
+      .set(bearer(owner.token))
+      .expect(403);
+  });
+
+  it('lists shops for admins with owner, region and counts', async () => {
+    const owner = await user();
+    const shop = (await openShop(owner.token).expect(201)).body;
+    const rows: { id: string }[] = [];
+    let cursor = '';
+    do {
+      const res = await http()
+        .get(
+          `/admin/shops?status=pending&limit=100${cursor && `&cursor=${cursor}`}`,
+        )
+        .set(bearer(admin.token))
+        .expect(200);
+      rows.push(...res.body.items);
+      cursor = res.body.nextCursor ?? '';
+    } while (cursor);
+    expect(rows.find((r) => r.id === shop.id)).toMatchObject({
+      owner: { id: owner.id, email: owner.email },
+      province: 'Thành phố Hà Nội',
+      itemCount: 0,
+      orderCount: 0,
+      walletBalance: 0,
+    });
   });
 
   it('restricts admin endpoints and validates transitions', async () => {

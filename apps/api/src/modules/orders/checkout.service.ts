@@ -24,7 +24,7 @@ const lineInclude = {
     include: {
       item: {
         include: {
-          shop: { include: { address: { include: locationInclude } } },
+          shop: { include: locationInclude },
           tierVariations: {
             orderBy: { position: 'asc' },
             include: { options: { orderBy: { position: 'asc' } } },
@@ -122,7 +122,6 @@ export class CheckoutService {
     }
     for (const shopLines of byShop.values()) {
       const { shop } = shopLines[0].model.item;
-      const pickup = shop.address!;
       const itemsTotal = shopLines.reduce(
         (sum, l) => sum + l.model.price * l.quantity,
         0,
@@ -133,7 +132,7 @@ export class CheckoutService {
       );
       const fee = shippingFee(
         {
-          fromProvinceCode: pickup.ward.provinceCode,
+          fromProvinceCode: shop.ward.provinceCode,
           toProvinceCode: address.ward.provinceCode,
           toWardType: address.ward.type,
         },
@@ -151,10 +150,10 @@ export class CheckoutService {
           total: itemsTotal + fee,
           shippingAddress,
           pickupAddress: {
-            contactName: pickup.contactName,
-            phone: pickup.phone,
-            street: pickup.street,
-            ...locationView(pickup),
+            contactName: shop.contactName,
+            phone: shop.phone,
+            street: shop.street,
+            ...locationView(shop),
           },
           items: {
             create: shopLines.map(({ model, quantity }) => ({
@@ -201,9 +200,6 @@ export class CheckoutService {
     }
     if (item.shop.ownerId === buyerId) {
       throw new ForbiddenException('You cannot buy from your own shop');
-    }
-    if (!item.shop.address) {
-      throw new ConflictException(`${item.shop.name} cannot ship orders yet`);
     }
   }
 

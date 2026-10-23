@@ -1,16 +1,18 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Patch,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import { Role } from '@ecommerce/db';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
-import { AdminItemStatusDto } from './dto/item.dto.js';
+import { AdminItemStatusDto, AdminListItemsQuery } from './dto/item.dto.js';
 import { ItemsService } from './items.service.js';
 
 @Controller('admin/items')
@@ -18,6 +20,11 @@ import { ItemsService } from './items.service.js';
 @Roles(Role.admin)
 export class AdminItemsController {
   constructor(private readonly items: ItemsService) {}
+
+  @Get()
+  list(@Query() query: AdminListItemsQuery) {
+    return this.items.listForAdmin(query);
+  }
 
   @Patch(':id/status')
   setStatus(

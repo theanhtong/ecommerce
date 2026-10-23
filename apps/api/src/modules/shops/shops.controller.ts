@@ -7,11 +7,10 @@ import {
   Patch,
   Post,
   Put,
-  UseGuards,
 } from '@nestjs/common';
 import type { AccessTokenPayload } from '../auth/auth.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
-import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
+import { MemberOnly } from '../auth/decorators/member-only.decorator.js';
 import { CreateShopDto } from './dto/create-shop.dto.js';
 import { ShopAddressDto } from './dto/shop-address.dto.js';
 import { UpdateShopDto } from './dto/update-shop.dto.js';
@@ -22,19 +21,19 @@ export class ShopsController {
   constructor(private readonly shops: ShopsService) {}
 
   @Post()
-  @UseGuards(JwtAuthGuard)
+  @MemberOnly()
   create(@CurrentUser() user: AccessTokenPayload, @Body() dto: CreateShopDto) {
     return this.shops.create(user.sub, dto);
   }
 
   @Get('me')
-  @UseGuards(JwtAuthGuard)
+  @MemberOnly()
   mine(@CurrentUser() user: AccessTokenPayload) {
     return this.shops.getMine(user.sub);
   }
 
   @Patch('me')
-  @UseGuards(JwtAuthGuard)
+  @MemberOnly()
   updateMine(
     @CurrentUser() user: AccessTokenPayload,
     @Body() dto: UpdateShopDto,
@@ -42,14 +41,8 @@ export class ShopsController {
     return this.shops.updateMine(user.sub, dto);
   }
 
-  @Get('me/address')
-  @UseGuards(JwtAuthGuard)
-  address(@CurrentUser() user: AccessTokenPayload) {
-    return this.shops.getAddress(user.sub);
-  }
-
   @Put('me/address')
-  @UseGuards(JwtAuthGuard)
+  @MemberOnly()
   setAddress(
     @CurrentUser() user: AccessTokenPayload,
     @Body() dto: ShopAddressDto,

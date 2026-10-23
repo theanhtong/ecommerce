@@ -4,7 +4,12 @@ import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { MAX_CART_MODELS } from '../../../src/modules/cart/cart.service.js';
 import { PrismaService } from '../../../src/prisma/prisma.service.js';
-import { bearer, createTestApp, signUp } from '../../support/helpers.js';
+import {
+  bearer,
+  createTestApp,
+  SHOP_ADDRESS,
+  signUp,
+} from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
 
@@ -49,7 +54,10 @@ describe('Cart (e2e)', () => {
   async function seller(status: 'active' | 'pending' = 'active') {
     const account = await signUp(app, emails);
     const shop = await as(account)
-      .post('/shops', { name: `Shop ${randomUUID().slice(0, 8)}` })
+      .post('/shops', {
+        ...SHOP_ADDRESS,
+        name: `Shop ${randomUUID().slice(0, 8)}`,
+      })
       .expect(201);
     if (status === 'active') {
       await as(admin)

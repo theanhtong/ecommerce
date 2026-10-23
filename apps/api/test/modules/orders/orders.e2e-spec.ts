@@ -3,7 +3,12 @@ import { randomUUID } from 'node:crypto';
 import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { PrismaService } from '../../../src/prisma/prisma.service.js';
-import { bearer, createTestApp, signUp } from '../../support/helpers.js';
+import {
+  bearer,
+  createTestApp,
+  SHOP_ADDRESS,
+  signUp,
+} from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
 
@@ -42,26 +47,21 @@ describe('Orders (e2e)', () => {
       http().patch(url).set(bearer(account.token)).send(body),
     put: (url: string, body: object) =>
       http().put(url).set(bearer(account.token)).send(body),
+    delete: (url: string) => http().delete(url).set(bearer(account.token)),
   });
 
-  async function seller(wardCode: string | null = HANOI_WARD) {
+  async function seller(wardCode = HANOI_WARD) {
     const account = await signUp(app, emails);
     const shop = await as(account)
-      .post('/shops', { name: `Shop ${randomUUID().slice(0, 8)}` })
+      .post('/shops', {
+        ...SHOP_ADDRESS,
+        wardCode,
+        name: `Shop ${randomUUID().slice(0, 8)}`,
+      })
       .expect(201);
     await as(admin)
       .patch(`/admin/shops/${shop.body.id}/status`, { status: 'active' })
       .expect(200);
-    if (wardCode) {
-      await as(account)
-        .put('/shops/me/address', {
-          contactName: 'Kho',
-          phone: '0901234567',
-          wardCode,
-          street: '1 Kho',
-        })
-        .expect(200);
-    }
     return { ...account, shopId: shop.body.id as string };
   }
 
@@ -237,12 +237,7 @@ describe('Orders (e2e)', () => {
     });
 
     it('refuses lines that are not buyable from this cart', async () => {
-      const [s, noAddress, b, other] = [
-        await seller(),
-        await seller(null),
-        await buyer(),
-        await buyer(),
-      ];
+      const [s, b, other] = [await seller(), await buyer(), await buyer()];
       const { itemId, modelIds } = await listed(s, shirt());
       const line = await addToCart(b, modelIds[0], 1);
 
@@ -253,11 +248,6 @@ describe('Orders (e2e)', () => {
         .post('/checkout', { cartItemIds: [], addressId: b.addressId })
         .set('Idempotency-Key', randomUUID())
         .expect(400);
-
-      const unshippable = await listed(noAddress, mug());
-      const line2 = await addToCart(b, unshippable.modelIds[0], 1);
-      const refused = await checkout(b, [line2]).expect(409);
-      expect(refused.body.message).toMatch(/cannot ship orders yet/);
 
       await as(s)
         .patch(`/items/${itemId}/status`, { status: 'hidden' })
@@ -288,7 +278,7 @@ describe('Orders (e2e)', () => {
 
       const [shipped, cancelled] = await Promise.all([
         as(s).post(`/orders/${order.id}/ship`),
-        as(b).post(`/orders/${order.id}/cancel`),
+        as(b).post(`/orders/${order.id}/cancel`, { reason: 'changed_mind' }),
       ]);
       expect([shipped.status, cancelled.status].sort((x, y) => x - y)).toEqual([
         200, 409,
@@ -347,13 +337,27 @@ describe('Orders (e2e)', () => {
         order.id,
       ]);
 
+      await as(b).post(`/orders/${order.id}/cancel`).expect(400);
+      await as(b)
+        .post(`/orders/${order.id}/cancel`, { reason: 'bored' })
+        .expect(400);
+      await as(b)
+        .post(`/orders/${order.id}/cancel`, { reason: 'other', note: '  ' })
+        .expect(400);
       const cancelled = await as(b)
-        .post(`/orders/${order.id}/cancel`)
+        .post(`/orders/${order.id}/cancel`, {
+          reason: 'other',
+          note: ' Đặt nhầm màu ',
+        })
         .expect(200);
       expect(cancelled.body.history.map((h: { to: string }) => h.to)).toEqual([
         'unpaid',
         'cancelled',
       ]);
+      expect(cancelled.body).toMatchObject({
+        cancelReason: 'other',
+        cancelNote: 'Đặt nhầm màu',
+      });
       expect(await stock(modelId)).toEqual({ onHand: 5, reserved: 0 });
     });
 
@@ -381,7 +385,9 @@ describe('Orders (e2e)', () => {
       const shipmentId = arranged.body.shipment.id;
       expect(await stock(modelId)).toEqual({ onHand: 5, reserved: 2 });
       await as(s).post(`/orders/${order.id}/ship`).expect(409);
-      await as(b).post(`/orders/${order.id}/cancel`).expect(409);
+      await as(b)
+        .post(`/orders/${order.id}/cancel`, { reason: 'changed_mind' })
+        .expect(409);
       await as(s).post(`/orders/${order.id}/cancel`).expect(409);
 
       await carrier(shipmentId, 'delivered').expect(409);
@@ -461,16 +467,52 @@ describe('Orders (e2e)', () => {
       await carrier(shipmentId, 'picked_up').expect(200);
     });
 
+    it('lets admins list any buyer or shop orders', async () => {
+      const { s, b, order } = await placed();
+      const byBuyer = await as(admin)
+        .get(`/admin/orders?buyerId=${b.id}`)
+        .expect(200);
+      expect(byBuyer.body.items).toEqual([
+        expect.objectContaining({
+          id: order.id,
+          buyer: { id: b.id, email: b.email, username: b.username },
+        }),
+      ]);
+      const byShop = await as(admin)
+        .get(`/admin/orders?shopId=${s.shopId}&status=to_ship`)
+        .expect(200);
+      expect(byShop.body.items.map((o: { id: string }) => o.id)).toEqual([
+        order.id,
+      ]);
+      await as(admin).get('/admin/orders?shopId=nope').expect(400);
+      await as(b).get(`/admin/orders?buyerId=${b.id}`).expect(403);
+    });
+
+    it('keeps items that have ever been ordered', async () => {
+      const { s, b, itemId, order } = await placed();
+      await as(s).delete(`/items/${itemId}`).expect(409);
+      await as(b)
+        .post(`/orders/${order.id}/cancel`, { reason: 'changed_mind' })
+        .expect(200);
+      await as(s).delete(`/items/${itemId}`).expect(409);
+      await http().get(`/items/${itemId}`).expect(200);
+    });
+
     it('releases the reservation when either side cancels before shipping', async () => {
       const first = await placed();
-      await as(first.b).post(`/orders/${first.order.id}/cancel`).expect(200);
+      await as(first.b)
+        .post(`/orders/${first.order.id}/cancel`, { reason: 'changed_mind' })
+        .expect(200);
       expect(await stock(first.modelId)).toEqual({ onHand: 5, reserved: 0 });
 
       const second = await placed();
       const cancelled = await as(second.s)
         .post(`/orders/${second.order.id}/cancel`)
         .expect(200);
-      expect(cancelled.body.status).toBe('cancelled');
+      expect(cancelled.body).toMatchObject({
+        status: 'cancelled',
+        cancelReason: null,
+      });
       await as(second.s).post(`/orders/${second.order.id}/ship`).expect(409);
       expect(
         await prisma.shipment.count({ where: { orderId: second.order.id } }),
