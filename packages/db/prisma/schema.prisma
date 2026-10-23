@@ -34,6 +34,7 @@ model User {
   sessions          Session[]
   shop              Shop?
   cartItems         CartItem[]
+  addresses         Address[]
 
   @@map("users")
 }
@@ -65,16 +66,17 @@ enum ShopStatus {
 }
 
 model Shop {
-  id            String     @id @default(uuid(7)) @db.Uuid
-  ownerId       String     @unique @map("owner_id") @db.Uuid
-  name          String     @unique
-  nameChangedAt DateTime?  @map("name_changed_at") @db.Timestamptz(3)
+  id            String       @id @default(uuid(7)) @db.Uuid
+  ownerId       String       @unique @map("owner_id") @db.Uuid
+  name          String       @unique
+  nameChangedAt DateTime?    @map("name_changed_at") @db.Timestamptz(3)
   description   String?
-  status        ShopStatus @default(pending)
-  createdAt     DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
-  owner         User       @relation(fields: [ownerId], references: [id])
+  status        ShopStatus   @default(pending)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @map("updated_at") @db.Timestamptz(3)
+  owner         User         @relation(fields: [ownerId], references: [id])
   items         Item[]
+  address       ShopAddress?
 
   @@index([status])
   @@map("shops")
@@ -202,4 +204,66 @@ model CartItem {
   @@unique([userId, modelId])
   @@index([modelId])
   @@map("cart_items")
+}
+
+enum WardType {
+  ward
+  commune
+  special_zone
+
+  @@map("ward_type")
+}
+
+model Province {
+  code     String @id
+  name     String
+  fullName String @map("full_name")
+  wards    Ward[]
+
+  @@map("provinces")
+}
+
+model Ward {
+  code          String        @id
+  name          String
+  fullName      String        @map("full_name")
+  provinceCode  String        @map("province_code")
+  type          WardType
+  province      Province      @relation(fields: [provinceCode], references: [code])
+  addresses     Address[]
+  shopAddresses ShopAddress[]
+
+  @@index([provinceCode])
+  @@map("wards")
+}
+
+model Address {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  recipientName String   @map("recipient_name")
+  phone         String
+  wardCode      String   @map("ward_code")
+  street        String
+  isDefault     Boolean  @default(false) @map("is_default")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ward          Ward     @relation(fields: [wardCode], references: [code])
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+model ShopAddress {
+  shopId      String   @id @map("shop_id") @db.Uuid
+  contactName String   @map("contact_name")
+  phone       String
+  wardCode    String   @map("ward_code")
+  street      String
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  ward        Ward     @relation(fields: [wardCode], references: [code])
+
+  @@map("shop_addresses")
 }

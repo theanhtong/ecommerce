@@ -8,8 +8,14 @@ import { Prisma, ShopStatus } from '@ecommerce/db';
 import { withinChangeCooldown } from '../../common/cooldown.js';
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import {
+  assertWardExists,
+  locationInclude,
+  locationView,
+} from '../regions/location.js';
 import type { CreateShopDto } from './dto/create-shop.dto.js';
 import type { ListShopsQuery } from './dto/list-shops.query.js';
+import type { ShopAddressDto } from './dto/shop-address.dto.js';
 import type { UpdateShopDto } from './dto/update-shop.dto.js';
 
 // Rejected shops go back to pending when the owner edits them, not through admin.
@@ -26,6 +32,19 @@ const publicSelect = {
   description: true,
   createdAt: true,
 } satisfies Prisma.ShopSelect;
+
+const addressQuery = {
+  omit: { shopId: true, wardCode: true },
+  include: locationInclude,
+} satisfies Pick<Prisma.ShopAddressFindUniqueArgs, 'omit' | 'include'>;
+
+const addressView = ({
+  ward,
+  ...address
+}: Prisma.ShopAddressGetPayload<typeof addressQuery>) => ({
+  ...address,
+  ...locationView({ ward }),
+});
 
 const isUniqueViolation = (error: unknown) =>
   error instanceof Prisma.PrismaClientKnownRequestError &&
@@ -95,6 +114,33 @@ export class ShopsService {
       throw error;
     }
     return this.getMine(ownerId);
+  }
+
+  async getAddress(ownerId: string) {
+    const shop = await this.getMine(ownerId);
+    const address = await this.prisma.shopAddress.findUnique({
+      where: { shopId: shop.id },
+      ...addressQuery,
+    });
+    if (!address) throw new NotFoundException('Shop address not set');
+    return addressView(address);
+  }
+
+  async setAddress(ownerId: string, dto: ShopAddressDto) {
+    const shop = await this.getMine(ownerId);
+    if (shop.status === ShopStatus.banned) {
+      throw new ForbiddenException('Shop is banned');
+    }
+    await assertWardExists(this.prisma, dto.wardCode);
+    const { contactName, phone, wardCode, street } = dto;
+    const fields = { contactName, phone, wardCode, street };
+    const address = await this.prisma.shopAddress.upsert({
+      where: { shopId: shop.id },
+      create: { ...fields, shopId: shop.id },
+      update: fields,
+      ...addressQuery,
+    });
+    return addressView(address);
   }
 
   async getPublic(id: string) {

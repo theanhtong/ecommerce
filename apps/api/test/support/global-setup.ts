@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import pg from 'pg';
 
-// Runs once before all e2e files: ensures a migrated, empty test database.
+// Runs once before all e2e files: ensures a migrated, empty test database. Reference data (provinces, wards) is kept and upserted.
 export default async function setup() {
   if (existsSync('../../.env')) process.loadEnvFile('../../.env');
   const url = process.env.TEST_DATABASE_URL;
@@ -38,11 +38,16 @@ export default async function setup() {
   const db = new pg.Client({ connectionString: url });
   await db.connect();
   const { rows } = await db.query<{ tablename: string }>(
-    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '_prisma_migrations'",
+    "SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT IN ('_prisma_migrations', 'provinces', 'wards')",
   );
   if (rows.length) {
     const tables = rows.map((r) => `"${r.tablename}"`).join(', ');
     await db.query(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
   }
   await db.end();
+
+  execFileSync('node', ['scripts/seed-regions.ts'], {
+    env: { ...process.env, DATABASE_URL: url },
+    stdio: 'pipe',
+  });
 }
