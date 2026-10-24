@@ -111,7 +111,7 @@ async function main() {
     token: seller.accessToken,
     body: {
       name: 'Cửa Hàng Demo',
-      description: 'Đồ gỗ thủ công',
+      description: 'Áo thun cơ bản',
       contactName: 'Kho Cửa Hàng Demo',
       phone: '0901 234 567',
       wardCode: '00070',
@@ -147,12 +147,10 @@ async function main() {
   step('5. Seller updates their own shop');
   await call('PATCH', '/shops/me', 200, {
     token: seller.accessToken,
-    body: { description: 'Đồ gỗ thủ công, giao toàn quốc' },
+    body: { description: 'Áo thun cơ bản, giao toàn quốc' },
   });
 
-  step(
-    '6. Seller lists an item with colour and size variations, and one without',
-  );
+  step('6. Seller lists one item with colour and size variations');
   const shirt = await call('POST', '/items', 201, {
     token: seller.accessToken,
     body: {
@@ -164,20 +162,11 @@ async function main() {
         { name: 'Size', options: ['M', 'L'] },
       ],
       models: [
-        { tierIndex: [0, 0], price: 150000, stock: 10, sku: 'AO-TRANG-M' },
-        { tierIndex: [0, 1], price: 150000, stock: 8, sku: 'AO-TRANG-L' },
-        { tierIndex: [1, 0], price: 165000, stock: 5, sku: 'AO-DEN-M' },
-        { tierIndex: [1, 1], price: 165000, stock: 0, sku: 'AO-DEN-L' },
+        { tierIndex: [0, 0], price: 2000, stock: 10, sku: 'AO-TRANG-M' },
+        { tierIndex: [0, 1], price: 2000, stock: 8, sku: 'AO-TRANG-L' },
+        { tierIndex: [1, 0], price: 3000, stock: 5, sku: 'AO-DEN-M' },
+        { tierIndex: [1, 1], price: 3000, stock: 0, sku: 'AO-DEN-L' },
       ],
-    },
-  });
-  const mug = await call('POST', '/items', 201, {
-    token: seller.accessToken,
-    body: {
-      name: 'Cốc gỗ khắc tên',
-      weight: 250,
-      tierVariations: [],
-      models: [{ tierIndex: [], price: 89000, stock: 30 }],
     },
   });
 
@@ -187,7 +176,7 @@ async function main() {
   );
   await call('PATCH', `/models/${blackL.id}`, 200, {
     token: seller.accessToken,
-    body: { price: 159000 },
+    body: { price: 2500 },
   });
   const restocked = await call(
     'POST',
@@ -219,17 +208,12 @@ async function main() {
     `    movements: ${history.items.map((m: { delta: number; reason: string }) => `${m.delta > 0 ? '+' : ''}${m.delta} ${m.reason}`).join(', ')}`,
   );
 
-  step('8. Seller hides one item; buyer browses the shop');
-  await call('PATCH', `/items/${mug.id}/status`, 200, {
-    token: seller.accessToken,
-    body: { status: 'hidden' },
-  });
+  step('8. Buyer browses the shop');
   const listing = await call('GET', `/shops/${shop.id}/items`, 200);
   console.log(
     `    public listing: ${listing.items.map((i: { name: string; priceMin: number; priceMax: number; stock: number }) => `${i.name} (${i.priceMin}-${i.priceMax}đ, ${i.stock} in stock)`).join('; ')}`,
   );
   await call('GET', `/items/${shirt.id}`, 200);
-  await call('GET', `/items/${mug.id}`, 404);
   await call('GET', '/items/mine', 200, { token: seller.accessToken });
 
   step("9. Buyer cannot edit the seller's catalog");
@@ -251,7 +235,7 @@ async function main() {
     },
   });
 
-  step('10. A second seller opens a shop and imports products from CSV');
+  step('10. A second seller opens a shop and imports its item from CSV');
   const seller2 = await call('POST', '/auth/register', 201, {
     body: { ...SELLER2, password: PASSWORD },
   });
@@ -259,7 +243,7 @@ async function main() {
     token: seller2.accessToken,
     body: {
       name: 'Nhà Gỗ Demo',
-      description: 'Nội thất và đồ gia dụng',
+      description: 'Đèn ngủ gỗ thủ công',
       contactName: 'Xưởng Nhà Gỗ Demo',
       phone: '0377 888 999',
       wardCode: '26740',
@@ -319,10 +303,7 @@ async function main() {
   const whiteM = shirt.models.find(
     (m: { tierIndex: number[] }) => m.tierIndex.join() === '0,0',
   );
-  const deskId = listing2.items.find(
-    (i: { name: string }) => i.name === 'Bàn học gỗ sồi',
-  ).id;
-  const desk = await call('GET', `/items/${deskId}`, 200);
+  const lamp = await call('GET', `/items/${listing2.items[0].id}`, 200);
   const cartAdd = (modelId: string, quantity: number, expected: number) =>
     call('POST', '/cart/items', expected, {
       token: buyer.accessToken,
@@ -330,15 +311,15 @@ async function main() {
     });
   await cartAdd(whiteM.id, 2, 201);
   await cartAdd(whiteM.id, 1, 201);
-  await cartAdd(desk.models[0].id, 1, 201);
-  await cartAdd(desk.models[1].id, 5, 409);
+  await cartAdd(lamp.models[0].id, 1, 201);
+  await cartAdd(lamp.models[1].id, 5, 409);
   await call('POST', '/cart/items', 403, {
     token: seller.accessToken,
     body: { modelId: whiteM.id, quantity: 1 },
   });
   await call('PATCH', `/models/${whiteM.id}`, 200, {
     token: seller.accessToken,
-    body: { price: 139000 },
+    body: { price: 1500 },
   });
   const cart = await call('GET', '/cart', 200, { token: buyer.accessToken });
   for (const group of cart.shops) {

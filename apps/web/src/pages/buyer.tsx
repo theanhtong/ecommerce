@@ -53,7 +53,6 @@ import {
   PAYMENT_METHOD,
   phone,
   place,
-  SHIPMENT_STATUS,
 } from '@/lib/format';
 import { useCart, usePaged } from '@/lib/queries';
 import type {
@@ -259,7 +258,7 @@ export function CheckoutPage() {
   });
   const place_ = useMutation({
     mutationFn: () =>
-      api<{ orders: Order[] }>('/checkout', {
+      api<{ checkoutId: string; orders: Order[] }>('/checkout', {
         method: 'POST',
         headers: { 'Idempotency-Key': idempotencyKey },
         body: {
@@ -268,11 +267,16 @@ export function CheckoutPage() {
           paymentMethod,
         },
       }),
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast.success('Đặt hàng thành công');
       void queryClient.invalidateQueries({ queryKey: ['cart'] });
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
-      navigate('/orders', { replace: true });
+      navigate(
+        paymentMethod === 'online'
+          ? `/checkouts/${data.checkoutId}/payment`
+          : '/orders',
+        { replace: true },
+      );
     },
   });
 
@@ -533,7 +537,7 @@ export function CancelOrderDialog({
 }
 
 const ORDER_COLS =
-  'flex flex-wrap items-start gap-4 md:grid md:grid-cols-[1fr_8rem_8rem_8rem_10rem]';
+  'flex flex-wrap items-start gap-4 md:grid md:grid-cols-[1fr_8rem_8rem_10rem]';
 
 export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
   const queryClient = useQueryClient();
@@ -581,7 +585,6 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
               <span>Sản phẩm</span>
               <span className="text-right">Tổng tiền</span>
               <span>Trạng thái</span>
-              <span>Vận chuyển</span>
               <span className="text-right">Thao tác</span>
             </CardContent>
           </Card>
@@ -647,9 +650,6 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
                   <div>
                     <OrderStatusBadge status={o.status} />
                   </div>
-                  <p className="text-sm text-muted-foreground">
-                    {o.shipment ? SHIPMENT_STATUS[o.shipment.status] : '—'}
-                  </p>
                   <div className="flex flex-col items-end gap-2">
                     {party === 'seller' &&
                       o.status === 'to_ship' &&
@@ -722,8 +722,10 @@ export function OrdersPage() {
 export function OrderDetail({
   backTo,
   actions,
+  links,
 }: {
   backTo: string;
+  links?: (order: Order) => { label: string; to: string }[];
   actions: (order: Order) => {
     label: string;
     path: string;
@@ -762,18 +764,25 @@ export function OrderDetail({
       </Button>
       <PageHeader
         title={`Đơn hàng ${o.id.slice(-8).toUpperCase()}`}
-        actions={actions(o).map((x) => (
-          <Button
-            key={x.path}
-            variant={x.variant ?? 'default'}
-            disabled={act.isPending}
-            onClick={() =>
-              x.askReason ? setCancelling(true) : act.mutate(x.path)
-            }
-          >
-            {x.label}
-          </Button>
-        ))}
+        actions={[
+          ...(links?.(o) ?? []).map((x) => (
+            <Button key={x.to} asChild>
+              <Link to={x.to}>{x.label}</Link>
+            </Button>
+          )),
+          ...actions(o).map((x) => (
+            <Button
+              key={x.path}
+              variant={x.variant ?? 'default'}
+              disabled={act.isPending}
+              onClick={() =>
+                x.askReason ? setCancelling(true) : act.mutate(x.path)
+              }
+            >
+              {x.label}
+            </Button>
+          )),
+        ]}
       />
       <CancelOrderDialog
         orderId={o.id}
@@ -903,6 +912,11 @@ export function BuyerOrderPage() {
   return (
     <OrderDetail
       backTo="/orders"
+      links={(o) =>
+        o.status === 'unpaid'
+          ? [{ label: 'Thanh toán', to: `/checkouts/${o.checkoutId}/payment` }]
+          : []
+      }
       actions={(o) => [
         ...(o.status === 'unpaid' || (o.status === 'to_ship' && !o.shipment)
           ? [

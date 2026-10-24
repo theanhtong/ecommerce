@@ -31,6 +31,7 @@ import {
   CheckoutPage,
   OrdersPage,
 } from '@/pages/buyer';
+import { PaymentPage } from '@/pages/payment';
 import { SellerItemPage, SellerItemsPage } from '@/pages/seller/items';
 import { SellerLayout, SellerShopPage } from '@/pages/seller/layout';
 import { SellerOrderPage, SellerOrdersPage } from '@/pages/seller/other';
@@ -88,6 +89,7 @@ const router = createBrowserRouter([
             children: [
               { path: 'cart', element: <CartPage /> },
               { path: 'checkout', element: <CheckoutPage /> },
+              { path: 'checkouts/:id/payment', element: <PaymentPage /> },
               { path: 'orders', element: <OrdersPage /> },
               { path: 'orders/:id', element: <BuyerOrderPage /> },
             ],

@@ -27,7 +27,7 @@ export async function createTestApp({ throttle = false } = {}): Promise<
       .useValue(noThrottleStorage);
   const app = (await builder.compile()).createNestApplication<
     INestApplication<App>
-  >();
+  >({ rawBody: true });
   configureApp(app);
   await app.init();
   return app;

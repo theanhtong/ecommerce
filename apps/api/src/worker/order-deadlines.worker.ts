@@ -51,7 +51,9 @@ export class OrderDeadlinesWorker
   }
 
   private async sweep() {
-    const cancelled = await this.orders.cancelUnshipped();
+    const cancelled =
+      (await this.orders.expireUnpaid()) +
+      (await this.orders.cancelUnshipped());
     const completed = await this.orders.completeDelivered();
     if (cancelled || completed) {
       this.logger.log(`Cancelled ${cancelled}, completed ${completed} orders`);
