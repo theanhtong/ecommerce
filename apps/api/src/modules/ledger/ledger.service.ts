@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { LedgerAccountType, Prisma } from '@ecommerce/db';
+import { LedgerAccountType, PaymentMethod, Prisma } from '@ecommerce/db';
 import {
   cursorArgs,
   toPage,
@@ -51,10 +51,17 @@ export class LedgerService {
       itemsTotal: number;
       shippingFee: number;
       total: number;
+      paymentMethod: PaymentMethod;
     },
   ) {
     const commission = Math.round((order.itemsTotal * this.rateBps) / 10_000);
-    const receivable = await this.account(tx, LedgerAccountType.receivable);
+    // Cash on delivery is still owed by the carrier; an online order was paid upfront.
+    const source = await this.account(
+      tx,
+      order.paymentMethod === PaymentMethod.cod
+        ? LedgerAccountType.receivable
+        : LedgerAccountType.prepaid,
+    );
     const commissionAccount = await this.account(
       tx,
       LedgerAccountType.commission,
@@ -68,10 +75,77 @@ export class LedgerService {
       refType: 'order',
       refId: order.id,
       lines: [
-        { account: receivable, amount: order.total },
+        { account: source, amount: order.total },
         { account: wallet, amount: -(order.itemsTotal - commission) },
         { account: commissionAccount, amount: -commission },
         { account: shipping, amount: -order.shippingFee },
+      ],
+    });
+  }
+
+  // Money for a payment that matched its checkout is held until the orders complete.
+  async receivePayment(
+    tx: Prisma.TransactionClient,
+    payment: { id: string; amount: number },
+  ) {
+    await this.post(tx, {
+      idempotencyKey: `payment:${payment.id}:received`,
+      refType: 'payment',
+      refId: payment.id,
+      lines: [
+        {
+          account: await this.account(tx, LedgerAccountType.bank),
+          amount: payment.amount,
+        },
+        {
+          account: await this.account(tx, LedgerAccountType.prepaid),
+          amount: -payment.amount,
+        },
+      ],
+    });
+  }
+
+  // A transfer that matches no payable checkout is owed back to whoever sent it.
+  async receiveUnmatched(
+    tx: Prisma.TransactionClient,
+    transfer: { id: string; amount: number },
+  ) {
+    await this.post(tx, {
+      idempotencyKey: `transfer:${transfer.id}:unmatched`,
+      refType: 'transfer',
+      refId: transfer.id,
+      lines: [
+        {
+          account: await this.account(tx, LedgerAccountType.bank),
+          amount: transfer.amount,
+        },
+        {
+          account: await this.account(tx, LedgerAccountType.refund_due),
+          amount: -transfer.amount,
+        },
+      ],
+    });
+  }
+
+  // shortcut: refunds are only booked as owed; paying them out is manual until a refund flow exists.
+  async refundOrder(
+    tx: Prisma.TransactionClient,
+    order: { id: string; total: number },
+  ) {
+    await this.post(tx, {
+      idempotencyKey: `order:${order.id}:refund`,
+      // Not 'order': the report counts 'order' entries as settled orders.
+      refType: 'refund',
+      refId: order.id,
+      lines: [
+        {
+          account: await this.account(tx, LedgerAccountType.prepaid),
+          amount: order.total,
+        },
+        {
+          account: await this.account(tx, LedgerAccountType.refund_due),
+          amount: -order.total,
+        },
       ],
     });
   }

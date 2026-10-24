@@ -9,6 +9,8 @@ import {
   CancelReason,
   InventoryReason,
   OrderStatus,
+  PaymentMethod,
+  PaymentStatus,
   Prisma,
   ShipmentStatus,
 } from '@ecommerce/db';
@@ -43,6 +45,10 @@ const SHIP_DEADLINE_MS = 3 * DAY_MS;
 // A delivered order completes on its own 3 days later if the buyer does not confirm it first.
 const AUTO_COMPLETE_AFTER_MS = 3 * DAY_MS;
 const SWEEP_BATCH = 100;
+
+type SweptOrder = Prisma.OrderGetPayload<{
+  include: { items: true; checkout: { select: { paymentMethod: true } } };
+}>;
 
 type CarrierStatus = Exclude<ShipmentStatus, 'awaiting_pickup'>;
 
@@ -169,7 +175,8 @@ export class OrdersService {
           throw new ConflictException('Shipment already arranged');
         }
       },
-      after: async (tx) => {
+      after: async (tx, order) => {
+        if (order.status === OrderStatus.to_ship) await this.refund(tx, order);
         if (reason) {
           await tx.order.update({
             where: { id },
@@ -187,8 +194,29 @@ export class OrdersService {
     return this.transition(userId, id, {
       from: { delivered: ['buyer'] },
       to: OrderStatus.completed,
-      after: (tx, order) => this.ledger.settleOrder(tx, order),
+      after: (tx, order) => this.settle(tx, order),
     });
+  }
+
+  // Called inside the payment's transaction. Pays every order of the checkout or none: false
+  // when any of them is no longer waiting for payment.
+  async payCheckout(tx: Prisma.TransactionClient, checkoutId: string) {
+    const orders = await tx.$queryRaw<{ id: string; status: OrderStatus }[]>`
+      SELECT id, status FROM orders WHERE checkout_id = ${checkoutId}::uuid
+      ORDER BY id FOR UPDATE`;
+    if (orders.some((o) => o.status !== OrderStatus.unpaid)) return false;
+    for (const { id } of orders) {
+      await this.move(
+        tx,
+        { id, items: [] },
+        OrderStatus.unpaid,
+        OrderStatus.to_ship,
+        {
+          actorId: null,
+        },
+      );
+    }
+    return true;
   }
 
   // Called by the carrier service. Repeating the current status is a no-op, so retried
@@ -237,7 +265,29 @@ export class OrdersService {
         },
       },
       OrderStatus.cancelled,
-      { stock: RELEASE },
+      { stock: RELEASE, after: (tx, order) => this.refund(tx, order) },
+    );
+  }
+
+  expireUnpaid(now = new Date()) {
+    return this.sweep(
+      {
+        status: OrderStatus.unpaid,
+        checkout: { payment: { expiresAt: { lt: now } } },
+      },
+      OrderStatus.cancelled,
+      {
+        stock: RELEASE,
+        after: async (tx, order) => {
+          await tx.payment.updateMany({
+            where: {
+              checkoutId: order.checkoutId,
+              status: PaymentStatus.pending,
+            },
+            data: { status: PaymentStatus.expired },
+          });
+        },
+      },
     );
   }
 
@@ -249,8 +299,28 @@ export class OrdersService {
         shipment: { is: { deliveredAt: { lt: cutoff } } },
       },
       OrderStatus.completed,
-      { after: (tx, order) => this.ledger.settleOrder(tx, order) },
+      { after: (tx, order) => this.settle(tx, order) },
     );
+  }
+
+  private settle(
+    tx: Prisma.TransactionClient,
+    order: Omit<SweptOrder, 'items'>,
+  ) {
+    return this.ledger.settleOrder(tx, {
+      ...order,
+      paymentMethod: order.checkout.paymentMethod,
+    });
+  }
+
+  // A paid order that will never ship owes the buyer their money back.
+  private async refund(
+    tx: Prisma.TransactionClient,
+    order: Omit<SweptOrder, 'items'>,
+  ) {
+    if (order.checkout.paymentMethod === PaymentMethod.online) {
+      await this.ledger.refundOrder(tx, order);
+    }
   }
 
   // Moves every order matching `where`; the match is repeated under the row lock, so an order a
@@ -262,7 +332,7 @@ export class OrdersService {
       stock?: StockEffect;
       after?: (
         tx: Prisma.TransactionClient,
-        order: Prisma.OrderGetPayload<{ include: { items: true } }>,
+        order: SweptOrder,
       ) => Promise<void>;
     },
   ) {
@@ -270,7 +340,7 @@ export class OrdersService {
     for (;;) {
       const orders = await this.prisma.order.findMany({
         where,
-        include: { items: true },
+        include: { items: true, checkout: { select: { paymentMethod: true } } },
         orderBy: { id: 'asc' },
         take: SWEEP_BATCH,
       });

@@ -29,12 +29,6 @@ export const CANCEL_REASON: Record<CancelReason, string> = {
   other: 'Lý do khác',
 };
 
-export const SHIPMENT_STATUS = {
-  awaiting_pickup: 'Chờ lấy hàng',
-  picked_up: 'Đã lấy hàng',
-  delivered: 'Đã giao',
-} as const;
-
 export const ORDER_STATUS: Record<OrderStatus, string> = {
   unpaid: 'Chờ thanh toán',
   to_ship: 'Chờ lấy hàng',

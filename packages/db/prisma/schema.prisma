@@ -299,6 +299,7 @@ model Checkout {
   createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
   buyer          User          @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   orders         Order[]
+  payment        Payment?
 
   @@unique([buyerId, idempotencyKey])
   @@map("checkouts")
@@ -402,6 +403,9 @@ enum LedgerAccountType {
   commission
   shipping
   wallet
+  bank
+  prepaid
+  refund_due
 
   @@map("ledger_account_type")
 }
@@ -442,4 +446,46 @@ model LedgerLine {
   @@index([entryId])
   @@index([accountId, id])
   @@map("ledger_lines")
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  expired
+
+  @@map("payment_status")
+}
+
+// One bank transfer pays a whole online checkout; the buyer quotes `code` in the transfer note.
+model Payment {
+  id         String         @id @default(uuid(7)) @db.Uuid
+  checkoutId String         @unique @map("checkout_id") @db.Uuid
+  code       String         @unique
+  amount     Int
+  status     PaymentStatus  @default(pending)
+  expiresAt  DateTime       @map("expires_at") @db.Timestamptz(3)
+  paidAt     DateTime?      @map("paid_at") @db.Timestamptz(3)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  checkout   Checkout       @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+  transfers  BankTransfer[]
+
+  @@map("payments")
+}
+
+// Every incoming transfer the bank reports, matched or not, so received money is never lost.
+model BankTransfer {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  providerId    BigInt   @unique @map("provider_id")
+  paymentId     String?  @map("payment_id") @db.Uuid
+  matched       Boolean
+  amount        Int
+  content       String
+  referenceCode String?  @map("reference_code")
+  payload       Json
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  payment       Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+
+  @@index([paymentId])
+  @@map("bank_transfers")
 }

@@ -14,6 +14,7 @@ import {
 } from '@ecommerce/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { variationName } from '../catalog/items.service.js';
+import { PAYMENT_WINDOW_MS, paymentCode } from '../payments/payment-code.js';
 import { locationInclude, locationView } from '../regions/location.js';
 import type { CheckoutDto } from './dto/order.dto.js';
 import { orderInclude, orderView } from './order-view.js';
@@ -115,6 +116,7 @@ export class CheckoutService {
       street: address.street,
       ...locationView(address),
     };
+    let checkoutTotal = 0;
     const byShop = new Map<string, Line[]>();
     for (const line of lines) {
       const shopId = line.model.item.shopId;
@@ -173,6 +175,7 @@ export class CheckoutService {
           },
         },
       });
+      checkoutTotal += order.total;
       await tx.inventoryMovement.createMany({
         data: shopLines.map((l) => ({
           modelId: l.modelId,
@@ -185,6 +188,16 @@ export class CheckoutService {
       });
     }
 
+    if (dto.paymentMethod === PaymentMethod.online) {
+      await tx.payment.create({
+        data: {
+          checkoutId: checkout.id,
+          code: paymentCode(),
+          amount: checkoutTotal,
+          expiresAt: new Date(Date.now() + PAYMENT_WINDOW_MS),
+        },
+      });
+    }
     await tx.cartItem.deleteMany({ where: { id: { in: dto.cartItemIds } } });
     return checkout.id;
   }
