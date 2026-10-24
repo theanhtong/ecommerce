@@ -9,7 +9,6 @@ import type { Request } from 'express';
 
 const digest = (value: string) => createHash('sha256').update(value).digest();
 
-// Authenticates the carrier service by the shared secret in X-Carrier-Key.
 @Injectable()
 export class CarrierKeyGuard implements CanActivate {
   private readonly expected: Buffer;

@@ -129,7 +129,7 @@ export class OrdersService {
     return orderView(order);
   }
 
-  // The seller hands the order to the carrier; the order stays to_ship until pickup.
+  // The order stays to_ship until the carrier picks it up.
   async ship(userId: string, id: string) {
     const { party } = await this.involved(userId, id);
     if (party !== 'seller') {
@@ -151,8 +151,7 @@ export class OrdersService {
     return this.get(userId, id);
   }
 
-  // An unpaid order is the buyer's to abandon; a payable one either side may cancel until
-  // shipment is arranged. Assumption: cancelling after that has to go through the carrier.
+  // Assumption: once shipment is arranged, cancelling has to go through the carrier.
   async cancel(
     userId: string,
     id: string,
@@ -198,8 +197,7 @@ export class OrdersService {
     });
   }
 
-  // Called inside the payment's transaction. Pays every order of the checkout or none: false
-  // when any of them is no longer waiting for payment.
+  // All orders of the checkout or none; false when any is no longer unpaid.
   async payCheckout(tx: Prisma.TransactionClient, checkoutId: string) {
     const orders = await tx.$queryRaw<{ id: string; status: OrderStatus }[]>`
       SELECT id, status FROM orders WHERE checkout_id = ${checkoutId}::uuid
@@ -219,9 +217,12 @@ export class OrdersService {
     return true;
   }
 
-  // Called by the carrier service. Repeating the current status is a no-op, so retried
-  // callbacks are safe; skipping a step is refused.
-  async carrierUpdate(shipmentId: string, status: CarrierStatus) {
+  // Repeats are no-ops so retried callbacks are safe; skipped steps are refused.
+  async carrierUpdate(
+    shipmentId: string,
+    status: CarrierStatus,
+    actorId: string | null = null,
+  ) {
     const shipment = await this.prisma.shipment.findUnique({
       where: { id: shipmentId },
       include: { order: { include: { items: true } } },
@@ -243,7 +244,7 @@ export class OrdersService {
         throw new ConflictException(`Shipment is ${current.status}`);
       }
       await this.move(tx, shipment.order, step.orderFrom, step.orderTo, {
-        actorId: null,
+        actorId,
         stock: step.stock,
       });
     });
@@ -313,7 +314,6 @@ export class OrdersService {
     });
   }
 
-  // A paid order that will never ship owes the buyer their money back.
   private async refund(
     tx: Prisma.TransactionClient,
     order: Omit<SweptOrder, 'items'>,
@@ -323,8 +323,7 @@ export class OrdersService {
     }
   }
 
-  // Moves every order matching `where`; the match is repeated under the row lock, so an order a
-  // user changed in the meantime is skipped. Returns how many orders moved.
+  // Re-checks `where` under the row lock, so orders changed meanwhile are skipped.
   private async sweep(
     where: Prisma.OrderWhereInput,
     to: OrderStatus,
@@ -360,6 +359,17 @@ export class OrdersService {
       }
       if (orders.length < SWEEP_BATCH) return moved;
     }
+  }
+
+  // shortcut: the seller reports pickup and delivery until a carrier integration can.
+  async updateShipment(userId: string, id: string, status: CarrierStatus) {
+    const { party, order } = await this.involved(userId, id);
+    if (party !== 'seller') {
+      throw new ForbiddenException('Only the seller can do this');
+    }
+    if (!order.shipment) throw new ConflictException('Shipment not arranged');
+    await this.carrierUpdate(order.shipment.id, status, userId);
+    return this.get(userId, id);
   }
 
   private async list(where: Prisma.OrderWhereInput, query: ListOrdersQuery) {

@@ -32,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { OrderDetail, OrderTable } from '@/pages/buyer';
+import { OrderDetail, OrderTable, SHIPMENT_STEP } from '@/pages/buyer';
 import { api, download } from '@/lib/api';
 import { dateTime, money } from '@/lib/format';
 import { useInfiniteQuery } from '@tanstack/react-query';
@@ -174,14 +174,24 @@ export function SellerOrderPage() {
   return (
     <OrderDetail
       backTo="/account/seller/orders"
-      actions={(o) =>
-        o.status === 'to_ship' && !o.shipment
+      actions={(o) => {
+        if (o.status === 'to_ship' && !o.shipment) {
+          return [
+            { label: 'Chuẩn bị hàng', path: 'ship' },
+            { label: 'Hủy đơn', path: 'cancel', variant: 'outline' },
+          ];
+        }
+        const step = o.shipment && SHIPMENT_STEP[o.shipment.status];
+        return step
           ? [
-              { label: 'Chuẩn bị hàng', path: 'ship' },
-              { label: 'Hủy đơn', path: 'cancel', variant: 'outline' },
+              {
+                label: step.label,
+                path: 'shipment',
+                body: { status: step.status },
+              },
             ]
-          : []
-      }
+          : [];
+      }}
     />
   );
 }

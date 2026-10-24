@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import pg from 'pg';
 
-// Runs once before all e2e files: ensures a migrated, empty test database. Reference data (provinces, wards) is kept and upserted.
+// Once before all e2e files: a migrated, empty test database; provinces and wards are kept.
 export default async function setup() {
   if (existsSync('../../.env')) process.loadEnvFile('../../.env');
   const url = process.env.TEST_DATABASE_URL;

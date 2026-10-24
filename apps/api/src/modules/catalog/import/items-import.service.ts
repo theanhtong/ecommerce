@@ -128,7 +128,7 @@ export class ItemsImportService {
     return '﻿' + toCsv([COLUMNS.map((c) => LABELS[c]), ...TEMPLATE_ROWS]);
   }
 
-  // Same columns as the template, one row per live model; stock is on-hand.
+  // Template columns, one row per live model.
   async export(ownerId: string) {
     const items = await this.prisma.item.findMany({
       where: { shop: { ownerId } },

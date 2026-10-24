@@ -33,7 +33,7 @@ export class PaymentsController {
     return this.payments.get(user.sub, id);
   }
 
-  // Called by the bank-transfer provider; it retries until it gets {"success": true}.
+  // The provider retries until it gets {"success": true}.
   @Post('payments/sepay/webhook')
   @HttpCode(HttpStatus.OK)
   @SkipThrottle()

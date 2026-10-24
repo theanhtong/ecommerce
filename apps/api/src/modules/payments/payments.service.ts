@@ -54,9 +54,7 @@ export class PaymentsService {
     };
   }
 
-  // Records every incoming transfer once. A transfer pays its checkout only when the code,
-  // the exact amount and the deadline all match and every order is still unpaid; anything
-  // else is booked as money owed back to the sender.
+  // Pays only on matching code, exact amount, open deadline and unpaid orders; else owed back.
   async receive(transfer: SepayTransfer, now = new Date()) {
     if (transfer.transferType !== 'in') return;
     await this.prisma.$transaction(async (tx) => {

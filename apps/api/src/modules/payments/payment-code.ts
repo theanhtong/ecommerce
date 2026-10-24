@@ -14,6 +14,6 @@ export const paymentCode = () =>
     '',
   );
 
-// Banks may reflow the transfer note, so the code is searched for anywhere in it.
+// Banks may reflow the note, so the code can sit anywhere in it.
 export const findPaymentCode = (text: string) =>
   CODE.exec(text.toUpperCase())?.[0] ?? null;
