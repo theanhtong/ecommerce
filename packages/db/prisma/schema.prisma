@@ -186,9 +186,7 @@ enum InventoryReason {
   @@map("inventory_reason")
 }
 
-// Append-only history of every change to Inventory.onHand or reserved.
-// delta is the change to on_hand for restock/adjust/sale/return and to reserved for reserve/release;
-// a sale also releases the same quantity from reserved.
+// Append-only. delta changes on_hand (restock/adjust/sale/return) or reserved (reserve/release); a sale also releases reserved.
 model InventoryMovement {
   id             String          @id @default(uuid(7)) @db.Uuid
   modelId        String          @map("model_id") @db.Uuid
@@ -289,8 +287,7 @@ enum PaymentMethod {
   @@map("payment_method")
 }
 
-// One buyer action that may create several orders (one per shop); replays return the same orders.
-// The buyer pays once for the whole checkout, so the payment method lives here.
+// One buyer action, one order per shop, paid once; replays return the same orders.
 model Checkout {
   id             String        @id @default(uuid(7)) @db.Uuid
   buyerId        String        @map("buyer_id") @db.Uuid
@@ -456,7 +453,7 @@ enum PaymentStatus {
   @@map("payment_status")
 }
 
-// One bank transfer pays a whole online checkout; the buyer quotes `code` in the transfer note.
+// One bank transfer pays a whole online checkout; the note carries `code`.
 model Payment {
   id         String         @id @default(uuid(7)) @db.Uuid
   checkoutId String         @unique @map("checkout_id") @db.Uuid
@@ -473,7 +470,7 @@ model Payment {
   @@map("payments")
 }
 
-// Every incoming transfer the bank reports, matched or not, so received money is never lost.
+// Every incoming transfer, matched or not, so received money is never lost.
 model BankTransfer {
   id            String   @id @default(uuid(7)) @db.Uuid
   providerId    BigInt   @unique @map("provider_id")

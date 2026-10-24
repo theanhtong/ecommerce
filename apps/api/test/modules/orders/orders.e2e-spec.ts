@@ -426,6 +426,39 @@ describe('Orders (e2e)', () => {
       ]);
     });
 
+    it('lets the seller report pickup and delivery in order', async () => {
+      const { s, b, modelId, order } = await placed();
+      const update = (account: Account, status: string) =>
+        as(account).post(`/orders/${order.id}/shipment`, { status });
+
+      await update(s, 'picked_up').expect(409);
+      await as(s).post(`/orders/${order.id}/ship`).expect(200);
+      await update(b, 'picked_up').expect(403);
+      await update(s, 'shipped').expect(400);
+      await update(s, 'delivered').expect(409);
+
+      const picked = await update(s, 'picked_up').expect(200);
+      expect(picked.body).toMatchObject({
+        status: 'shipping',
+        shipment: { status: 'picked_up', pickedUpAt: expect.any(String) },
+      });
+      expect(await stock(modelId)).toEqual({ onHand: 3, reserved: 0 });
+      await update(s, 'picked_up').expect(200);
+
+      const delivered = await update(s, 'delivered').expect(200);
+      expect(delivered.body).toMatchObject({
+        status: 'delivered',
+        shipment: { status: 'delivered', deliveredAt: expect.any(String) },
+      });
+      const history = await prisma.orderStatusHistory.findMany({
+        where: {
+          orderId: order.id,
+          toStatus: { in: ['shipping', 'delivered'] },
+        },
+      });
+      expect(history.map((h) => h.actorId)).toEqual([s.id, s.id]);
+    });
+
     it('applies a repeated carrier callback once', async () => {
       const { s, modelId, order } = await placed();
       const shipmentId = (

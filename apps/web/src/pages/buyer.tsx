@@ -4,6 +4,7 @@ import {
   MapPin,
   PackageCheck,
   Store,
+  Truck,
   UserRound,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -536,6 +537,17 @@ export function CancelOrderDialog({
   );
 }
 
+// The seller reports these steps while no carrier integration does.
+export const SHIPMENT_STEP: Partial<
+  Record<
+    NonNullable<Order['shipment']>['status'],
+    { status: 'picked_up' | 'delivered'; label: string }
+  >
+> = {
+  awaiting_pickup: { status: 'picked_up', label: 'Đã bàn giao vận chuyển' },
+  picked_up: { status: 'delivered', label: 'Đã giao hàng' },
+};
+
 const ORDER_COLS =
   'flex flex-wrap items-start gap-4 md:grid md:grid-cols-[1fr_8rem_8rem_10rem]';
 
@@ -548,8 +560,15 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
   const path = status === 'all' ? basePath : `${basePath}?status=${status}`;
   const page = usePaged<Order>(['orders', basePath, status], path);
   const act = useMutation({
-    mutationFn: ({ id, path }: { id: string; path: 'ship' | 'receive' }) =>
-      api<Order>(`/orders/${id}/${path}`, { method: 'POST' }),
+    mutationFn: ({
+      id,
+      path,
+      body,
+    }: {
+      id: string;
+      path: 'ship' | 'receive' | 'shipment';
+      body?: object;
+    }) => api<Order>(`/orders/${id}/${path}`, { method: 'POST', body }),
     onSuccess: (data) => {
       queryClient.setQueryData(['order', data.id], data);
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
@@ -589,6 +608,10 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
             </CardContent>
           </Card>
           {page.items.map((o) => {
+            const step =
+              party === 'seller' && o.shipment
+                ? SHIPMENT_STEP[o.shipment.status]
+                : undefined;
             const cancellable =
               party === 'buyer' &&
               (o.status === 'unpaid' ||
@@ -663,6 +686,22 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
                           Chuẩn bị hàng
                         </Button>
                       )}
+                    {step && (
+                      <Button
+                        size="sm"
+                        disabled={act.isPending}
+                        onClick={() =>
+                          act.mutate({
+                            id: o.id,
+                            path: 'shipment',
+                            body: { status: step.status },
+                          })
+                        }
+                      >
+                        <Truck />
+                        {step.label}
+                      </Button>
+                    )}
                     {party === 'buyer' && o.status === 'delivered' && (
                       <Button
                         size="sm"
@@ -729,6 +768,7 @@ export function OrderDetail({
   actions: (order: Order) => {
     label: string;
     path: string;
+    body?: object;
     variant?: 'default' | 'outline' | 'destructive';
     askReason?: boolean;
   }[];
@@ -741,8 +781,8 @@ export function OrderDetail({
   });
   const [cancelling, setCancelling] = useState(false);
   const act = useMutation({
-    mutationFn: (path: string) =>
-      api<Order>(`/orders/${id}/${path}`, { method: 'POST' }),
+    mutationFn: ({ path, body }: { path: string; body?: object }) =>
+      api<Order>(`/orders/${id}/${path}`, { method: 'POST', body }),
     onSuccess: (data) => {
       queryClient.setQueryData(['order', id], data);
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
@@ -776,7 +816,9 @@ export function OrderDetail({
               variant={x.variant ?? 'default'}
               disabled={act.isPending}
               onClick={() =>
-                x.askReason ? setCancelling(true) : act.mutate(x.path)
+                x.askReason
+                  ? setCancelling(true)
+                  : act.mutate({ path: x.path, body: x.body })
               }
             >
               {x.label}

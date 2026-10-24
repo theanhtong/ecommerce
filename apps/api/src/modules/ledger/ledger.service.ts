@@ -23,7 +23,7 @@ function commissionRateBps() {
   return value;
 }
 
-// shortcut: no holding period, payouts, refunds or vouchers; add them with those features.
+// shortcut: no holding period or payouts; add them with those features.
 export const REPORT_RANGES = ['today', '30d', '12m'] as const;
 export type ReportRange = (typeof REPORT_RANGES)[number];
 
@@ -83,7 +83,7 @@ export class LedgerService {
     });
   }
 
-  // Money for a payment that matched its checkout is held until the orders complete.
+  // Held as prepaid until the orders complete.
   async receivePayment(
     tx: Prisma.TransactionClient,
     payment: { id: string; amount: number },
@@ -105,7 +105,7 @@ export class LedgerService {
     });
   }
 
-  // A transfer that matches no payable checkout is owed back to whoever sent it.
+  // Unmatched money is owed back to the sender.
   async receiveUnmatched(
     tx: Prisma.TransactionClient,
     transfer: { id: string; amount: number },
@@ -127,7 +127,7 @@ export class LedgerService {
     });
   }
 
-  // shortcut: refunds are only booked as owed; paying them out is manual until a refund flow exists.
+  // shortcut: refunds are only booked; paying them out stays manual until a refund flow exists.
   async refundOrder(
     tx: Prisma.TransactionClient,
     order: { id: string; total: number },
@@ -207,8 +207,7 @@ export class LedgerService {
     };
   }
 
-  // Platform profit is its commission; it bears no other costs yet. Buckets follow
-  // Vietnam time and include empty periods so charts have no gaps.
+  // Profit is commission only; buckets use Vietnam time and include empty periods.
   async report(range: ReportRange) {
     const { unit, span, label } = RANGES[range];
     const tz = Prisma.sql`'Asia/Ho_Chi_Minh'`;

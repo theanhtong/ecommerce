@@ -1,4 +1,4 @@
-// Resets the dev database (keeps admins, provinces and wards) and drives the marketplace flow through the running API.
+// Resets the dev database (keeps admins and regions) and runs the marketplace flow through the API.
 import { existsSync, readFileSync } from 'node:fs';
 import pg from 'pg';
 
@@ -60,10 +60,8 @@ async function resetDatabase() {
       throw new Error('No wards loaded; run pnpm db:seed first');
     }
     await db.query('BEGIN');
-    // Items cascade to variations, models, inventory and stock movements;
-    // users to sessions, carts and addresses. Provinces and wards are reference data and stay.
     await db.query('TRUNCATE ledger_lines, ledger_entries, ledger_accounts');
-    // Orders reference models and shops, so they go first (items and history cascade).
+    // Orders go first: they reference models and shops.
     const orders = await db.query('DELETE FROM orders');
     await db.query('DELETE FROM checkouts');
     const items = await db.query('DELETE FROM items');

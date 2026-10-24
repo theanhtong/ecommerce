@@ -58,7 +58,6 @@ export const variationName = (
 export const available = (m: ModelWithInventory) =>
   m.inventory ? m.inventory.onHand - m.inventory.reserved : 0;
 
-// Buyers only see what can be bought; sellers also see on-hand and reserved stock.
 const modelView = (m: ModelWithInventory, seller: boolean) => ({
   id: m.id,
   tierIndex: m.tierIndex,
@@ -187,8 +186,7 @@ export class ItemsService {
     return detailView(item, true);
   }
 
-  // Ordered items stay: order_items reference their models. Everything else cascades,
-  // including cart lines and inventory.
+  // Ordered items stay because order_items reference their models.
   async remove(ownerId: string, id: string) {
     await this.writableItem(ownerId, id);
     const ordered = () =>
@@ -277,7 +275,7 @@ export class ItemsService {
       });
     } catch (error) {
       if (!idempotencyKey || !isUniqueViolation(error)) throw error;
-      // A replay of an already applied adjustment: return the current state.
+      // Replayed adjustment: return the current state.
       const previous = await this.prisma.inventoryMovement.findUnique({
         where: { idempotencyKey },
       });

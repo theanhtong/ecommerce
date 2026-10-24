@@ -11,8 +11,7 @@ export interface SepayTransfer {
   referenceCode: string | null;
 }
 
-// The provider signs `${timestamp}.${raw body}`; old timestamps are refused so a captured
-// request cannot be replayed later.
+// Signed over `${timestamp}.${raw body}`; stale timestamps are refused to block replays.
 export function verifySignature(
   secret: string,
   rawBody: Buffer,

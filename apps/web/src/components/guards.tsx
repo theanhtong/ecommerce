@@ -11,7 +11,7 @@ export function RequireUser() {
   return <Outlet />;
 }
 
-// UI-only for now: admins manage the platform and do not buy or sell.
+// Admins run the platform and do not buy or sell.
 export function RequireNonAdmin() {
   const { user } = useAuth();
   if (user?.role === 'admin') return <Navigate to="/admin" replace />;

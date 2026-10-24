@@ -70,8 +70,7 @@ export class CheckoutService {
     });
     if (!address) throw new NotFoundException('Address not found');
 
-    // Lock the cart lines first: a concurrent checkout of the same lines waits here,
-    // then finds them gone and fails instead of placing a second order.
+    // Lock cart lines first so a concurrent checkout of them fails instead of ordering twice.
     const locked = await tx.$queryRaw<{ id: string }[]>`
       SELECT id FROM cart_items
       WHERE id IN (${Prisma.join(dto.cartItemIds.map((id) => Prisma.sql`${id}::uuid`))})

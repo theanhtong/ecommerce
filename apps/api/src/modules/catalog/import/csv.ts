@@ -1,4 +1,4 @@
-// RFC 4180 CSV: quoted fields may contain commas, newlines and "" escapes. Strips Excel's UTF-8 BOM.
+// RFC 4180 CSV; strips Excel's UTF-8 BOM.
 export function parseCsv(text: string): string[][] {
   const input = text.replace(/^﻿/, '');
   const rows: string[][] = [];
