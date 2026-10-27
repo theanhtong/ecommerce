@@ -1,6 +1,7 @@
 import type {
   CancelReason,
   Location,
+  NotificationType,
   OrderStatus,
   ReturnReason,
   ReturnStatus,
@@ -61,6 +62,17 @@ export const RETURN_STATUS: Record<ReturnStatus, string> = {
   disputed: 'Chờ sàn xem xét',
   accepted: 'Đã chấp nhận',
   rejected: 'Đã từ chối',
+};
+
+export const NOTIFICATION_TYPE: Record<NotificationType, string> = {
+  new_order: 'Có đơn hàng mới',
+  order_shipping: 'Đơn hàng đang được giao',
+  order_delivered: 'Đơn hàng đã giao',
+  order_completed: 'Đơn hàng đã hoàn thành',
+  order_cancelled: 'Đơn hàng đã bị hủy',
+  order_returned: 'Đơn hàng đã được trả',
+  return_requested: 'Có yêu cầu trả hàng',
+  return_rejected: 'Yêu cầu trả hàng bị từ chối',
 };
 
 export const SHOP_STATUS: Record<ShopStatus, string> = {

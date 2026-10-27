@@ -235,3 +235,22 @@ export interface Voucher {
   startsAt: string;
   endsAt: string;
 }
+
+export type NotificationType =
+  | 'new_order'
+  | 'order_shipping'
+  | 'order_delivered'
+  | 'order_completed'
+  | 'order_cancelled'
+  | 'order_returned'
+  | 'return_requested'
+  | 'return_rejected';
+
+export interface Notification {
+  id: string;
+  type: NotificationType;
+  orderId: string;
+  audience: 'buyer' | 'seller';
+  readAt: string | null;
+  createdAt: string;
+}

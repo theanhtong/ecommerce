@@ -14,6 +14,7 @@ import {
 } from '@ecommerce/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { variationName } from '../catalog/items.service.js';
+import { emit } from '../notifications/outbox.service.js';
 import { PAYMENT_WINDOW_MS, paymentCode } from '../payments/payment-code.js';
 import { locationInclude, locationView } from '../regions/location.js';
 import type { CheckoutDto, PreviewDto } from './dto/order.dto.js';
@@ -255,6 +256,15 @@ export class CheckoutService {
           refId: order.id,
           actorId: buyerId,
         })),
+      });
+      await emit(tx, {
+        type: 'order.status_changed',
+        payload: {
+          orderId: order.id,
+          from: null,
+          to: initialStatus,
+          actorId: buyerId,
+        },
       });
     }
     await this.vouchers.claim(tx, buyerId, checkout.id, voucherRows);

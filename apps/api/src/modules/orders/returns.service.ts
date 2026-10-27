@@ -11,6 +11,7 @@ import {
   type CursorQuery,
 } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { emit } from '../notifications/outbox.service.js';
 import { OrdersService } from './orders.service.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -50,11 +51,19 @@ export class ReturnsService {
     if (now.getTime() - deliveredAt.getTime() > RETURN_WINDOW_MS) {
       throw new ConflictException('The return window has closed');
     }
-    const { count } = await this.prisma.returnRequest.createMany({
-      data: { orderId, reason, note },
-      skipDuplicates: true,
+    await this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.returnRequest.createMany({
+        data: { orderId, reason, note },
+        skipDuplicates: true,
+      });
+      if (!count) {
+        throw new ConflictException('A return was already requested');
+      }
+      await emit(tx, {
+        type: 'return.status_changed',
+        payload: { orderId, status: ReturnStatus.requested, actorId: buyerId },
+      });
     });
-    if (!count) throw new ConflictException('A return was already requested');
     return this.orders.get(buyerId, orderId);
   }
 
@@ -161,6 +170,10 @@ export class ReturnsService {
       const request = await tx.returnRequest.findUnique({ where: { id } });
       if (!request) throw new NotFoundException('Return not found');
       if (!count) throw new ConflictException(`Return is ${request.status}`);
+      await emit(tx, {
+        type: 'return.status_changed',
+        payload: { orderId: request.orderId, status: to, actorId },
+      });
       if (to === ReturnStatus.accepted) {
         await this.orders.returnOrder(tx, request.orderId, actorId);
       }

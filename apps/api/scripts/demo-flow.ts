@@ -61,7 +61,7 @@ async function resetDatabase() {
     }
     await db.query('BEGIN');
     await db.query(
-      'TRUNCATE ledger_lines, ledger_entries, ledger_accounts, refunds, bank_transfers',
+      'TRUNCATE ledger_lines, ledger_entries, ledger_accounts, refunds, bank_transfers, outbox_events',
     );
     // Orders go first: they reference models and shops.
     const orders = await db.query('DELETE FROM orders');

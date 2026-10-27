@@ -9,7 +9,7 @@ A multi-seller marketplace in the style of Shopee: one platform, many shops, one
 - **Buyers** browse shops, fill one cart across shops, check out with cash on delivery or a bank transfer (VietQR through SePay), track and cancel orders.
 - **Sellers** open a shop (reviewed by an admin), list items with up to two variation tiers, import and export the catalogue as CSV, ship orders, see earnings by day or month and withdraw their wallet.
 - **Admins** review shops and items, see every order and user, settle refunds and read the platform report.
-- **A worker** cancels orders that were never paid or shipped in time and completes delivered orders the buyer never confirmed.
+- **A worker** cancels orders that were never paid or shipped in time, completes delivered orders the buyer never confirmed and delivers in-app notifications.
 
 ## Architecture
 
@@ -29,6 +29,7 @@ flowchart LR
 
 - **Modular monolith.** Auth, catalog, cart, orders, payments, payouts and ledger are Nest modules in one process over one database, so checkout stays a single ACID transaction: stock reservation, orders, payment and ledger commit together or not at all.
 - **Worker** is a second entrypoint of the same app (`src/worker.ts`), so it reuses the order and ledger code instead of copying it. A BullMQ job scheduler stored in Redis runs the deadline sweep once a minute no matter how many workers run.
+- **Transactional outbox.** Order and return changes write an `outbox_events` row in the same transaction. The worker claims unpublished rows with `FOR UPDATE SKIP LOCKED`, pushes them to a BullMQ queue (job id = event id, retried with exponential backoff) and marks them published; the consumer turns them into notifications.
 
 ## Correctness under concurrency
 
@@ -40,6 +41,7 @@ flowchart LR
 | Bank webhook delivered twice | The provider's transaction id is a unique key; the second delivery is a no-op |
 | Two payout requests spend one balance | The wallet account row is locked while the balance is checked |
 | Worker sweep races a user | The sweep repeats its `WHERE` under the row lock and skips rows that changed |
+| Worker crashes after queueing an event | The event is queued again; notifications are unique per event and user, so the repeat adds nothing |
 
 ## Money and the ledger
 
@@ -68,7 +70,7 @@ pnpm infra:up               # PostgreSQL + Redis
 pnpm db:migrate             # see the note below
 pnpm db:seed                # provinces and wards
 pnpm dev                    # API on :3000, web on :5173
-pnpm dev:worker             # deadline sweeps
+pnpm dev:worker             # deadline sweeps and outbox relay
 pnpm demo:flow              # optional: resets the dev data and drives a full scenario
 ```
 

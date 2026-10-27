@@ -7,6 +7,7 @@ import {
   User,
   type LucideIcon,
 } from 'lucide-react';
+import { NotificationBell } from '@/components/notifications';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/auth-context';
 
@@ -40,6 +41,7 @@ export function Layout() {
           </nav>
           {user?.role === 'admin' ? null : user ? (
             <div className="flex items-center gap-2">
+              <NotificationBell />
               <Button asChild variant="ghost" className="h-auto py-1.5">
                 <Link to="/account">
                   <User />
