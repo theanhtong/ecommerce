@@ -76,7 +76,7 @@ pnpm db:migrate             # see the note below
 pnpm db:seed                # provinces and wards
 pnpm dev                    # API on :3000, web on :5173
 pnpm dev:worker             # deadline sweeps and outbox relay
-pnpm demo:flow              # optional: resets the dev data and drives a full scenario
+pnpm demo:flow              # optional: resets dev data and bucket, then seeds images, vouchers, orders in every state, reviews and a payout through the API
 ```
 
 Prisma migrations are kept out of the repository. `pnpm db:migrate` creates one from `schema.prisma`; the CHECK constraints, partial unique indexes and ledger triggers described above are added to that migration by hand.

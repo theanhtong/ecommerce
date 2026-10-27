@@ -1,5 +1,8 @@
-// Resets the dev database (keeps admins and regions) and runs the marketplace flow through the API.
+// Resets the dev database and MinIO bucket (keeps admins and regions) and runs the marketplace flow through the API.
+import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
+import { crc32, deflateSync } from 'node:zlib';
+import { Client } from 'minio';
 import pg from 'pg';
 
 if (existsSync('../../.env')) process.loadEnvFile('../../.env');
@@ -10,6 +13,7 @@ const PASSWORD = 'demo password 123';
 const BUYER = { email: 'buyer@demo.vn', username: 'demo_buyer' };
 const SELLER = { email: 'seller@demo.vn', username: 'demo_seller' };
 const SELLER2 = { email: 'seller2@demo.vn', username: 'demo_seller2' };
+const BUYER2 = { email: 'buyer2@demo.vn', username: 'demo_buyer2' };
 const SAMPLE_CSV = 'scripts/sample-items.csv';
 
 interface CallOptions {
@@ -25,15 +29,24 @@ async function call(
   expected: number,
   { token, body, form, headers }: CallOptions = {},
 ) {
-  const res = await fetch(`${API}${path}`, {
-    method,
-    headers: {
-      ...(body !== undefined && { 'Content-Type': 'application/json' }),
-      ...(token && { Authorization: `Bearer ${token}` }),
-      ...headers,
-    },
-    body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
-  });
+  const send = () =>
+    fetch(`${API}${path}`, {
+      method,
+      headers: {
+        ...(body !== undefined && { 'Content-Type': 'application/json' }),
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...headers,
+      },
+      body: form ?? (body === undefined ? undefined : JSON.stringify(body)),
+    });
+  let res = await send();
+  // The demo makes more requests a minute than the API's rate limit allows.
+  while (res.status === 429 && expected !== 429) {
+    const wait = Number(res.headers.get('retry-after')) || 5;
+    console.log(`    rate limited, waiting ${wait}s`);
+    await new Promise((resolve) => setTimeout(resolve, wait * 1000));
+    res = await send();
+  }
   const text = await res.text();
   const isJson = res.headers.get('content-type')?.includes('json');
   const json = isJson && text ? JSON.parse(text) : text;
@@ -66,6 +79,7 @@ async function resetDatabase() {
     // Orders go first: they reference models and shops.
     const orders = await db.query('DELETE FROM orders');
     await db.query('DELETE FROM checkouts');
+    await db.query('DELETE FROM promotions');
     const items = await db.query('DELETE FROM items');
     const shops = await db.query('DELETE FROM shops');
     const users = await db.query("DELETE FROM users WHERE role <> 'admin'");
@@ -79,6 +93,78 @@ async function resetDatabase() {
   } finally {
     await db.end();
   }
+}
+
+async function resetBucket() {
+  const url = new URL(process.env.MINIO_ENDPOINT ?? '');
+  const minio = new Client({
+    endPoint: url.hostname,
+    port: Number(url.port),
+    useSSL: url.protocol === 'https:',
+    region: 'us-east-1',
+    accessKey: process.env.MINIO_ACCESS_KEY ?? '',
+    secretKey: process.env.MINIO_SECRET_KEY ?? '',
+  });
+  const bucket = process.env.MINIO_BUCKET ?? '';
+  if (!(await minio.bucketExists(bucket))) return;
+  const keys: string[] = [];
+  for await (const object of minio.listObjectsV2(bucket, '', true)) {
+    if (object.name) keys.push(object.name);
+  }
+  for (let i = 0; i < keys.length; i += 1000) {
+    await minio.removeObjects(bucket, keys.slice(i, i + 1000));
+  }
+  console.log(`  deleted ${keys.length} objects from ${bucket}`);
+}
+
+// A plain PNG: a vertical gradient from one colour to white, so each sample image looks different.
+function samplePng([r, g, b]: [number, number, number], size = 480) {
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc32(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(size, 0);
+  header.writeUInt32BE(size, 4);
+  header.set([8, 2, 0, 0, 0], 8);
+  const rows = Buffer.alloc(size * (size * 3 + 1));
+  for (let y = 0; y < size; y++) {
+    const t = y / size;
+    const pixel = [r, g, b].map((c) => Math.round(c + (255 - c) * t * 0.7));
+    const row = y * (size * 3 + 1);
+    for (let x = 0; x < size; x++) rows.set(pixel, row + 1 + x * 3);
+  }
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(rows)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+// Same path as the browser: signed form from the API, file straight to MinIO, then the API claims it.
+async function addImage(token: string, itemId: string, png: Buffer) {
+  const signed = await call('POST', '/uploads/images', 201, {
+    token,
+    body: { contentType: 'image/png' },
+  });
+  const form = new FormData();
+  for (const [name, value] of Object.entries(
+    signed.fields as Record<string, string>,
+  )) {
+    form.append(name, value);
+  }
+  form.append('file', new Blob([new Uint8Array(png)], { type: 'image/png' }));
+  const res = await fetch(signed.url, { method: 'POST', body: form });
+  if (!res.ok) throw new Error(`MinIO upload failed: ${res.status}`);
+  return call('POST', `/items/${itemId}/images`, 201, {
+    token,
+    body: { key: signed.key },
+  });
 }
 
 async function main() {
@@ -95,8 +181,9 @@ async function main() {
     );
   }
 
-  step('0. Reset dev database');
+  step('0. Reset dev database and bucket');
   await resetDatabase();
+  await resetBucket();
 
   step('1. Buyer and seller register');
   const buyer = await call('POST', '/auth/register', 201, {
@@ -429,12 +516,252 @@ async function main() {
     `    white/M stock after shipping 3: ${shirtAfter.models.find((m: { id: string }) => m.id === whiteM.id).stock}`,
   );
 
+  step('15. Sellers add product images (uploaded straight to MinIO)');
+  for (const color of [
+    [233, 84, 32],
+    [40, 40, 40],
+    [240, 240, 235],
+  ] as const) {
+    await addImage(seller.accessToken, shirt.id, samplePng([...color]));
+  }
+  for (const color of [
+    [196, 140, 72],
+    [250, 214, 120],
+  ] as const) {
+    await addImage(seller2.accessToken, lamp.id, samplePng([...color]));
+  }
+  const withImages = await call('GET', `/items/${shirt.id}`, 200);
+  console.log(`    cover: ${withImages.images[0].url}`);
+
+  step('16. Seller creates a shop voucher; admin creates platform vouchers');
+  const window = {
+    startsAt: new Date(Date.now() - 60_000).toISOString(),
+    endsAt: new Date(Date.now() + 30 * 24 * 3600_000).toISOString(),
+  };
+  await call('POST', '/shops/me/vouchers', 201, {
+    token: seller.accessToken,
+    body: {
+      code: 'DEMOSHOP',
+      name: 'Giảm 500đ cho đơn từ 2.000đ',
+      discountKind: 'fixed',
+      discountValue: 500,
+      minSpend: 2000,
+      usageLimit: 100,
+      ...window,
+    },
+  });
+  await call('POST', '/admin/vouchers', 201, {
+    token: admin.accessToken,
+    body: {
+      type: 'platform_voucher',
+      code: 'SALE10',
+      name: 'Giảm 10% tối đa 1.000đ',
+      discountKind: 'percent',
+      discountValue: 10,
+      maxDiscount: 1000,
+      minSpend: 2000,
+      usageLimit: 100,
+      ...window,
+    },
+  });
+  await call('POST', '/admin/vouchers', 201, {
+    token: admin.accessToken,
+    body: {
+      type: 'shipping_voucher',
+      code: 'FREESHIP',
+      name: 'Giảm 15.000đ phí vận chuyển',
+      discountKind: 'fixed',
+      discountValue: 15000,
+      minSpend: 0,
+      usageLimit: 100,
+      ...window,
+    },
+  });
+
+  step('17. More orders in every state, from a second buyer too');
+  const buyer2 = await call('POST', '/auth/register', 201, {
+    body: { ...BUYER2, password: PASSWORD },
+  });
+  const buyer2Address = await call('POST', '/addresses', 201, {
+    token: buyer2.accessToken,
+    body: {
+      recipientName: 'Trần Thị Demo',
+      phone: '0987 654 321',
+      wardCode: '00070',
+      street: '8 Tràng Tiền',
+    },
+  });
+  const model = (
+    item: { models: { tierIndex: number[]; id: string }[] },
+    tiers: string,
+  ) => item.models.find((m) => m.tierIndex.join() === tiers)!.id;
+  const buy = async (
+    token: string,
+    addressId: string,
+    lines: [string, number][],
+    extra: { voucherCodes?: string[]; paymentMethod?: string } = {},
+  ) => {
+    for (const [modelId, quantity] of lines) {
+      await call('POST', '/cart/items', 201, {
+        token,
+        body: { modelId, quantity },
+      });
+    }
+    const current = await call('GET', '/cart', 200, { token });
+    const ids = current.shops.flatMap(
+      (g: { items: { id: string; modelId: string }[] }) =>
+        g.items
+          .filter((l) => lines.some(([m]) => m === l.modelId))
+          .map((l) => l.id),
+    );
+    const result = await call('POST', '/checkout', 201, {
+      token,
+      body: { cartItemIds: ids, addressId, paymentMethod: 'cod', ...extra },
+      headers: { 'Idempotency-Key': randomUUID() },
+    });
+    return result.orders as {
+      id: string;
+      total: number;
+      shop: { id: string };
+    }[];
+  };
+  const sellerOf = (o: { shop: { id: string } }) =>
+    o.shop.id === shop.id ? seller.accessToken : seller2.accessToken;
+  const advance = async (
+    o: { id: string; shop: { id: string } },
+    to: 'shipping' | 'delivered',
+  ) => {
+    const token = sellerOf(o);
+    await call('POST', `/orders/${o.id}/ship`, 200, { token });
+    await call('POST', `/orders/${o.id}/shipment`, 200, {
+      token,
+      body: { status: 'picked_up' },
+    });
+    if (to === 'delivered') {
+      await call('POST', `/orders/${o.id}/shipment`, 200, {
+        token,
+        body: { status: 'delivered' },
+      });
+    }
+  };
+
+  const discounted = await buy(
+    buyer2.accessToken,
+    buyer2Address.id,
+    [
+      [model(shirt, '0,1'), 2],
+      [model(lamp, '0,0'), 1],
+    ],
+    { voucherCodes: ['DEMOSHOP', 'SALE10', 'FREESHIP'] },
+  );
+  for (const o of discounted) {
+    await advance(o, 'delivered');
+    await call('POST', `/orders/${o.id}/receive`, 200, {
+      token: buyer2.accessToken,
+    });
+  }
+  console.log(
+    `    completed with 3 vouchers: ${discounted.map((o) => `${o.total}đ`).join(', ')}`,
+  );
+
+  const [returned] = await buy(buyer.accessToken, workAddress.id, [
+    [model(lamp, '1,0'), 1],
+  ]);
+  await advance(returned, 'delivered');
+  await call('POST', `/orders/${returned.id}/return`, 200, {
+    token: buyer.accessToken,
+    body: { reason: 'damaged', note: 'Chân đèn bị nứt' },
+  });
+  await call('POST', `/orders/${returned.id}/return/accept`, 200, {
+    token: seller2.accessToken,
+  });
+  console.log('    returned and refund waiting for admin');
+
+  const [shipping] = await buy(buyer.accessToken, workAddress.id, [
+    [model(shirt, '1,0'), 1],
+  ]);
+  await advance(shipping, 'shipping');
+  await buy(buyer2.accessToken, buyer2Address.id, [[model(shirt, '1,1'), 1]]);
+  await buy(buyer2.accessToken, buyer2Address.id, [[model(lamp, '0,1'), 1]], {
+    paymentMethod: 'online',
+  });
+  console.log(
+    '    one shipping, one waiting to ship, one waiting for a bank transfer',
+  );
+
+  step('18. Buyers review what they received; the seller replies');
+  const review = async (
+    token: string,
+    orderId: string,
+    rating: number,
+    comment: string,
+  ) => {
+    const detail = await call('GET', `/orders/${orderId}`, 200, { token });
+    return call('POST', `/order-items/${detail.items[0].id}/review`, 201, {
+      token,
+      body: { rating, comment },
+    });
+  };
+  const shirtReview = await review(
+    buyer2.accessToken,
+    discounted.find((o) => o.shop.id === shop.id)!.id,
+    5,
+    'Vải mát, đúng size',
+  );
+  await review(
+    buyer2.accessToken,
+    discounted.find((o) => o.shop.id === shop2.id)!.id,
+    4,
+    'Đèn xinh, giao hơi chậm',
+  );
+  const first = await review(buyer.accessToken, order1.id, 3, 'Tạm ổn');
+  await call('PATCH', `/reviews/${first.id}`, 200, {
+    token: buyer.accessToken,
+    body: { rating: 4, comment: 'Giặt không phai màu' },
+  });
+  await call('POST', `/reviews/${shirtReview.id}/reply`, 201, {
+    token: seller.accessToken,
+    body: { reply: 'Cảm ơn bạn đã ủng hộ shop!' },
+  });
+  const rated = await call('GET', `/items/${shirt.id}`, 200);
+  console.log(
+    `    ${rated.name}: ${rated.rating}★ from ${rated.ratingCount} reviews`,
+  );
+
+  step('19. Seller withdraws half of the wallet');
+  const balance = (
+    await call('GET', '/shops/me/wallet', 200, { token: seller.accessToken })
+  ).balance as number;
+  if (balance > 1) {
+    await call('POST', '/shops/me/payouts', 201, {
+      token: seller.accessToken,
+      body: {
+        amount: Math.floor(balance / 2),
+        bankName: 'MB Bank',
+        accountNumber: '0123456789',
+        accountName: 'NGUYEN VAN DEMO',
+      },
+    });
+  }
+  const after = await call('GET', '/shops/me/wallet', 200, {
+    token: seller.accessToken,
+  });
+  console.log(`    wallet: ${balance}đ → ${after.balance}đ`);
+
+  step('20. Buyer searches without accents');
+  const found = await call('GET', '/items/search?q=ao%20thun', 200);
+  console.log(
+    `    "ao thun": ${found.items.map((i: { name: string; sold: number }) => `${i.name} (đã bán ${i.sold})`).join(', ')}`,
+  );
+
   console.log(
     `\nDone. Data is kept in the dev database; open it with pnpm db:studio.`,
   );
+  console.log('Notifications appear once the worker runs (pnpm dev:worker).');
   console.log(`  buyer  ${BUYER.email} / ${PASSWORD}`);
   console.log(`  seller ${SELLER.email} / ${PASSWORD}`);
   console.log(`  seller ${SELLER2.email} / ${PASSWORD} (CSV import)`);
+  console.log(`  buyer  ${BUYER2.email} / ${PASSWORD}`);
   console.log(`  shop   ${API}/shops/${shop.id}`);
   console.log(`  items  ${API}/shops/${shop.id}/items`);
   console.log(`  items  ${API}/shops/${shop2.id}/items`);
