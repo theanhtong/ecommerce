@@ -60,7 +60,9 @@ async function resetDatabase() {
       throw new Error('No wards loaded; run pnpm db:seed first');
     }
     await db.query('BEGIN');
-    await db.query('TRUNCATE ledger_lines, ledger_entries, ledger_accounts');
+    await db.query(
+      'TRUNCATE ledger_lines, ledger_entries, ledger_accounts, refunds, bank_transfers',
+    );
     // Orders go first: they reference models and shops.
     const orders = await db.query('DELETE FROM orders');
     await db.query('DELETE FROM checkouts');

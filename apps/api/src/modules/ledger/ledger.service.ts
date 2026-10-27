@@ -37,6 +37,22 @@ const RANGES: Record<
   '12m': { unit: 'month', span: '11 months', label: 'YYYY-MM' },
 };
 
+function reportWindow(range: ReportRange) {
+  const { unit, span, label } = RANGES[range];
+  const tz = Prisma.sql`'Asia/Ho_Chi_Minh'`;
+  const end = Prisma.sql`date_trunc(${unit}, now() AT TIME ZONE ${tz})`;
+  const local = (column: Prisma.Sql) =>
+    Prisma.sql`${column} AT TIME ZONE ${tz}`;
+  return {
+    unit,
+    label,
+    end,
+    local,
+    start: Prisma.sql`${end} - ${span}::interval`,
+    until: Prisma.sql`${end} + ('1 ' || ${unit})::interval`,
+  };
+}
+
 @Injectable()
 export class LedgerService {
   private readonly rateBps = commissionRateBps();
@@ -67,9 +83,7 @@ export class LedgerService {
       LedgerAccountType.commission,
     );
     const shipping = await this.account(tx, LedgerAccountType.shipping);
-    const { id: wallet } = await tx.ledgerAccount.findUniqueOrThrow({
-      where: { shopId: order.shopId },
-    });
+    const wallet = await this.walletAccount(tx, order.shopId);
     await this.post(tx, {
       idempotencyKey: `order:${order.id}:settlement`,
       refType: 'order',
@@ -110,6 +124,10 @@ export class LedgerService {
     tx: Prisma.TransactionClient,
     transfer: { id: string; amount: number },
   ) {
+    await tx.refund.createMany({
+      data: { bankTransferId: transfer.id, amount: transfer.amount },
+      skipDuplicates: true,
+    });
     await this.post(tx, {
       idempotencyKey: `transfer:${transfer.id}:unmatched`,
       refType: 'transfer',
@@ -127,11 +145,14 @@ export class LedgerService {
     });
   }
 
-  // shortcut: refunds are only booked; paying them out stays manual until a refund flow exists.
   async refundOrder(
     tx: Prisma.TransactionClient,
     order: { id: string; total: number },
   ) {
+    await tx.refund.createMany({
+      data: { orderId: order.id, amount: order.total },
+      skipDuplicates: true,
+    });
     await this.post(tx, {
       idempotencyKey: `order:${order.id}:refund`,
       // Not 'order': the report counts 'order' entries as settled orders.
@@ -147,6 +168,40 @@ export class LedgerService {
           amount: -order.total,
         },
       ],
+    });
+  }
+
+  // shortcut: the admin sends the money by hand and then records it here.
+  async payRefund(
+    tx: Prisma.TransactionClient,
+    refund: { id: string; amount: number },
+  ) {
+    await this.pair(tx, `refund:${refund.id}:paid`, 'refund', refund.id, {
+      debit: await this.account(tx, LedgerAccountType.refund_due),
+      credit: await this.account(tx, LedgerAccountType.bank),
+      amount: refund.amount,
+    });
+  }
+
+  // Locks the wallet, so concurrent payout requests cannot both spend the same balance.
+  async lockWalletBalance(tx: Prisma.TransactionClient, shopId: string) {
+    const [wallet] = await tx.$queryRaw<{ id: string }[]>`
+      SELECT id FROM ledger_accounts WHERE shop_id = ${shopId}::uuid FOR UPDATE`;
+    const sum = await tx.ledgerLine.aggregate({
+      where: { accountId: wallet.id },
+      _sum: { amount: true },
+    });
+    return -(sum._sum.amount ?? 0);
+  }
+
+  async payout(
+    tx: Prisma.TransactionClient,
+    payout: { id: string; shopId: string; amount: number },
+  ) {
+    await this.pair(tx, `payout:${payout.id}:paid`, 'payout', payout.id, {
+      debit: await this.walletAccount(tx, payout.shopId),
+      credit: await this.account(tx, LedgerAccountType.bank),
+      amount: payout.amount,
     });
   }
 
@@ -209,13 +264,7 @@ export class LedgerService {
 
   // Profit is commission only; buckets use Vietnam time and include empty periods.
   async report(range: ReportRange) {
-    const { unit, span, label } = RANGES[range];
-    const tz = Prisma.sql`'Asia/Ho_Chi_Minh'`;
-    const end = Prisma.sql`date_trunc(${unit}, now() AT TIME ZONE ${tz})`;
-    const start = Prisma.sql`${end} - ${span}::interval`;
-    const until = Prisma.sql`${end} + ('1 ' || ${unit})::interval`;
-    const local = (column: Prisma.Sql) =>
-      Prisma.sql`${column} AT TIME ZONE ${tz}`;
+    const { unit, label, start, end, until, local } = reportWindow(range);
 
     const [rows, [counts]] = await Promise.all([
       this.prisma.$queryRaw<
@@ -229,9 +278,9 @@ export class LedgerService {
       >`
         SELECT to_char(b.bucket, ${label}) AS period,
                count(DISTINCT e.id) FILTER (WHERE e.ref_type = 'order') AS orders,
-               coalesce(-sum(l.amount) FILTER (WHERE a.type = 'commission'), 0) AS commission,
-               coalesce(-sum(l.amount) FILTER (WHERE a.type = 'wallet'), 0) AS sellers,
-               coalesce(-sum(l.amount) FILTER (WHERE a.type = 'shipping'), 0) AS shipping
+               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'commission'), 0) AS commission,
+               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'wallet'), 0) AS sellers,
+               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'shipping'), 0) AS shipping
         FROM generate_series(${start}, ${end}, ('1 ' || ${unit})::interval) AS b(bucket)
         LEFT JOIN ledger_entries e
           ON date_trunc(${unit}, ${local(Prisma.sql`e.created_at`)}) = b.bucket
@@ -279,6 +328,103 @@ export class LedgerService {
       },
       series,
     };
+  }
+
+  // Earnings are what completed orders paid into the wallet, after commission.
+  async shopReport(ownerId: string, range: ReportRange) {
+    const shop = await this.prisma.shop.findUnique({
+      where: { ownerId },
+      include: { ledgerAccount: true },
+    });
+    if (!shop) throw new NotFoundException('You do not have a shop');
+    const walletId = shop.ledgerAccount!.id;
+    const { unit, label, start, end, until, local } = reportWindow(range);
+    const inRange = (column: Prisma.Sql) =>
+      Prisma.sql`${local(column)} >= ${start} AND ${local(column)} < ${until}`;
+
+    const [rows, [counts], balance] = await Promise.all([
+      this.prisma.$queryRaw<
+        { period: string; orders: bigint; earnings: bigint; items: bigint }[]
+      >`
+        SELECT to_char(b.bucket, ${label}) AS period,
+               count(e.id) AS orders,
+               coalesce(-sum(l.amount), 0) AS earnings,
+               coalesce(sum(o.items_total), 0) AS items
+        FROM generate_series(${start}, ${end}, ('1 ' || ${unit})::interval) AS b(bucket)
+        LEFT JOIN (ledger_entries e
+          JOIN ledger_lines l ON l.entry_id = e.id AND l.account_id = ${walletId}::uuid
+          JOIN orders o ON o.id = e.ref_id)
+          ON e.ref_type = 'order'
+          AND date_trunc(${unit}, ${local(Prisma.sql`e.created_at`)}) = b.bucket
+        GROUP BY b.bucket
+        ORDER BY b.bucket`,
+      this.prisma.$queryRaw<{ placed: bigint; cancelled: bigint }[]>`
+        SELECT
+          (SELECT count(*) FROM orders o
+            WHERE o.shop_id = ${shop.id}::uuid
+              AND ${inRange(Prisma.sql`o.created_at`)}) AS placed,
+          (SELECT count(*) FROM order_status_history h
+            JOIN orders o ON o.id = h.order_id
+            WHERE o.shop_id = ${shop.id}::uuid AND h.to_status = 'cancelled'
+              AND ${inRange(Prisma.sql`h.created_at`)}) AS cancelled`,
+      this.prisma.ledgerLine.aggregate({
+        where: { accountId: walletId },
+        _sum: { amount: true },
+      }),
+    ]);
+
+    const series = rows.map((r) => ({
+      period: r.period,
+      orders: Number(r.orders),
+      earnings: Number(r.earnings),
+      itemsTotal: Number(r.items),
+    }));
+    const sum = (key: 'orders' | 'earnings' | 'itemsTotal') =>
+      series.reduce((n, p) => n + p[key], 0);
+    const orders = sum('orders');
+    return {
+      range,
+      totals: {
+        earnings: sum('earnings'),
+        itemsTotal: sum('itemsTotal'),
+        commission: sum('itemsTotal') - sum('earnings'),
+        orders,
+        averageOrder: orders ? Math.round(sum('itemsTotal') / orders) : 0,
+        placedOrders: Number(counts.placed),
+        cancelledOrders: Number(counts.cancelled),
+        balance: -(balance._sum.amount ?? 0),
+      },
+      series,
+    };
+  }
+
+  private pair(
+    tx: Prisma.TransactionClient,
+    idempotencyKey: string,
+    refType: string,
+    refId: string,
+    {
+      debit,
+      credit,
+      amount,
+    }: { debit: string; credit: string; amount: number },
+  ) {
+    return this.post(tx, {
+      idempotencyKey,
+      refType,
+      refId,
+      lines: [
+        { account: debit, amount },
+        { account: credit, amount: -amount },
+      ],
+    });
+  }
+
+  private async walletAccount(tx: Prisma.TransactionClient, shopId: string) {
+    const { id } = await tx.ledgerAccount.findUniqueOrThrow({
+      where: { shopId },
+    });
+    return id;
   }
 
   private async post(tx: Prisma.TransactionClient, posting: Posting) {
