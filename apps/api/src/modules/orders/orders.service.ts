@@ -18,6 +18,7 @@ import {
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
+import { emit } from '../notifications/outbox.service.js';
 import { VouchersService } from '../promotions/vouchers.service.js';
 import type { AdminListOrdersQuery, ListOrdersQuery } from './dto/order.dto.js';
 import { orderInclude, orderView } from './order-view.js';
@@ -510,6 +511,10 @@ export class OrdersService {
     if (count === 0) throw new ConflictException('Order changed, reload it');
     await tx.orderStatusHistory.create({
       data: { orderId: order.id, fromStatus: from, toStatus: to, actorId },
+    });
+    await emit(tx, {
+      type: 'order.status_changed',
+      payload: { orderId: order.id, from, to, actorId },
     });
     if (!stock) return;
 

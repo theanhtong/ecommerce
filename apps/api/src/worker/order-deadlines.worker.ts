@@ -5,17 +5,11 @@ import {
   OnApplicationShutdown,
 } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
-import { Redis } from 'ioredis';
 import { OrdersService } from '../modules/orders/orders.service.js';
 import { ReturnsService } from '../modules/orders/returns.service.js';
+import { redisConnection } from './redis.js';
 
 const QUEUE = 'order-deadlines';
-
-function redisUrl() {
-  const url = process.env.REDIS_URL;
-  if (!url) throw new Error('REDIS_URL is required');
-  return url;
-}
 
 // The scheduler lives in Redis, so however many workers run, each minute is swept once.
 @Injectable()
@@ -23,9 +17,7 @@ export class OrderDeadlinesWorker
   implements OnApplicationBootstrap, OnApplicationShutdown
 {
   private readonly logger = new Logger(OrderDeadlinesWorker.name);
-  private readonly connection = new Redis(redisUrl(), {
-    maxRetriesPerRequest: null,
-  });
+  private readonly connection = redisConnection();
   private readonly queue = new Queue(QUEUE, { connection: this.connection });
   private worker?: Worker;
 

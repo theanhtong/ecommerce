@@ -7,6 +7,7 @@ import { AddressesModule } from './modules/addresses/addresses.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { CartModule } from './modules/cart/cart.module.js';
 import { LedgerModule } from './modules/ledger/ledger.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { PaymentsModule } from './modules/payments/payments.module.js';
 import { PayoutsModule } from './modules/payouts/payouts.module.js';
@@ -33,6 +34,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     PayoutsModule,
     PromotionsModule,
     LedgerModule,
+    NotificationsModule,
   ],
   controllers: [AppController],
   providers: [AppService, { provide: APP_GUARD, useClass: ThrottlerGuard }],
