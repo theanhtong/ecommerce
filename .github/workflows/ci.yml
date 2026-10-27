@@ -17,6 +17,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @ecommerce/db build
+      - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm --filter @ecommerce/api build
