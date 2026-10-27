@@ -24,7 +24,11 @@ import {
   AdminUserPage,
   AdminUsersPage,
 } from '@/pages/admin';
-import { AdminPayoutsPage, AdminRefundsPage } from '@/pages/admin-money';
+import {
+  AdminPayoutsPage,
+  AdminRefundsPage,
+  AdminReturnsPage,
+} from '@/pages/admin-money';
 import { LoginPage, RegisterPage } from '@/pages/auth';
 import {
   BuyerOrderPage,
@@ -113,6 +117,7 @@ const router = createBrowserRouter([
                   { path: 'ledger', element: <AdminLedgerPage /> },
                   { path: 'payouts', element: <AdminPayoutsPage /> },
                   { path: 'refunds', element: <AdminRefundsPage /> },
+                  { path: 'returns', element: <AdminReturnsPage /> },
                   { path: 'vouchers', element: <AdminVouchersPage /> },
                 ],
               },

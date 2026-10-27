@@ -7,11 +7,22 @@ import { CheckoutService } from './checkout.service.js';
 import { AdminOrdersController } from './admin-orders.controller.js';
 import { OrdersController } from './orders.controller.js';
 import { OrdersService } from './orders.service.js';
+import {
+  AdminReturnsController,
+  ReturnsController,
+} from './returns.controller.js';
+import { ReturnsService } from './returns.service.js';
 
 @Module({
   imports: [AuthModule, LedgerModule, PromotionsModule],
-  controllers: [OrdersController, AdminOrdersController, CarrierController],
-  providers: [CheckoutService, OrdersService],
-  exports: [OrdersService],
+  controllers: [
+    OrdersController,
+    AdminOrdersController,
+    CarrierController,
+    ReturnsController,
+    AdminReturnsController,
+  ],
+  providers: [CheckoutService, OrdersService, ReturnsService],
+  exports: [OrdersService, ReturnsService],
 })
 export class OrdersModule {}

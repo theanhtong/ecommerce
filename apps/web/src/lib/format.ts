@@ -1,4 +1,11 @@
-import type { CancelReason, Location, OrderStatus, ShopStatus } from './types';
+import type {
+  CancelReason,
+  Location,
+  OrderStatus,
+  ReturnReason,
+  ReturnStatus,
+  ShopStatus,
+} from './types';
 
 const vnd = new Intl.NumberFormat('vi-VN');
 
@@ -36,6 +43,24 @@ export const ORDER_STATUS: Record<OrderStatus, string> = {
   delivered: 'Đã giao',
   completed: 'Hoàn thành',
   cancelled: 'Đã hủy',
+  returned: 'Đã trả hàng',
+};
+
+export const RETURN_REASON: Record<ReturnReason, string> = {
+  not_received: 'Chưa nhận được hàng',
+  missing_items: 'Thiếu hàng, phụ kiện hoặc quà tặng',
+  wrong_item: 'Người bán gửi sai hàng',
+  damaged: 'Hàng bể vỡ, hư hỏng',
+  defective: 'Hàng lỗi, không hoạt động',
+  not_as_described: 'Khác với mô tả',
+  counterfeit: 'Hàng giả, nhái',
+};
+
+export const RETURN_STATUS: Record<ReturnStatus, string> = {
+  requested: 'Chờ người bán phản hồi',
+  disputed: 'Chờ sàn xem xét',
+  accepted: 'Đã chấp nhận',
+  rejected: 'Đã từ chối',
 };
 
 export const SHOP_STATUS: Record<ShopStatus, string> = {

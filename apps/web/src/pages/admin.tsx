@@ -5,6 +5,7 @@ import {
   ChevronLeft,
   CircleX,
   LogOut,
+  PackageX,
   Store,
   TicketPercent,
   Truck,
@@ -76,6 +77,7 @@ const TABS = [
   ['/admin/shops', 'Cửa hàng', Store],
   ['/admin/users', 'Người dùng', Users],
   ['/admin/payouts', 'Rút tiền', Banknote],
+  ['/admin/returns', 'Trả hàng', PackageX],
   ['/admin/refunds', 'Hoàn tiền', Undo2],
   ['/admin/vouchers', 'Khuyến mãi', TicketPercent],
 ] as const;

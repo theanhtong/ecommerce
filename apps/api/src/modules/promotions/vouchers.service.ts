@@ -108,8 +108,9 @@ export class VouchersService {
         data: { voucherId: row.promotionId, userId: buyerId, checkoutId },
         skipDuplicates: true,
       });
-      if (!count)
+      if (!count) {
         throw new ConflictException(`Voucher ${row.code} already used`);
+      }
     }
   }
 
@@ -128,7 +129,7 @@ export class VouchersService {
       FOR UPDATE OF u`;
     if (!usage) return;
     const open = await tx.order.count({
-      where: { checkoutId, status: { not: 'cancelled' } },
+      where: { checkoutId, status: { notIn: ['cancelled', 'returned'] } },
     });
     if (open) return;
     await tx.voucherUsage.delete({ where: { id: usage.id } });
