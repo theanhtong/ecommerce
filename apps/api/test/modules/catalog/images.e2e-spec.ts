@@ -52,7 +52,10 @@ describe('Item images (e2e)', () => {
     )) {
       form.append(name, value);
     }
-    form.append('file', new Blob([new Uint8Array(file)], { type: contentType }));
+    form.append(
+      'file',
+      new Blob([new Uint8Array(file)], { type: contentType }),
+    );
     const res = await fetch(signed.body.url as string, {
       method: 'POST',
       body: form,
