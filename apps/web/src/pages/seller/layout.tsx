@@ -34,7 +34,7 @@ import { Field } from '@/pages/account';
 import { api } from '@/lib/api';
 import { phone, SHOP_STATUS } from '@/lib/format';
 import { useMyShop } from '@/lib/queries';
-import { ShopWallet } from '@/pages/seller/other';
+import { ShopReportSection, ShopWallet } from '@/pages/seller/other';
 import type { MyShop, Shop, ShopAddress } from '@/lib/types';
 
 const values = (e: React.SubmitEvent<HTMLFormElement>) =>
@@ -399,7 +399,12 @@ export function SellerShopPage() {
         </Alert>
       )}
       <div className="grid gap-4">
-        {s.status === 'active' && <ShopWallet />}
+        {s.status === 'active' && (
+          <>
+            <ShopWallet />
+            <ShopReportSection />
+          </>
+        )}
         <ShopProfile shop={s} />
       </div>
     </>

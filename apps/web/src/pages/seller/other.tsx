@@ -1,12 +1,32 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Download, FileDown, Upload, Wallet } from 'lucide-react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  Banknote,
+  CircleX,
+  Download,
+  FileDown,
+  Percent,
+  ShoppingBag,
+  Upload,
+  Wallet,
+} from 'lucide-react';
 import { useRef, useState } from 'react';
+import { Link } from 'react-router';
+import { toast } from 'sonner';
 import {
   ErrorMessage,
   LoadMore,
   Loading,
   PageHeader,
 } from '@/components/common';
+import {
+  cancelRate,
+  IconStat,
+  RangePicker,
+  type Range,
+  SELECTED,
+  SeriesChart,
+  StatCard,
+} from '@/components/report';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,6 +55,9 @@ import {
 import { OrderDetail, OrderTable, SHIPMENT_STEP } from '@/pages/buyer';
 import { api, download } from '@/lib/api';
 import { dateTime, money } from '@/lib/format';
+import { usePaged } from '@/lib/queries';
+import type { Payout } from '@/lib/types';
+import { Field } from '@/pages/account';
 import { useInfiniteQuery } from '@tanstack/react-query';
 
 interface ImportResult {
@@ -208,6 +231,177 @@ interface WalletPage {
   nextCursor: string | null;
 }
 
+interface ShopReport {
+  totals: {
+    earnings: number;
+    itemsTotal: number;
+    commission: number;
+    orders: number;
+    averageOrder: number;
+    placedOrders: number;
+    cancelledOrders: number;
+    balance: number;
+  };
+  series: {
+    period: string;
+    orders: number;
+    earnings: number;
+    itemsTotal: number;
+  }[];
+}
+
+const count = (n: number) => String(n);
+
+export function ShopReportSection() {
+  const [range, setRange] = useState<Range>('30d');
+  const report = useQuery({
+    queryKey: ['shop-report', range],
+    queryFn: () => api<ShopReport>(`/shops/me/report?range=${range}`),
+  });
+  const t = report.data?.totals;
+
+  return (
+    <section>
+      <RangePicker value={range} onChange={setRange} />
+      {report.isPending ? (
+        <Loading />
+      ) : report.error || !t ? (
+        <ErrorMessage error={report.error} />
+      ) : (
+        <div className="grid gap-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard label="Doanh thu thực nhận" value={money(t.earnings)} />
+            <StatCard label="Tiền hàng" value={money(t.itemsTotal)} />
+            <StatCard label="Đơn hoàn thành" value={count(t.orders)} />
+            <StatCard
+              label="Giá trị đơn trung bình"
+              value={money(t.averageOrder)}
+            />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <IconStat
+              icon={Percent}
+              label="Phí sàn"
+              value={money(t.commission)}
+            />
+            <IconStat
+              icon={ShoppingBag}
+              label="Đơn mới"
+              value={count(t.placedOrders)}
+            />
+            <IconStat
+              icon={CircleX}
+              label="Đơn bị hủy"
+              value={count(t.cancelledOrders)}
+              note={cancelRate(t.cancelledOrders, t.orders)}
+            />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <SeriesChart
+              title="Doanh thu thực nhận"
+              data={report.data.series}
+              dataKey="earnings"
+              range={range}
+              format={money}
+            />
+            <SeriesChart
+              title="Đơn hoàn thành"
+              data={report.data.series}
+              dataKey="orders"
+              range={range}
+              format={count}
+            />
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function PayoutDialog({ balance, last }: { balance: number; last?: Payout }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const request = useMutation({
+    mutationFn: (body: object) =>
+      api<Payout>('/shops/me/payouts', { method: 'POST', body }),
+    onSuccess: () => {
+      toast.success('Đã gửi yêu cầu rút tiền');
+      setOpen(false);
+      for (const key of ['wallet', 'payouts', 'shop-report']) {
+        void queryClient.invalidateQueries({ queryKey: [key] });
+      }
+    },
+  });
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        setOpen(next);
+        request.reset();
+      }}
+    >
+      <Button size="sm" disabled={balance <= 0} onClick={() => setOpen(true)}>
+        <Banknote />
+        Rút tiền
+      </Button>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Rút tiền</DialogTitle>
+        </DialogHeader>
+        <form
+          className="grid gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const f = Object.fromEntries(new FormData(e.currentTarget));
+            request.mutate({ ...f, amount: Number(f.amount) });
+          }}
+        >
+          <Field
+            label="Số tiền"
+            name="amount"
+            type="number"
+            min={1}
+            max={balance}
+            defaultValue={balance}
+            required
+          />
+          <Field
+            label="Ngân hàng"
+            name="bankName"
+            defaultValue={last?.bankName}
+            required
+          />
+          <Field
+            label="Số tài khoản"
+            name="accountNumber"
+            inputMode="numeric"
+            defaultValue={last?.accountNumber}
+            required
+          />
+          <Field
+            label="Chủ tài khoản"
+            name="accountName"
+            defaultValue={last?.accountName}
+            required
+          />
+          {request.error && <ErrorMessage error={request.error} />}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Hủy
+              </Button>
+            </DialogClose>
+            <Button type="submit" disabled={request.isPending}>
+              Gửi yêu cầu
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function ShopWallet() {
   const wallet = useInfiniteQuery({
     queryKey: ['wallet'],
@@ -218,10 +412,13 @@ export function ShopWallet() {
     initialPageParam: '',
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
+  const payouts = usePaged<Payout>(['payouts'], '/shops/me/payouts');
+  const [tab, setTab] = useState<'lines' | 'payouts'>('lines');
 
-  if (wallet.isPending) return <Loading />;
+  if (wallet.isPending || payouts.isPending) return <Loading />;
   if (wallet.error) return <ErrorMessage error={wallet.error} />;
   const lines = wallet.data.pages.flatMap((p) => p.items);
+  const balance = wallet.data.pages[0].balance;
 
   return (
     <Card>
@@ -230,45 +427,122 @@ export function ShopWallet() {
           <Wallet className="size-4 text-muted-foreground" />
           Ví
         </CardTitle>
-        <CardAction className="text-right">
-          <p className="text-xs text-muted-foreground">Số dư</p>
-          <p className="text-xl font-medium text-primary tabular-nums">
-            {money(wallet.data.pages[0].balance)}
-          </p>
+        <CardAction className="flex items-center gap-6">
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Số dư</p>
+            <p className="text-xl font-medium text-primary tabular-nums">
+              {money(balance)}
+            </p>
+          </div>
+          <PayoutDialog balance={balance} last={payouts.items[0]} />
         </CardAction>
       </CardHeader>
       <CardContent>
-        {!lines.length ? (
+        <div className="mb-3 flex gap-2">
+          {(
+            [
+              ['lines', 'Giao dịch'],
+              ['payouts', 'Lịch sử rút tiền'],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              size="sm"
+              variant="outline"
+              className={tab === value ? SELECTED : undefined}
+              onClick={() => setTab(value)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        {tab === 'lines' ? (
+          !lines.length ? (
+            <p className="py-4 text-center text-sm text-muted-foreground">
+              Chưa có giao dịch
+            </p>
+          ) : (
+            <>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Thời gian</TableHead>
+                    <TableHead>Nội dung</TableHead>
+                    <TableHead className="text-right">Số tiền</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {lines.map((l) => (
+                    <TableRow key={l.id}>
+                      <TableCell>{dateTime(l.createdAt)}</TableCell>
+                      <TableCell>
+                        {l.refType === 'order' ? (
+                          <Button
+                            asChild
+                            variant="ghost"
+                            size="sm"
+                            className="-ml-3"
+                          >
+                            <Link to={`/account/seller/orders/${l.refId}`}>
+                              Đơn {l.refId.slice(-8).toUpperCase()}
+                            </Link>
+                          </Button>
+                        ) : (
+                          'Rút tiền'
+                        )}
+                      </TableCell>
+                      <TableCell
+                        className={`text-right tabular-nums ${l.amount < 0 ? 'text-muted-foreground' : ''}`}
+                      >
+                        {l.amount > 0 && '+'}
+                        {money(l.amount)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              <LoadMore
+                hasMore={wallet.hasNextPage}
+                loading={wallet.isFetchingNextPage}
+                onClick={() => void wallet.fetchNextPage()}
+              />
+            </>
+          )
+        ) : !payouts.items.length ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            Chưa có giao dịch
+            Chưa có yêu cầu rút tiền
           </p>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Thời gian</TableHead>
-                <TableHead>Đơn hàng</TableHead>
-                <TableHead className="text-right">Số tiền</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {lines.map((l) => (
-                <TableRow key={l.id}>
-                  <TableCell>{dateTime(l.createdAt)}</TableCell>
-                  <TableCell className="font-mono text-xs">{l.refId}</TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {money(l.amount)}
-                  </TableCell>
+          <>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Thời gian</TableHead>
+                  <TableHead>Tài khoản nhận</TableHead>
+                  <TableHead className="text-right">Số tiền</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {payouts.items.map((p) => (
+                  <TableRow key={p.id}>
+                    <TableCell>{dateTime(p.createdAt)}</TableCell>
+                    <TableCell>
+                      {p.bankName} · {p.accountNumber}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {money(p.amount)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+            <LoadMore
+              hasMore={payouts.hasNextPage}
+              loading={payouts.isFetchingNextPage}
+              onClick={() => void payouts.fetchNextPage()}
+            />
+          </>
         )}
-        <LoadMore
-          hasMore={wallet.hasNextPage}
-          loading={wallet.isFetchingNextPage}
-          onClick={() => void wallet.fetchNextPage()}
-        />
       </CardContent>
     </Card>
   );

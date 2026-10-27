@@ -86,6 +86,7 @@ model Shop {
   items         Item[]
   orders        Order[]
   ledgerAccount LedgerAccount?
+  payouts       Payout[]
 
   @@index([status])
   @@map("shops")
@@ -324,6 +325,7 @@ model Order {
   items           OrderItem[]
   history         OrderStatusHistory[]
   shipment        Shipment?
+  refund          Refund?
 
   @@index([buyerId, status])
   @@index([shopId, status])
@@ -403,6 +405,7 @@ enum LedgerAccountType {
   bank
   prepaid
   refund_due
+  payout_due
 
   @@map("ledger_account_type")
 }
@@ -482,7 +485,57 @@ model BankTransfer {
   payload       Json
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   payment       Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  refund        Refund?
 
   @@index([paymentId])
   @@map("bank_transfers")
+}
+
+enum RefundStatus {
+  pending
+  paid
+
+  @@map("refund_status")
+}
+
+// Money owed back for a cancelled paid order or for a transfer that matched no checkout.
+model Refund {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  orderId        String?       @unique @map("order_id") @db.Uuid
+  bankTransferId String?       @unique @map("bank_transfer_id") @db.Uuid
+  amount         Int
+  status         RefundStatus  @default(pending)
+  paidAt         DateTime?     @map("paid_at") @db.Timestamptz(3)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  order          Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  bankTransfer   BankTransfer? @relation(fields: [bankTransferId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("refunds")
+}
+
+enum PayoutStatus {
+  pending
+  paid
+  rejected
+
+  @@map("payout_status")
+}
+
+// The bank account is a snapshot of what the seller entered for this payout.
+model Payout {
+  id            String       @id @default(uuid(7)) @db.Uuid
+  shopId        String       @map("shop_id") @db.Uuid
+  amount        Int
+  status        PayoutStatus @default(pending)
+  bankName      String       @map("bank_name")
+  accountNumber String       @map("account_number")
+  accountName   String       @map("account_name")
+  decidedAt     DateTime?    @map("decided_at") @db.Timestamptz(3)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  shop          Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([status])
+  @@map("payouts")
 }

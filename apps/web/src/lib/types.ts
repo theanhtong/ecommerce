@@ -158,3 +158,31 @@ export interface Ward {
   fullName: string;
   type: 'ward' | 'commune' | 'special_zone';
 }
+
+export interface Payout {
+  id: string;
+  amount: number;
+  status: 'pending' | 'paid' | 'rejected';
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  decidedAt: string | null;
+  createdAt: string;
+}
+
+export interface Refund {
+  id: string;
+  amount: number;
+  status: 'pending' | 'paid';
+  paidAt: string | null;
+  createdAt: string;
+  order: {
+    id: string;
+    buyer: { id: string; username: string; email: string };
+  } | null;
+  transfer: {
+    content: string;
+    referenceCode: string | null;
+    createdAt: string;
+  } | null;
+}

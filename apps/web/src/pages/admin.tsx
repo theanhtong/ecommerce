@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  Banknote,
   BookOpen,
   ChevronLeft,
   CircleX,
@@ -8,6 +9,7 @@ import {
   Truck,
   UserPlus,
   UserRound,
+  Undo2,
   Users,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -32,12 +34,16 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-} from '@/components/ui/chart';
+  cancelRate,
+  IconStat,
+  periodLabel,
+  RangePicker,
+  type Range,
+  SELECTED,
+  SeriesChart,
+  StatCard,
+} from '@/components/report';
 import {
   Table,
   TableBody,
@@ -68,9 +74,9 @@ const TABS = [
   ['/admin/ledger', 'Sổ cái', BookOpen],
   ['/admin/shops', 'Cửa hàng', Store],
   ['/admin/users', 'Người dùng', Users],
+  ['/admin/payouts', 'Rút tiền', Banknote],
+  ['/admin/refunds', 'Hoàn tiền', Undo2],
 ] as const;
-
-const SELECTED = 'border-primary text-primary hover:text-primary';
 
 export function AdminLayout() {
   const { user, logout } = useAuth();
@@ -399,8 +405,6 @@ export function AdminUsersPage() {
   );
 }
 
-type Range = 'today' | '30d' | '12m';
-
 type Report = {
   totals: {
     profit: number;
@@ -421,95 +425,6 @@ type Report = {
   }[];
 };
 
-const RANGES: [Range, string][] = [
-  ['today', '24 giờ'],
-  ['30d', '30 ngày'],
-  ['12m', '12 tháng'],
-];
-
-// period is HH24, YYYY-MM-DD or YYYY-MM depending on the range.
-const periodLabel = (range: Range, period: string, long = false) => {
-  if (range === 'today') return `${period}:00`;
-  const [y, m, d] = period.split('-');
-  if (range === '30d') return long ? `${d}/${m}/${y}` : `${d}/${m}`;
-  return long ? `Tháng ${Number(m)}/${y}` : `${m}/${y.slice(2)}`;
-};
-
-const compact = new Intl.NumberFormat('vi-VN', { notation: 'compact' });
-
-function SeriesChart({
-  title,
-  data,
-  dataKey,
-  range,
-  format,
-  className,
-}: {
-  title: string;
-  data: Report['series'];
-  dataKey: 'profit' | 'itemsTotal' | 'orders';
-  range: Range;
-  format: (value: number) => string;
-  className?: string;
-}) {
-  return (
-    <Card className={className}>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <ChartContainer
-          config={{ [dataKey]: { label: title, color: 'var(--chart-1)' } }}
-          className="aspect-auto h-56 w-full"
-        >
-          <BarChart data={data} margin={{ left: 4, right: 4 }}>
-            <CartesianGrid vertical={false} strokeOpacity={0.5} />
-            <XAxis
-              dataKey="period"
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              minTickGap={16}
-              tickFormatter={(p: string) => periodLabel(range, p)}
-            />
-            <YAxis
-              tickLine={false}
-              axisLine={false}
-              width={44}
-              allowDecimals={false}
-              tickFormatter={(v: number) => compact.format(v)}
-            />
-            <ChartTooltip
-              cursor={{ fillOpacity: 0.4 }}
-              content={
-                <ChartTooltipContent
-                  labelFormatter={(_, payload) =>
-                    periodLabel(range, payload?.[0]?.payload.period, true)
-                  }
-                  formatter={(value) => (
-                    <span className="flex w-full justify-between gap-4">
-                      <span className="text-muted-foreground">{title}</span>
-                      <span className="font-medium tabular-nums">
-                        {format(Number(value))}
-                      </span>
-                    </span>
-                  )}
-                />
-              }
-            />
-            <Bar
-              dataKey={dataKey}
-              fill={`var(--color-${dataKey})`}
-              radius={[4, 4, 0, 0]}
-              maxBarSize={28}
-            />
-          </BarChart>
-        </ChartContainer>
-      </CardContent>
-    </Card>
-  );
-}
-
 export function AdminLedgerPage() {
   const [range, setRange] = useState<Range>('30d');
   const report = useQuery({
@@ -521,6 +436,7 @@ export function AdminLedgerPage() {
     queryFn: () => api<{ total: number }>('/admin/ledger/accounts'),
   });
   const count = (n: number) => String(n);
+  const t = report.data?.totals;
 
   return (
     <>
@@ -538,97 +454,44 @@ export function AdminLedgerPage() {
           )
         }
       />
-      <div className="mb-4 flex flex-wrap gap-2">
-        {RANGES.map(([value, label]) => (
-          <Button
-            key={value}
-            size="sm"
-            variant="outline"
-            className={range === value ? SELECTED : undefined}
-            onClick={() => setRange(value)}
-          >
-            {label}
-          </Button>
-        ))}
-      </div>
+      <RangePicker value={range} onChange={setRange} />
       {report.isPending ? (
         <Loading />
-      ) : report.error ? (
+      ) : report.error || !t ? (
         <ErrorMessage error={report.error} />
       ) : (
         <div className="grid gap-4">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {(
-              [
-                ['Lợi nhuận', money(report.data.totals.profit)],
-                ['Tiền hàng', money(report.data.totals.itemsTotal)],
-                ['Đơn hoàn thành', count(report.data.totals.orders)],
-                [
-                  'Giá trị đơn trung bình',
-                  money(report.data.totals.averageOrder),
-                ],
-              ] as const
-            ).map(([label, value]) => (
-              <Card key={label} size="sm">
-                <CardContent>
-                  <p className="text-sm text-muted-foreground">{label}</p>
-                  <p className="mt-1 text-2xl font-medium tabular-nums">
-                    {value}
-                  </p>
-                </CardContent>
-              </Card>
-            ))}
+            <StatCard label="Lợi nhuận" value={money(t.profit)} />
+            <StatCard label="Tiền hàng" value={money(t.itemsTotal)} />
+            <StatCard label="Đơn hoàn thành" value={count(t.orders)} />
+            <StatCard
+              label="Giá trị đơn trung bình"
+              value={money(t.averageOrder)}
+            />
           </div>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {(
-              [
-                [
-                  Truck,
-                  'Phí vận chuyển thu hộ',
-                  money(report.data.totals.shippingFees),
-                  null,
-                ],
-                [
-                  CircleX,
-                  'Đơn bị hủy',
-                  count(report.data.totals.cancelledOrders),
-                  report.data.totals.cancelledOrders + report.data.totals.orders
-                    ? `${Math.round(
-                        (report.data.totals.cancelledOrders * 100) /
-                          (report.data.totals.cancelledOrders +
-                            report.data.totals.orders),
-                      )}%`
-                    : null,
-                ],
-                [
-                  UserPlus,
-                  'Người dùng mới',
-                  count(report.data.totals.newUsers),
-                  null,
-                ],
-                [
-                  Store,
-                  'Cửa hàng mới',
-                  count(report.data.totals.newShops),
-                  null,
-                ],
-              ] as const
-            ).map(([Icon, label, value, note]) => (
-              <Card key={label} size="sm">
-                <CardContent className="flex items-center gap-3">
-                  <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
-                    <Icon className="size-5" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className="text-lg font-medium tabular-nums">{value}</p>
-                    <p className="truncate text-xs text-muted-foreground">
-                      {label}
-                      {note && ` · ${note}`}
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+            <IconStat
+              icon={Truck}
+              label="Phí vận chuyển thu hộ"
+              value={money(t.shippingFees)}
+            />
+            <IconStat
+              icon={CircleX}
+              label="Đơn bị hủy"
+              value={count(t.cancelledOrders)}
+              note={cancelRate(t.cancelledOrders, t.orders)}
+            />
+            <IconStat
+              icon={UserPlus}
+              label="Người dùng mới"
+              value={count(t.newUsers)}
+            />
+            <IconStat
+              icon={Store}
+              label="Cửa hàng mới"
+              value={count(t.newShops)}
+            />
           </div>
           <SeriesChart
             title="Lợi nhuận"

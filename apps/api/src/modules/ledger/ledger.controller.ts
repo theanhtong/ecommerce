@@ -27,6 +27,16 @@ export class LedgerController {
     return this.ledger.wallet(user.sub, query);
   }
 
+  @Get('shops/me/report')
+  @UseGuards(RolesGuard)
+  @Roles(Role.user)
+  shopReport(
+    @CurrentUser() user: AccessTokenPayload,
+    @Query() query: ReportQuery,
+  ) {
+    return this.ledger.shopReport(user.sub, query.range);
+  }
+
   @Get('admin/ledger/accounts')
   @UseGuards(RolesGuard)
   @Roles(Role.admin)

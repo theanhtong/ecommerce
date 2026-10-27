@@ -49,3 +49,8 @@ export const PAYMENT_METHOD = {
   cod: 'Thanh toán khi nhận hàng',
   online: 'Thanh toán online',
 } as const;
+
+export const REFUND_STATUS = {
+  pending: 'Chờ hoàn',
+  paid: 'Đã hoàn',
+} as const;
