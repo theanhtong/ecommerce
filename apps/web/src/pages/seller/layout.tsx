@@ -8,6 +8,7 @@ import {
   Store,
   Star,
   TicketPercent,
+  Zap,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Navigate, NavLink, Outlet, useLocation } from 'react-router';
@@ -138,6 +139,7 @@ const TABS = [
   ['/account/seller/items', 'Sản phẩm', Package],
   ['/account/seller/orders', 'Đơn hàng', ReceiptText],
   ['/account/seller/vouchers', 'Khuyến mãi', TicketPercent],
+  ['/account/seller/flash-sales', 'Flash Sale', Zap],
   ['/account/seller/reviews', 'Đánh giá', Star],
 ] as const;
 

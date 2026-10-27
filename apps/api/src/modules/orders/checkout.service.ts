@@ -18,6 +18,11 @@ import { emit } from '../notifications/outbox.service.js';
 import { PAYMENT_WINDOW_MS, paymentCode } from '../payments/payment-code.js';
 import { locationInclude, locationView } from '../regions/location.js';
 import type { CheckoutDto, PreviewDto } from './dto/order.dto.js';
+import {
+  activeFlashSales,
+  assertWithinLimit,
+  claimFlashSale,
+} from '../promotions/flash-sales.js';
 import { priceCart } from '../promotions/pricing.js';
 import { VouchersService } from '../promotions/vouchers.service.js';
 import { orderInclude, orderView } from './order-view.js';
@@ -115,6 +120,14 @@ export class CheckoutService {
       throw new ConflictException('Cart changed, reload it');
     }
     for (const line of lines) this.assertPurchasable(buyerId, line);
+    const sales = await activeFlashSales(
+      tx,
+      lines.map((l) => l.modelId),
+    );
+    for (const line of lines) {
+      const sale = sales.get(line.modelId);
+      if (sale) await assertWithinLimit(tx, buyerId, sale, line.quantity);
+    }
 
     const byShop = new Map<string, Line[]>();
     for (const line of lines) {
@@ -150,7 +163,7 @@ export class CheckoutService {
         shippingFee: g.fee,
         lines: g.lines.map((l) => ({
           id: l.id,
-          amount: l.model.price * l.quantity,
+          amount: (sales.get(l.modelId)?.price ?? l.model.price) * l.quantity,
         })),
       })),
       vouchers.cart,
@@ -158,6 +171,7 @@ export class CheckoutService {
     return {
       address,
       lines,
+      sales,
       voucherRows: vouchers.rows,
       shops: groups.map((g, i) => ({ ...g, priced: priced[i] })),
     };
@@ -169,7 +183,7 @@ export class CheckoutService {
     dto: CheckoutDto,
     idempotencyKey: string,
   ) {
-    const { address, lines, shops, voucherRows } = await this.quote(
+    const { address, lines, sales, shops, voucherRows } = await this.quote(
       tx,
       buyerId,
       dto,
@@ -198,6 +212,12 @@ export class CheckoutService {
         throw new ConflictException(
           `Not enough stock for ${line.model.item.name}`,
         );
+      }
+      const sale = sales.get(line.modelId);
+      if (sale) {
+        await claimFlashSale(tx, sale, line.quantity);
+        // Again under the quota row lock, so two checkouts by one buyer cannot both pass.
+        await assertWithinLimit(tx, buyerId, sale, line.quantity);
       }
     }
 
@@ -238,7 +258,9 @@ export class CheckoutService {
               ),
               sku: model.sku,
               imageKey: model.item.images[0]?.key,
-              price: model.price,
+              price: sales.get(model.id)?.price ?? model.price,
+              flashSaleModelId: sales.get(model.id)?.id,
+              originalPrice: sales.has(model.id) ? model.price : undefined,
               quantity,
               sellerDiscount: discounts.get(id)!.sellerDiscount,
               platformDiscount: discounts.get(id)!.platformDiscount,

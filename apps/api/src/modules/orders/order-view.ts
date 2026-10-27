@@ -46,6 +46,7 @@ export const orderView = ({
     image: i.imageKey && mediaUrl(i.imageKey),
     sku: i.sku,
     price: i.price,
+    originalPrice: i.originalPrice,
     quantity: i.quantity,
     sellerDiscount: i.sellerDiscount,
     platformDiscount: i.platformDiscount,

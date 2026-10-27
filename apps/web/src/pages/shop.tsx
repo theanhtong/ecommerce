@@ -4,6 +4,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { Zap } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
@@ -17,6 +18,7 @@ import {
   QuantityInput,
   StockLabel,
 } from '@/components/common';
+import { Countdown, FlashSaleStrip, SalePrice } from '@/components/flash-sale';
 import { ItemGallery } from '@/components/item-images';
 import { ItemReviews, RatingSummary } from '@/components/reviews';
 import { Filter } from '@/components/report';
@@ -77,6 +79,7 @@ function ItemGrid({ path, queryKey }: { path: string; queryKey: unknown[] }) {
 export function HomePage() {
   return (
     <>
+      <FlashSaleStrip />
       <PageHeader title="Sản phẩm mới" />
       <ItemGrid path="/items" queryKey={['items']} />
     </>
@@ -268,7 +271,8 @@ export function ItemPage() {
     picked.length === tierVariations.length
       ? models.find((m) => m.tierIndex.join() === picked.join())
       : undefined;
-  const prices = models.map((m) => m.price);
+  const prices = models.map((m) => m.flashSale?.price ?? m.price);
+  const onSale = models.find((m) => m.flashSale)?.flashSale;
   const inCart =
     cart.data?.shops
       .flatMap((s) => s.items)
@@ -298,10 +302,32 @@ export function ItemPage() {
                 </Link>
               </Button>
             </div>
+            {onSale && (
+              <div className="flex flex-wrap items-center gap-3 rounded-md bg-primary/10 px-3 py-2 text-sm">
+                <span className="flex items-center gap-1 font-semibold text-primary">
+                  <Zap className="size-4 fill-primary" />
+                  Flash Sale
+                </span>
+                <Countdown to={onSale.endsAt} />
+                {model?.flashSale && (
+                  <span className="text-muted-foreground">
+                    Còn {model.flashSale.quota - model.flashSale.sold} suất ·
+                    Tối đa {model.flashSale.purchaseLimit}/người
+                  </span>
+                )}
+              </div>
+            )}
             <p className="text-2xl font-medium text-primary">
-              {model
-                ? money(model.price)
-                : priceRange(Math.min(...prices), Math.max(...prices))}
+              {model?.flashSale ? (
+                <SalePrice
+                  price={model.flashSale.price}
+                  originalPrice={model.price}
+                />
+              ) : model ? (
+                money(model.price)
+              ) : (
+                priceRange(Math.min(...prices), Math.max(...prices))
+              )}
             </p>
             {tierVariations.map((tier, t) => (
               <div key={tier.name} className="grid gap-2">

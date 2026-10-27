@@ -19,6 +19,7 @@ import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { emit } from '../notifications/outbox.service.js';
+import { releaseFlashSales } from '../promotions/flash-sales.js';
 import { VouchersService } from '../promotions/vouchers.service.js';
 import type { AdminListOrdersQuery, ListOrdersQuery } from './dto/order.dto.js';
 import { orderInclude, orderView } from './order-view.js';
@@ -373,6 +374,7 @@ export class OrdersService {
       await this.ledger.refundOrder(tx, order);
     }
     await this.vouchers.releaseIfCancelled(tx, order.checkoutId);
+    await releaseFlashSales(tx, order.id);
   }
 
   // Re-checks `where` under the row lock, so orders changed meanwhile are skipped.

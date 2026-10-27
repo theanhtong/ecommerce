@@ -533,6 +533,7 @@ describe('Catalog (e2e)', () => {
         price: 50000,
         sku: null,
         stock: 12,
+        flashSale: null,
       });
     });
   });

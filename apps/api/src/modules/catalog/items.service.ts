@@ -11,6 +11,11 @@ import {
   type CursorQuery,
 } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import {
+  activeFlashSales,
+  flashSaleView,
+  type ActiveFlashSale,
+} from '../promotions/flash-sales.js';
 import { ratingView } from '../reviews/review-view.js';
 import { imageView } from '../storage/images.js';
 import { mediaUrl, StorageService } from '../storage/storage.service.js';
@@ -67,12 +72,17 @@ export const variationName = (
 export const available = (m: ModelWithInventory) =>
   m.inventory ? m.inventory.onHand - m.inventory.reserved : 0;
 
-const modelView = (m: ModelWithInventory, seller: boolean) => ({
+const modelView = (
+  m: ModelWithInventory,
+  seller: boolean,
+  sale?: ActiveFlashSale,
+) => ({
   id: m.id,
   tierIndex: m.tierIndex,
   price: m.price,
   sku: m.sku,
   stock: available(m),
+  flashSale: sale ? flashSaleView(sale) : null,
   ...(seller && {
     onHand: m.inventory?.onHand ?? 0,
     reserved: m.inventory?.reserved ?? 0,
@@ -89,6 +99,7 @@ const detailView = (
     ...item
   }: ItemDetail,
   seller: boolean,
+  sales = new Map<string, ActiveFlashSale>(),
 ) => ({
   ...item,
   images: images.map(imageView),
@@ -97,7 +108,7 @@ const detailView = (
     name: t.name,
     options: t.options.map((o) => o.option),
   })),
-  models: models.map((m) => modelView(m, seller)),
+  models: models.map((m) => modelView(m, seller, sales.get(m.id))),
 });
 
 const summaryView = ({ models, images, ...item }: ItemSummary) => {
@@ -359,7 +370,11 @@ export class ItemsService {
       include: detailInclude,
     });
     if (!item) throw new NotFoundException('Item not found');
-    return detailView(item, false);
+    const sales = await activeFlashSales(
+      this.prisma,
+      item.models.map((m) => m.id),
+    );
+    return detailView(item, false, sales);
   }
 
   async listForAdmin({ shopId, status, ...query }: AdminListItemsQuery) {
