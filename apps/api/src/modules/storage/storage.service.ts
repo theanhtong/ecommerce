@@ -78,6 +78,12 @@ export class StorageService implements OnModuleInit {
     });
   }
 
+  async ping() {
+    if (!(await this.minio.bucketExists(this.bucket))) {
+      throw new Error(`Bucket ${this.bucket} is missing`);
+    }
+  }
+
   // A POST policy, unlike a presigned PUT, lets MinIO itself enforce the size limit.
   async presignUpload(key: string, contentType: string, maxBytes: number) {
     const policy = this.browserMinio.newPostPolicy();

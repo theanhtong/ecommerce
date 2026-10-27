@@ -305,14 +305,10 @@ describe('Payments (e2e)', () => {
       ]),
     );
 
-    const shipmentId = (
-      await as(sellerOf(kept)).post(`/orders/${kept.id}/ship`).expect(200)
-    ).body.shipment.id;
+    await as(sellerOf(kept)).post(`/orders/${kept.id}/ship`).expect(200);
     for (const status of ['picked_up', 'delivered']) {
-      await http()
-        .post(`/carrier/shipments/${shipmentId}/status`)
-        .set('X-Carrier-Key', process.env.CARRIER_API_KEY!)
-        .send({ status })
+      await as(sellerOf(kept))
+        .post(`/orders/${kept.id}/shipment`, { status })
         .expect(200);
     }
     await as(buyer).post(`/orders/${kept.id}/receive`).expect(200);

@@ -61,10 +61,10 @@ type SweptOrder = Prisma.OrderGetPayload<{
   include: { items: true; checkout: { select: { paymentMethod: true } } };
 }>;
 
-type CarrierStatus = Exclude<ShipmentStatus, 'awaiting_pickup'>;
+type ShipmentStep = Exclude<ShipmentStatus, 'awaiting_pickup'>;
 
-const CARRIER_STEPS: Record<
-  CarrierStatus,
+const SHIPMENT_STEPS: Record<
+  ShipmentStep,
   {
     shipmentFrom: ShipmentStatus;
     orderFrom: OrderStatus;
@@ -262,10 +262,10 @@ export class OrdersService {
     return true;
   }
 
-  // Repeats are no-ops so retried callbacks are safe; skipped steps are refused.
-  async carrierUpdate(
+  // Repeats are no-ops so a double submit is safe; skipped steps are refused.
+  private async advanceShipment(
     shipmentId: string,
-    status: CarrierStatus,
+    status: ShipmentStep,
     actorId: string | null = null,
   ) {
     const shipment = await this.prisma.shipment.findUnique({
@@ -275,7 +275,7 @@ export class OrdersService {
     if (!shipment) throw new NotFoundException('Shipment not found');
     if (shipment.status === status) return shipmentView(shipment);
 
-    const step = CARRIER_STEPS[status];
+    const step = SHIPMENT_STEPS[status];
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.shipment.updateMany({
         where: { id: shipmentId, status: step.shipmentFrom },
@@ -416,13 +416,13 @@ export class OrdersService {
   }
 
   // shortcut: the seller reports pickup and delivery until a carrier integration can.
-  async updateShipment(userId: string, id: string, status: CarrierStatus) {
+  async updateShipment(userId: string, id: string, status: ShipmentStep) {
     const { party, order } = await this.involved(userId, id);
     if (party !== 'seller') {
       throw new ForbiddenException('Only the seller can do this');
     }
     if (!order.shipment) throw new ConflictException('Shipment not arranged');
-    await this.carrierUpdate(order.shipment.id, status, userId);
+    await this.advanceShipment(order.shipment.id, status, userId);
     return this.get(userId, id);
   }
 

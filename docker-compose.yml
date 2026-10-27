@@ -56,6 +56,8 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
       MINIO_ENDPOINT: http://minio:9000
+      # nginx is the one proxy in front of the API.
+      TRUST_PROXY_HOPS: "1"
     command: >
       sh -c "pnpm --filter @ecommerce/db exec prisma migrate deploy
       && node scripts/seed-regions.ts"
@@ -67,6 +69,11 @@ services:
     image: ecommerce-api
     env_file: .env
     environment: *app-env
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -88,7 +95,8 @@ services:
     image: ecommerce-web
     ports:
       - "${WEB_PORT:-8080}:80"
-    depends_on: [api]
+    depends_on:
+      api: { condition: service_healthy }
 
 volumes:
   postgres-data:

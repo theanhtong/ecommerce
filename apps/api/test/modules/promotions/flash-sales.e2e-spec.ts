@@ -247,7 +247,7 @@ describe('Flash sales (e2e)', () => {
           .set('Idempotency-Key', randomUUID()),
       ),
     );
-    const statuses = results.map((r) => r.status).sort();
+    const statuses = results.map((r) => r.status).sort((a, b) => a - b);
     expect(statuses).toEqual([201, 201, 409, 409, 409]);
     expect(await sold(modelId)).toBe(2);
     for (const r of results.filter((r) => r.status === 201)) {
