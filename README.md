@@ -16,6 +16,7 @@ pnpm install
 pnpm infra:up
 pnpm db:migrate
 pnpm db:seed
+pnpm admin:create
 ```
 
 Fill in `.env` before running the other commands.
@@ -33,7 +34,7 @@ Sample data (optional, deletes existing dev data):
 pnpm demo:flow
 ```
 
-Demo accounts, password `demo password 123`: `buyer@demo.vn`, `buyer2@demo.vn`, `seller@demo.vn`, `seller2@demo.vn`. The admin account is `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PASSWORD` in `.env`; create it first by registering on the website, then set its `role` to `admin` in the `users` table.
+Demo accounts, password `demo password 123`: `buyer@demo.vn`, `buyer2@demo.vn`, `seller@demo.vn`, `seller2@demo.vn`. The admin account is `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PASSWORD` in `.env`, created by `pnpm admin:create`.
 
 ## Run with Docker
 
