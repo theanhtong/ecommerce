@@ -18,6 +18,7 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { MemberOnly } from '../auth/decorators/member-only.decorator.js';
 import {
   CreateItemDto,
+  SearchItemsQuery,
   SellerItemStatusDto,
   UpdateItemDto,
 } from './dto/item.dto.js';
@@ -53,6 +54,11 @@ export class ItemsController {
   @Get('items')
   list(@Query() query: CursorQuery) {
     return this.items.listPublic(query);
+  }
+
+  @Get('items/search')
+  search(@Query() query: SearchItemsQuery) {
+    return this.items.search(query);
   }
 
   @Get('items/:id')

@@ -6,7 +6,7 @@ A multi-seller marketplace in the style of Shopee: one platform, many shops, one
 
 ## What it does
 
-- **Buyers** browse shops, fill one cart across shops, check out with cash on delivery or a bank transfer (VietQR through SePay), track and cancel orders, return delivered ones and review what they bought.
+- **Buyers** browse shops, fill one cart across shops, check out with cash on delivery or a bank transfer (VietQR through SePay), track and cancel orders, return delivered ones and review what they bought, and search the catalogue without typing accents.
 - **Sellers** open a shop (reviewed by an admin), list items with up to two variation tiers, import and export the catalogue as CSV, ship orders, reply to reviews, see earnings by day or month and withdraw their wallet.
 - **Admins** review shops and items, see every order and user, settle refunds and read the platform report.
 - **A worker** cancels orders that were never paid or shipped in time, completes delivered orders the buyer never confirmed and delivers in-app notifications.
@@ -30,6 +30,7 @@ flowchart LR
 - **Modular monolith.** Auth, catalog, cart, orders, payments, payouts and ledger are Nest modules in one process over one database, so checkout stays a single ACID transaction: stock reservation, orders, payment and ledger commit together or not at all.
 - **Worker** is a second entrypoint of the same app (`src/worker.ts`), so it reuses the order and ledger code instead of copying it. A BullMQ job scheduler stored in Redis runs the deadline sweep once a minute no matter how many workers run.
 - **Transactional outbox.** Order and return changes write an `outbox_events` row in the same transaction. The worker claims unpublished rows with `FOR UPDATE SKIP LOCKED`, pushes them to a BullMQ queue (job id = event id, retried with exponential backoff) and marks them published; the consumer turns them into notifications.
+- **Search** runs in Postgres: `unaccent` is wrapped in an IMMUTABLE `search_text()` so one GIN trigram index serves both `LIKE '%…%'` and fuzzy `<%` matches, and "ao thun" finds "Áo thun".
 
 ## Correctness under concurrency
 

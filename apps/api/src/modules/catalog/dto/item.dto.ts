@@ -1,5 +1,5 @@
 import { ItemStatus } from '@ecommerce/db';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
   IsIn,
@@ -80,4 +80,60 @@ export class AdminListItemsQuery extends CursorQuery {
   @IsOptional()
   @IsEnum(ItemStatus)
   status?: ItemStatus;
+}
+
+export const ITEM_SORTS = [
+  'relevance',
+  'newest',
+  'sales',
+  'price_asc',
+  'price_desc',
+  'rating',
+] as const;
+export type ItemSort = (typeof ITEM_SORTS)[number];
+
+// Page numbers rather than a cursor: relevance and sales orders shift between requests.
+export class SearchItemsQuery {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  minPrice?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  maxPrice?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  minRating?: number;
+
+  @IsOptional()
+  @IsIn(ITEM_SORTS)
+  sort?: ItemSort;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  page: number = 1;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(60)
+  limit: number = 20;
 }

@@ -42,7 +42,7 @@ import { ShopReviews } from '@/components/reviews';
 import { SellerItemPage, SellerItemsPage } from '@/pages/seller/items';
 import { SellerLayout, SellerShopPage } from '@/pages/seller/layout';
 import { SellerOrderPage, SellerOrdersPage } from '@/pages/seller/other';
-import { HomePage, ItemPage, ShopPage } from '@/pages/shop';
+import { HomePage, ItemPage, SearchPage, ShopPage } from '@/pages/shop';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -58,7 +58,10 @@ const router = createBrowserRouter([
     children: [
       {
         element: <RequireNonAdmin />,
-        children: [{ index: true, element: <HomePage /> }],
+        children: [
+          { index: true, element: <HomePage /> },
+          { path: 'search', element: <SearchPage /> },
+        ],
       },
       { path: 'items/:id', element: <ItemPage /> },
       { path: 'shops/:id', element: <ShopPage /> },
