@@ -6,8 +6,8 @@ A multi-seller marketplace in the style of Shopee: one platform, many shops, one
 
 ## What it does
 
-- **Buyers** browse shops, fill one cart across shops, check out with cash on delivery or a bank transfer (VietQR through SePay), track and cancel orders, return delivered ones and review what they bought, and search the catalogue without typing accents.
-- **Sellers** open a shop (reviewed by an admin), list items with up to two variation tiers, import and export the catalogue as CSV, ship orders, reply to reviews, see earnings by day or month and withdraw their wallet.
+- **Buyers** browse shops, fill one cart across shops, check out with cash on delivery or a bank transfer (VietQR through SePay), catch flash sales, track and cancel orders, return delivered ones and review what they bought, and search the catalogue without typing accents.
+- **Sellers** open a shop (reviewed by an admin), list items with up to two variation tiers, import and export the catalogue as CSV, ship orders, run flash sales, reply to reviews, see earnings by day or month and withdraw their wallet.
 - **Admins** review shops and items, see every order and user, settle refunds and read the platform report.
 - **A worker** cancels orders that were never paid or shipped in time, completes delivered orders the buyer never confirmed and delivers in-app notifications.
 
@@ -45,6 +45,7 @@ flowchart LR
 | Bank webhook delivered twice | The provider's transaction id is a unique key; the second delivery is a no-op |
 | Two payout requests spend one balance | The wallet account row is locked while the balance is checked |
 | Worker sweep races a user | The sweep repeats its `WHERE` under the row lock and skips rows that changed |
+| Many buyers race for the last flash sale units | `UPDATE flash_sale_models SET sold = sold + qty WHERE sold + qty <= quota` in the checkout transaction; its row lock also serializes the per-buyer limit check |
 | Two reviews land on one item at once | Ratings are kept as `rating_count`/`rating_sum` and bumped with atomic increments in the review's transaction; a CHECK keeps the sum within 1–5 × count |
 | Worker crashes after queueing an event | The event is queued again; notifications are unique per event and user, so the repeat adds nothing |
 

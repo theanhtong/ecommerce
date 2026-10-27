@@ -11,6 +11,11 @@ import {
   publicWhere,
   variationName,
 } from '../catalog/items.service.js';
+import {
+  activeFlashSales,
+  flashSaleView,
+  type ActiveFlashSale,
+} from '../promotions/flash-sales.js';
 import { mediaUrl } from '../storage/storage.service.js';
 import type { AddCartItemDto } from './dto/cart-item.dto.js';
 
@@ -36,7 +41,7 @@ const lineInclude = {
 
 type Line = Prisma.CartItemGetPayload<{ include: typeof lineInclude }>;
 
-const lineView = ({ model, ...line }: Line) => {
+const lineView = ({ model, ...line }: Line, sale?: ActiveFlashSale) => {
   const { item } = model;
   const stock = available(model);
   return {
@@ -48,7 +53,9 @@ const lineView = ({ model, ...line }: Line) => {
     image: item.images[0] ? mediaUrl(item.images[0].key) : null,
     variation: variationName(model.tierIndex, item.tierVariations),
     addedPrice: line.addedPrice,
-    price: model.price,
+    price: sale?.price ?? model.price,
+    originalPrice: sale ? model.price : null,
+    flashSale: sale ? flashSaleView(sale) : null,
     priceChange: model.price - line.addedPrice,
     stock,
     purchasable:
@@ -68,6 +75,10 @@ export class CartService {
       include: lineInclude,
       orderBy: { updatedAt: 'desc' },
     });
+    const sales = await activeFlashSales(
+      this.prisma,
+      lines.map((l) => l.modelId),
+    );
     // Shops appear in the order of their most recently touched line.
     const shops = new Map<
       string,
@@ -79,7 +90,7 @@ export class CartService {
     for (const line of lines) {
       const { id, name } = line.model.item.shop;
       const group = shops.get(id) ?? { shop: { id, name }, items: [] };
-      group.items.push(lineView(line));
+      group.items.push(lineView(line, sales.get(line.modelId)));
       shops.set(id, group);
     }
     return { shops: [...shops.values()] };

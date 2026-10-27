@@ -39,6 +39,7 @@ import {
 import { PaymentPage } from '@/pages/payment';
 import { AdminVouchersPage, SellerVouchersPage } from '@/pages/vouchers';
 import { ShopReviews } from '@/components/reviews';
+import { SellerFlashSalesPage } from '@/pages/flash-sales';
 import { SellerItemPage, SellerItemsPage } from '@/pages/seller/items';
 import { SellerLayout, SellerShopPage } from '@/pages/seller/layout';
 import { SellerOrderPage, SellerOrdersPage } from '@/pages/seller/other';
@@ -90,6 +91,10 @@ const router = createBrowserRouter([
                       { path: 'orders/:id', element: <SellerOrderPage /> },
                       { path: 'vouchers', element: <SellerVouchersPage /> },
                       { path: 'reviews', element: <ShopReviews /> },
+                      {
+                        path: 'flash-sales',
+                        element: <SellerFlashSalesPage />,
+                      },
                     ],
                   },
                 ],

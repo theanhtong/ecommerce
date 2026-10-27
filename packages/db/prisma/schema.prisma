@@ -185,6 +185,7 @@ model Model {
   movements  InventoryMovement[]
   cartItems  CartItem[]
   orderItems OrderItem[]
+  flashSales FlashSaleModel[]
 
   @@index([itemId])
   @@map("models")
@@ -368,20 +369,24 @@ model Order {
 }
 
 model OrderItem {
-  id               String  @id @default(uuid(7)) @db.Uuid
-  orderId          String  @map("order_id") @db.Uuid
-  modelId          String  @map("model_id") @db.Uuid
-  itemName         String  @map("item_name")
-  modelName        String? @map("model_name")
+  id               String          @id @default(uuid(7)) @db.Uuid
+  orderId          String          @map("order_id") @db.Uuid
+  modelId          String          @map("model_id") @db.Uuid
+  itemName         String          @map("item_name")
+  modelName        String?         @map("model_name")
   sku              String?
   price            Int
   quantity         Int
-  sellerDiscount   Int     @default(0) @map("seller_discount")
-  platformDiscount Int     @default(0) @map("platform_discount")
+  sellerDiscount   Int             @default(0) @map("seller_discount")
+  platformDiscount Int             @default(0) @map("platform_discount")
   // Cover image at checkout; its object is kept while an order line points at it.
-  imageKey         String? @map("image_key")
-  order            Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  model            Model   @relation(fields: [modelId], references: [id])
+  imageKey         String?         @map("image_key")
+  // Set when bought at a flash sale price; price is then the sale price and this the regular one.
+  flashSaleModelId String?         @map("flash_sale_model_id") @db.Uuid
+  originalPrice    Int?            @map("original_price")
+  order            Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  model            Model           @relation(fields: [modelId], references: [id])
+  flashSaleModel   FlashSaleModel? @relation(fields: [flashSaleModelId], references: [id], onDelete: Restrict)
   review           Review?
 
   @@index([orderId])
@@ -584,22 +589,24 @@ enum PromotionType {
   shop_voucher
   platform_voucher
   shipping_voucher
+  flash_sale
 
   @@map("promotion_type")
 }
 
 // Parent of every promotion; each kind of promotion adds its own child table.
 model Promotion {
-  id        String        @id @default(uuid(7)) @db.Uuid
+  id        String           @id @default(uuid(7)) @db.Uuid
   type      PromotionType
-  // Set only for shop vouchers, which the shop pays for.
-  shopId    String?       @map("shop_id") @db.Uuid
+  // Set for promotions the shop runs and pays for: shop vouchers and flash sales.
+  shopId    String?          @map("shop_id") @db.Uuid
   name      String
-  startsAt  DateTime      @map("starts_at") @db.Timestamptz(3)
-  endsAt    DateTime      @map("ends_at") @db.Timestamptz(3)
-  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  shop      Shop?         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  startsAt  DateTime         @map("starts_at") @db.Timestamptz(3)
+  endsAt    DateTime         @map("ends_at") @db.Timestamptz(3)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  shop      Shop?            @relation(fields: [shopId], references: [id], onDelete: Cascade)
   voucher   Voucher?
+  flashSale FlashSaleModel[]
 
   @@index([type, endsAt])
   @@index([shopId])
@@ -627,6 +634,24 @@ model Voucher {
   usages        VoucherUsage[]
 
   @@map("vouchers")
+}
+
+// One discounted model in a flash sale. sold counts units taken by orders that are not cancelled.
+model FlashSaleModel {
+  id            String      @id @default(uuid(7)) @db.Uuid
+  promotionId   String      @map("promotion_id") @db.Uuid
+  modelId       String      @map("model_id") @db.Uuid
+  price         Int
+  quota         Int
+  sold          Int         @default(0)
+  purchaseLimit Int         @map("purchase_limit")
+  promotion     Promotion   @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  model         Model       @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  orderItems    OrderItem[]
+
+  @@unique([promotionId, modelId])
+  @@index([modelId])
+  @@map("flash_sale_models")
 }
 
 // Assumption: a buyer can use each voucher once.

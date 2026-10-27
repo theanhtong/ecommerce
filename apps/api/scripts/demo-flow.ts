@@ -533,7 +533,9 @@ async function main() {
   const withImages = await call('GET', `/items/${shirt.id}`, 200);
   console.log(`    cover: ${withImages.images[0].url}`);
 
-  step('16. Seller creates a shop voucher; admin creates platform vouchers');
+  step(
+    '16. Seller creates a shop voucher and a flash sale; admin creates platform vouchers',
+  );
   const window = {
     startsAt: new Date(Date.now() - 60_000).toISOString(),
     endsAt: new Date(Date.now() + 30 * 24 * 3600_000).toISOString(),
@@ -577,6 +579,31 @@ async function main() {
       ...window,
     },
   });
+
+  const whiteMNow = await call('GET', `/items/${shirt.id}`, 200);
+  const flash = await call('POST', '/shops/me/flash-sales', 201, {
+    token: seller.accessToken,
+    body: {
+      name: 'Giờ vàng áo thun',
+      startsAt: new Date().toISOString(),
+      endsAt: new Date(Date.now() + 2 * 3600_000).toISOString(),
+      models: [
+        {
+          modelId: whiteM.id,
+          price: 1000,
+          quota: Math.min(
+            5,
+            whiteMNow.models.find((m: { id: string }) => m.id === whiteM.id)
+              .stock,
+          ),
+          purchaseLimit: 2,
+        },
+      ],
+    },
+  });
+  console.log(
+    `    flash sale: ${flash.models[0].itemName} ${flash.models[0].originalPrice}đ → ${flash.models[0].price}đ, ${flash.models[0].quota} units`,
+  );
 
   step('17. More orders in every state, from a second buyer too');
   const buyer2 = await call('POST', '/auth/register', 201, {
@@ -681,7 +708,10 @@ async function main() {
     [model(shirt, '1,0'), 1],
   ]);
   await advance(shipping, 'shipping');
-  await buy(buyer2.accessToken, buyer2Address.id, [[model(shirt, '1,1'), 1]]);
+  const [flashOrder] = await buy(buyer2.accessToken, buyer2Address.id, [
+    [whiteM.id, 2],
+  ]);
+  console.log(`    bought 2 at the flash sale price: ${flashOrder.total}đ`);
   await buy(buyer2.accessToken, buyer2Address.id, [[model(lamp, '0,1'), 1]], {
     paymentMethod: 'online',
   });

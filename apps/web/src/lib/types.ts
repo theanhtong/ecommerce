@@ -48,6 +48,15 @@ export interface Model {
   stock: number;
   onHand?: number;
   reserved?: number;
+  flashSale: ModelFlashSale | null;
+}
+
+export interface ModelFlashSale {
+  price: number;
+  quota: number;
+  sold: number;
+  purchaseLimit: number;
+  endsAt: string;
 }
 
 export interface ItemDetail {
@@ -73,6 +82,8 @@ export interface CartLine {
   itemName: string;
   image: string | null;
   variation: string | null;
+  originalPrice: number | null;
+  flashSale: ModelFlashSale | null;
   addedPrice: number;
   price: number;
   priceChange: number;
@@ -165,6 +176,7 @@ export interface Order {
     image: string | null;
     sku: string | null;
     price: number;
+    originalPrice: number | null;
     quantity: number;
     review: Review | null;
   }[];
@@ -282,4 +294,26 @@ export interface ListedReview extends Review {
   buyer: string;
   modelName: string | null;
   item?: { id: string; name: string };
+}
+
+export interface FlashSaleModel {
+  id: string;
+  modelId: string;
+  itemId: string;
+  itemName: string;
+  variation: string | null;
+  image: string | null;
+  originalPrice: number;
+  price: number;
+  quota: number;
+  sold: number;
+  purchaseLimit: number;
+}
+
+export interface FlashSale {
+  id: string;
+  name: string;
+  startsAt: string;
+  endsAt: string;
+  models: FlashSaleModel[];
 }

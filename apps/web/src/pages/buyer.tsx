@@ -29,6 +29,7 @@ import {
   StockLabel,
 } from '@/components/common';
 import { Badge } from '@/components/ui/badge';
+import { SalePrice } from '@/components/flash-sale';
 import { LineReview } from '@/components/reviews';
 import { Button } from '@/components/ui/button';
 import {
@@ -177,10 +178,16 @@ export function CartPage() {
                     </div>
                     <div className="text-right">
                       <p>{money(line.price)}</p>
-                      {line.priceChange !== 0 && (
+                      {line.originalPrice !== null ? (
                         <p className="text-xs text-muted-foreground line-through">
-                          {money(line.addedPrice)}
+                          {money(line.originalPrice)}
                         </p>
+                      ) : (
+                        line.priceChange !== 0 && (
+                          <p className="text-xs text-muted-foreground line-through">
+                            {money(line.addedPrice)}
+                          </p>
+                        )
                       )}
                     </div>
                     <div className="grid justify-items-center gap-1 text-xs">
@@ -491,7 +498,11 @@ export function CheckoutPage() {
                         )}
                       </div>
                     </div>
-                    <p className="text-right">{money(line.price)}</p>
+                    <SalePrice
+                      className="text-right"
+                      price={line.price}
+                      originalPrice={line.originalPrice}
+                    />
                     <p className="text-center">{line.quantity}</p>
                     <p className="text-right font-medium">
                       {money(line.price * line.quantity)}
@@ -1129,7 +1140,11 @@ export function OrderDetail({
                       )}
                     </div>
                   </div>
-                  <p className="text-right">{money(i.price)}</p>
+                  <SalePrice
+                    className="text-right"
+                    price={i.price}
+                    originalPrice={i.originalPrice}
+                  />
                   <p className="text-center">{i.quantity}</p>
                   <p className="text-right font-medium">
                     {money(i.price * i.quantity)}
