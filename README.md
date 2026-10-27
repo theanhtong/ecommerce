@@ -2,7 +2,7 @@
 
 A multi-seller marketplace in the style of Shopee: one platform, many shops, one cart that splits into an order per shop. The focus is the backend: orders, stock, payments and a double-entry ledger that stay correct under concurrent requests and retried webhooks.
 
-**Stack:** NestJS 12, Prisma 7, PostgreSQL 17, Redis 8 + BullMQ, React 19 + Vite + Tailwind + shadcn/ui, pnpm workspace.
+**Stack:** NestJS 12, Prisma 7, PostgreSQL 17, Redis 8 + BullMQ, MinIO, React 19 + Vite + Tailwind + shadcn/ui, pnpm workspace.
 
 ## What it does
 
@@ -25,11 +25,14 @@ flowchart LR
   api --> pg[(PostgreSQL)]
   worker --> pg
   worker <--> redis[(Redis<br/>BullMQ)]
+  api --> minio[(MinIO)]
+  web -->|signed upload, public images| minio
 ```
 
 - **Modular monolith.** Auth, catalog, cart, orders, payments, payouts and ledger are Nest modules in one process over one database, so checkout stays a single ACID transaction: stock reservation, orders, payment and ledger commit together or not at all.
 - **Worker** is a second entrypoint of the same app (`src/worker.ts`), so it reuses the order and ledger code instead of copying it. A BullMQ job scheduler stored in Redis runs the deadline sweep once a minute no matter how many workers run.
 - **Transactional outbox.** Order and return changes write an `outbox_events` row in the same transaction. The worker claims unpublished rows with `FOR UPDATE SKIP LOCKED`, pushes them to a BullMQ queue (job id = event id, retried with exponential backoff) and marks them published; the consumer turns them into notifications.
+- **Images** never pass through the API. The browser asks for a signed MinIO POST policy (type and 2 MB limit enforced by MinIO), uploads to `tmp/{userId}/`, and the API then checks the real bytes, copies the file to `items/{itemId}/{uuid}.{ext}` and deletes the upload. `items/` is public and immutable (`Cache-Control: immutable`), `tmp/` is private and expires after a day, so abandoned uploads clean themselves up. Order lines keep the cover they were bought with.
 - **Search** runs in Postgres: `unaccent` is wrapped in an IMMUTABLE `search_text()` so one GIN trigram index serves both `LIKE '%…%'` and fuzzy `<%` matches, and "ao thun" finds "Áo thun".
 
 ## Correctness under concurrency
@@ -68,7 +71,7 @@ Requires Node 22, pnpm 11 and Docker.
 ```bash
 cp .env.example .env        # fill in the values
 pnpm install
-pnpm infra:up               # PostgreSQL + Redis
+pnpm infra:up               # PostgreSQL + Redis + MinIO
 pnpm db:migrate             # see the note below
 pnpm db:seed                # provinces and wards
 pnpm dev                    # API on :3000, web on :5173

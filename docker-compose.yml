@@ -27,6 +27,24 @@ services:
       timeout: 5s
       retries: 10
 
+  # Object storage for uploaded images.
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # The app services only start with the `app` profile, so `pnpm infra:up` keeps starting just the databases.
   migrate:
     profiles: [app]
@@ -37,6 +55,7 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: http://minio:9000
     command: >
       sh -c "pnpm --filter @ecommerce/db exec prisma migrate deploy
       && node scripts/seed-regions.ts"
@@ -51,6 +70,7 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
 
   worker:
     profiles: [app]
@@ -73,3 +93,4 @@ services:
 volumes:
   postgres-data:
   redis-data:
+  minio-data:

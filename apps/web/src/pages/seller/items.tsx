@@ -14,11 +14,11 @@ import {
 import {
   Empty,
   ErrorMessage,
-  ItemImage,
   LoadMore,
   Loading,
   PageHeader,
 } from '@/components/common';
+import { ItemImagesEditor } from '@/components/item-images';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -641,58 +641,60 @@ export function SellerItemPage() {
         }
       />
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_18rem]">
-        <Card>
-          <form
-            className="contents"
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = Object.fromEntries(new FormData(e.currentTarget));
-              update.mutate({
-                name: f.name,
-                description: f.description || null,
-                weight: Number(f.weight),
-              });
-            }}
-          >
-            <CardHeader>
-              <CardTitle>Thông tin cơ bản</CardTitle>
-            </CardHeader>
-            <CardContent className="grid gap-5 sm:grid-cols-[8rem_1fr]">
-              <ItemImage className="size-32" />
-              <div className="grid content-start gap-4">
-                <Field
-                  label="Tên sản phẩm"
-                  name="name"
-                  defaultValue={i.name}
-                  required
-                />
-                <Field
-                  label="Cân nặng (g)"
-                  name="weight"
-                  type="number"
-                  min={1}
-                  className="w-40"
-                  defaultValue={i.weight}
-                  required
-                />
-              </div>
-              <div className="grid gap-2 sm:col-span-2">
-                <Label htmlFor="description">Mô tả</Label>
-                <Textarea
-                  id="description"
-                  name="description"
-                  rows={5}
-                  defaultValue={i.description ?? ''}
-                />
-              </div>
-            </CardContent>
-            <CardFooter className="justify-end">
-              <Button type="submit" disabled={update.isPending}>
-                Lưu thay đổi
-              </Button>
-            </CardFooter>
-          </form>
-        </Card>
+        <div className="grid gap-5">
+          <ItemImagesEditor item={i} />
+          <Card>
+            <form
+              className="contents"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = Object.fromEntries(new FormData(e.currentTarget));
+                update.mutate({
+                  name: f.name,
+                  description: f.description || null,
+                  weight: Number(f.weight),
+                });
+              }}
+            >
+              <CardHeader>
+                <CardTitle>Thông tin cơ bản</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-5">
+                <div className="grid content-start gap-4">
+                  <Field
+                    label="Tên sản phẩm"
+                    name="name"
+                    defaultValue={i.name}
+                    required
+                  />
+                  <Field
+                    label="Cân nặng (g)"
+                    name="weight"
+                    type="number"
+                    min={1}
+                    className="w-40"
+                    defaultValue={i.weight}
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="description">Mô tả</Label>
+                  <Textarea
+                    id="description"
+                    name="description"
+                    rows={5}
+                    defaultValue={i.description ?? ''}
+                  />
+                </div>
+              </CardContent>
+              <CardFooter className="justify-end">
+                <Button type="submit" disabled={update.isPending}>
+                  Lưu thay đổi
+                </Button>
+              </CardFooter>
+            </form>
+          </Card>
+        </div>
 
         <Card className="lg:sticky lg:top-20">
           <CardHeader>

@@ -10,6 +10,14 @@ export default async function setup() {
   if (url === process.env.DATABASE_URL) {
     throw new Error('TEST_DATABASE_URL must not point at the dev database');
   }
+  if (
+    !process.env.TEST_MINIO_BUCKET ||
+    process.env.TEST_MINIO_BUCKET === process.env.MINIO_BUCKET
+  ) {
+    throw new Error(
+      'TEST_MINIO_BUCKET must be set and differ from MINIO_BUCKET',
+    );
+  }
 
   const dbName = new URL(url).pathname.slice(1);
   if (!/^[a-z0-9_]+$/.test(dbName)) {

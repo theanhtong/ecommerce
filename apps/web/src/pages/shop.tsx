@@ -17,6 +17,7 @@ import {
   QuantityInput,
   StockLabel,
 } from '@/components/common';
+import { ItemGallery } from '@/components/item-images';
 import { ItemReviews, RatingSummary } from '@/components/reviews';
 import { Filter } from '@/components/report';
 import { Button } from '@/components/ui/button';
@@ -36,7 +37,7 @@ function ItemCard({ item }: { item: ItemSummary & { sold?: number } }) {
     <Link to={`/items/${item.id}`}>
       <Card className="h-full transition hover:ring-primary/40">
         <CardContent className="flex h-full flex-col gap-2">
-          <ItemImage />
+          <ItemImage src={item.image} />
           <p className="line-clamp-2 font-medium">{item.name}</p>
           <p className="mt-auto font-semibold text-primary">
             {priceRange(item.priceMin, item.priceMax)}
@@ -244,6 +245,7 @@ export function ItemPage() {
   const queryClient = useQueryClient();
   const [picked, setPicked] = useState<number[]>([]);
   const [quantity, setQuantity] = useState(1);
+  const [shown, setShown] = useState(0);
   const item = useQuery({
     queryKey: ['item', id],
     queryFn: () => api<ItemDetail>(`/items/${id}`),
@@ -278,7 +280,11 @@ export function ItemPage() {
     <div className="grid gap-4">
       <Card>
         <CardContent className="grid gap-8 md:grid-cols-[2fr_3fr]">
-          <ItemImage className="rounded-lg" />
+          <ItemGallery
+            images={item.data.images}
+            picked={shown}
+            onPick={setShown}
+          />
           <div className="flex flex-col gap-5">
             <div>
               <h1 className="text-xl font-medium">{item.data.name}</h1>

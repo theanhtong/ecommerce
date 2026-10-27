@@ -11,6 +11,7 @@ import {
   publicWhere,
   variationName,
 } from '../catalog/items.service.js';
+import { mediaUrl } from '../storage/storage.service.js';
 import type { AddCartItemDto } from './dto/cart-item.dto.js';
 
 export const MAX_CART_MODELS = 200;
@@ -22,6 +23,7 @@ const lineInclude = {
       item: {
         include: {
           shop: { select: { id: true, name: true, status: true } },
+          images: { orderBy: { position: 'asc' }, take: 1 },
           tierVariations: {
             orderBy: { position: 'asc' },
             include: { options: { orderBy: { position: 'asc' } } },
@@ -43,6 +45,7 @@ const lineView = ({ model, ...line }: Line) => {
     modelId: model.id,
     itemId: item.id,
     itemName: item.name,
+    image: item.images[0] ? mediaUrl(item.images[0].key) : null,
     variation: variationName(model.tierIndex, item.tierVariations),
     addedPrice: line.addedPrice,
     price: model.price,

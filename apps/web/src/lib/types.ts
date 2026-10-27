@@ -31,6 +31,7 @@ export interface ItemSummary {
   name: string;
   status: 'active' | 'hidden' | 'banned';
   shop: { id: string; name: string };
+  image: string | null;
   priceMin: number;
   priceMax: number;
   stock: number;
@@ -59,6 +60,7 @@ export interface ItemDetail {
   shop: { id: string; name: string };
   tierVariations: { name: string; options: string[] }[];
   models: Model[];
+  images: { id: string; url: string }[];
   rating: number | null;
   ratingCount: number;
 }
@@ -69,6 +71,7 @@ export interface CartLine {
   modelId: string;
   itemId: string;
   itemName: string;
+  image: string | null;
   variation: string | null;
   addedPrice: number;
   price: number;
@@ -159,6 +162,7 @@ export interface Order {
     modelId: string;
     itemName: string;
     modelName: string | null;
+    image: string | null;
     sku: string | null;
     price: number;
     quantity: number;

@@ -157,7 +157,7 @@ export function CartPage() {
                       onCheckedChange={(on) => toggle(line.id, on === true)}
                     />
                     <div className="flex min-w-48 flex-1 items-center gap-3">
-                      <ItemImage className="size-16" />
+                      <ItemImage src={line.image} className="size-16" />
                       <div className="min-w-0">
                         <Link
                           to={`/items/${line.itemId}`}
@@ -479,7 +479,7 @@ export function CheckoutPage() {
                 {group.items.map((line) => (
                   <div key={line.id} className={`${CHECKOUT_COLS} py-3`}>
                     <div className="flex min-w-48 flex-1 items-center gap-3">
-                      <ItemImage className="size-16" />
+                      <ItemImage src={line.image} className="size-16" />
                       <div className="min-w-0">
                         <p className="line-clamp-2 font-medium">
                           {line.itemName}
@@ -897,7 +897,7 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
                   <div className="grid min-w-56 flex-1 gap-3">
                     {o.items.map((i) => (
                       <div key={i.modelId} className="flex items-center gap-3">
-                        <ItemImage className="size-14" />
+                        <ItemImage src={i.image} className="size-14" />
                         <div className="min-w-0 flex-1">
                           <p className="line-clamp-1">{i.itemName}</p>
                           {i.modelName && (
@@ -1119,7 +1119,7 @@ export function OrderDetail({
               {o.items.map((i) => (
                 <div key={i.modelId} className={`${CHECKOUT_COLS} py-3`}>
                   <div className="flex min-w-48 flex-1 items-center gap-3">
-                    <ItemImage className="size-16" />
+                    <ItemImage src={i.image} className="size-16" />
                     <div className="min-w-0">
                       <p className="line-clamp-2 font-medium">{i.itemName}</p>
                       {i.modelName && (

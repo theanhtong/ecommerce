@@ -29,6 +29,7 @@ const lineInclude = {
       item: {
         include: {
           shop: { include: locationInclude },
+          images: { orderBy: { position: 'asc' }, take: 1 },
           tierVariations: {
             orderBy: { position: 'asc' },
             include: { options: { orderBy: { position: 'asc' } } },
@@ -236,6 +237,7 @@ export class CheckoutService {
                 model.item.tierVariations,
               ),
               sku: model.sku,
+              imageKey: model.item.images[0]?.key,
               price: model.price,
               quantity,
               sellerDiscount: discounts.get(id)!.sellerDiscount,
