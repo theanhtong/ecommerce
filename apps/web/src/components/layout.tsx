@@ -1,14 +1,22 @@
-import { Link, NavLink, Outlet, useNavigate } from 'react-router';
+import {
+  Link,
+  NavLink,
+  Outlet,
+  useNavigate,
+  useSearchParams,
+} from 'react-router';
 import {
   House,
   LogOut,
   ReceiptText,
+  Search,
   ShoppingCart,
   User,
   type LucideIcon,
 } from 'lucide-react';
 import { NotificationBell } from '@/components/notifications';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth-context';
 
 const nav = (to: string, label: string, Icon: LucideIcon) => (
@@ -19,6 +27,33 @@ const nav = (to: string, label: string, Icon: LucideIcon) => (
     </NavLink>
   </Button>
 );
+
+function SearchBox() {
+  const navigate = useNavigate();
+  const [params] = useSearchParams();
+  return (
+    <form
+      key={params.get('q')}
+      role="search"
+      className="relative w-full max-w-md"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const q = new FormData(e.currentTarget).get('q') as string;
+        void navigate(`/search?q=${encodeURIComponent(q.trim())}`);
+      }}
+    >
+      <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
+      <Input
+        name="q"
+        type="search"
+        aria-label="Tìm sản phẩm"
+        placeholder="Tìm sản phẩm"
+        defaultValue={params.get('q') ?? ''}
+        className="pl-8"
+      />
+    </form>
+  );
+}
 
 export function Layout() {
   const { user, logout } = useAuth();
@@ -34,11 +69,14 @@ export function Layout() {
           >
             Marketplace
           </Link>
-          <nav className="flex flex-1 items-center gap-1">
+          <nav className="flex items-center gap-1">
             {user?.role !== 'admin' && nav('/', 'Trang chủ', House)}
             {user?.role === 'user' && nav('/cart', 'Giỏ hàng', ShoppingCart)}
             {user?.role === 'user' && nav('/orders', 'Đơn mua', ReceiptText)}
           </nav>
+          <div className="flex flex-1 justify-center px-2">
+            {user?.role !== 'admin' && <SearchBox />}
+          </div>
           {user?.role === 'admin' ? null : user ? (
             <div className="flex items-center gap-2">
               <NotificationBell />

@@ -15,6 +15,8 @@ import { ratingView } from '../reviews/review-view.js';
 import type {
   AdminListItemsQuery,
   CreateItemDto,
+  ItemSort,
+  SearchItemsQuery,
   UpdateItemDto,
 } from './dto/item.dto.js';
 import type { StockAdjustmentDto } from './dto/stock-adjustment.dto.js';
@@ -356,6 +358,88 @@ export class ItemsService {
     });
     const page = toPage(items, query.limit);
     return { ...page, items: page.items.map(summaryView) };
+  }
+
+  async search({
+    q,
+    minPrice,
+    maxPrice,
+    minRating,
+    sort,
+    page,
+    limit,
+  }: SearchItemsQuery) {
+    const term = q || undefined;
+    const order: ItemSort =
+      sort === 'relevance' && !term
+        ? 'newest'
+        : (sort ?? (term ? 'relevance' : 'newest'));
+    const where = [
+      Prisma.sql`i.status = 'active'`,
+      Prisma.sql`s.status = 'active'`,
+      Prisma.sql`p.min_price IS NOT NULL`,
+    ];
+    if (term) {
+      const like = term.replace(/[\\%_]/g, '\\$&');
+      where.push(Prisma.sql`(search_text(i.name) LIKE '%' || search_text(${like}) || '%'
+        OR search_text(${term}) <% search_text(i.name))`);
+    }
+    if (minPrice !== undefined) {
+      where.push(Prisma.sql`p.min_price >= ${minPrice}`);
+    }
+    if (maxPrice !== undefined) {
+      where.push(Prisma.sql`p.min_price <= ${maxPrice}`);
+    }
+    if (minRating !== undefined) {
+      where.push(
+        Prisma.sql`i.rating_count > 0 AND i.rating_sum >= ${minRating} * i.rating_count`,
+      );
+    }
+    const orderBy = {
+      relevance: Prisma.sql`word_similarity(search_text(${term ?? ''}), search_text(i.name)) DESC`,
+      newest: Prisma.sql`i.id DESC`,
+      sales: Prisma.sql`x.sold DESC`,
+      price_asc: Prisma.sql`p.min_price ASC`,
+      price_desc: Prisma.sql`p.min_price DESC`,
+      rating: Prisma.sql`i.rating_sum::float / NULLIF(i.rating_count, 0) DESC NULLS LAST, i.rating_count DESC`,
+    }[order];
+
+    const rows = await this.prisma.$queryRaw<
+      { id: string; sold: number; total: bigint }[]
+    >`
+      SELECT i.id, x.sold, count(*) OVER () AS total
+      FROM items i
+      JOIN shops s ON s.id = i.shop_id
+      CROSS JOIN LATERAL (
+        SELECT min(m.price) AS min_price FROM models m
+        WHERE m.item_id = i.id AND m.deleted_at IS NULL) p
+      -- Assumption: an item counts as sold once its order completes.
+      -- shortcut: summed on every search, keep a counter on items once order volume grows.
+      CROSS JOIN LATERAL (
+        SELECT coalesce(sum(oi.quantity), 0)::int AS sold
+        FROM order_items oi
+        JOIN models m ON m.id = oi.model_id
+        JOIN orders o ON o.id = oi.order_id
+        WHERE m.item_id = i.id AND o.status = 'completed') x
+      WHERE ${Prisma.join(where, ' AND ')}
+      ORDER BY ${orderBy}, i.id DESC
+      LIMIT ${limit} OFFSET ${(page - 1) * limit}`;
+
+    const items = await this.prisma.item.findMany({
+      where: { id: { in: rows.map((r) => r.id) } },
+      include: summaryInclude,
+    });
+    const byId = new Map(items.map((item) => [item.id, item]));
+    const total = Number(rows[0]?.total ?? 0);
+    return {
+      items: rows.map((r) => ({
+        ...summaryView(byId.get(r.id)!),
+        sold: r.sold,
+      })),
+      page,
+      total,
+      hasMore: page * limit < total,
+    };
   }
 
   async listByShop(shopId: string, query: CursorQuery) {
