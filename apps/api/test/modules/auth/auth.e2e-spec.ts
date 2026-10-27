@@ -169,22 +169,34 @@ describe('Auth (e2e)', () => {
 
 describe('Auth rate limiting (e2e)', () => {
   let app: INestApplication<App>;
+  const attempt = () =>
+    request(app.getHttpServer())
+      .post('/auth/login')
+      .send({
+        email: `nobody-${randomUUID()}@example.com`,
+        password: 'whatever1',
+      });
 
   beforeAll(async () => {
+    // As in the containers: one proxy in front of the API.
+    process.env.TRUST_PROXY_HOPS = '1';
     app = await createTestApp({ throttle: true });
   });
 
-  afterAll(() => app.close());
+  afterAll(async () => {
+    delete process.env.TRUST_PROXY_HOPS;
+    await app.close();
+  });
 
   it('blocks the 6th login attempt within a minute', async () => {
-    const attempt = () =>
-      request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: `nobody-${randomUUID()}@example.com`,
-          password: 'whatever1',
-        });
     for (let i = 0; i < 5; i++) await attempt().expect(401);
     await attempt().expect(429);
+  });
+
+  it('limits each client behind the proxy on its own', async () => {
+    const from = (ip: string) => attempt().set('X-Forwarded-For', ip);
+    for (let i = 0; i < 5; i++) await from('203.0.113.7').expect(401);
+    await from('203.0.113.7').expect(429);
+    await from('203.0.113.8').expect(401);
   });
 });

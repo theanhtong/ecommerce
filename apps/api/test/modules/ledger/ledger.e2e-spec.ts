@@ -29,11 +29,8 @@ describe('Ledger (e2e)', () => {
     put: (url: string, body: object) =>
       http().put(url).set(bearer(account.token)).send(body),
   });
-  const carrier = (shipmentId: string, status: string) =>
-    http()
-      .post(`/carrier/shipments/${shipmentId}/status`)
-      .set('X-Carrier-Key', process.env.CARRIER_API_KEY!)
-      .send({ status });
+  const shipment = (s: Account, orderId: string, status: string) =>
+    as(s).post(`/orders/${orderId}/shipment`, { status });
 
   async function seller() {
     const account = await signUp(app, emails);
@@ -82,9 +79,9 @@ describe('Ledger (e2e)', () => {
   }
 
   async function complete(s: Account, b: Account, orderId: string) {
-    const arranged = await as(s).post(`/orders/${orderId}/ship`).expect(200);
-    await carrier(arranged.body.shipment.id, 'picked_up').expect(200);
-    await carrier(arranged.body.shipment.id, 'delivered').expect(200);
+    await as(s).post(`/orders/${orderId}/ship`).expect(200);
+    await shipment(s, orderId, 'picked_up').expect(200);
+    await shipment(s, orderId, 'delivered').expect(200);
     return as(b).post(`/orders/${orderId}/receive`).expect(200);
   }
 
@@ -196,10 +193,8 @@ describe('Ledger (e2e)', () => {
       reason: 'changed_mind',
     });
     const inTransit = await order(s);
-    const arranged = await as(s)
-      .post(`/orders/${inTransit.order.id}/ship`)
-      .expect(200);
-    await carrier(arranged.body.shipment.id, 'picked_up').expect(200);
+    await as(s).post(`/orders/${inTransit.order.id}/ship`).expect(200);
+    await shipment(s, inTransit.order.id, 'picked_up').expect(200);
 
     expect(
       await prisma.ledgerEntry.count({

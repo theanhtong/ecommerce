@@ -468,7 +468,7 @@ async function main() {
   await call('GET', '/cart', 200, { token: buyer.accessToken });
 
   step(
-    '14. Seller 1 arranges shipment, the carrier service picks up and delivers, the buyer confirms; seller 2 cancels',
+    '14. Seller 1 arranges shipment and reports pickup and delivery, the buyer confirms; seller 2 cancels',
   );
   const order1 = placed.orders.find(
     (o: { shop: { id: string } }) => o.shop.id === shop.id,
@@ -479,19 +479,15 @@ async function main() {
   await call('POST', `/orders/${order1.id}/ship`, 403, {
     token: buyer.accessToken,
   });
-  const arranged = await call('POST', `/orders/${order1.id}/ship`, 200, {
+  await call('POST', `/orders/${order1.id}/ship`, 200, {
     token: seller.accessToken,
   });
-  // Stands in for the separate carrier service.
-  const carrierHeaders = { 'X-Carrier-Key': process.env.CARRIER_API_KEY ?? '' };
   for (const status of ['picked_up', 'delivered']) {
-    const shipment = await call(
-      'POST',
-      `/carrier/shipments/${arranged.shipment.id}/status`,
-      200,
-      { body: { status }, headers: carrierHeaders },
-    );
-    console.log(`    carrier: shipment ${shipment.status}`);
+    const updated = await call('POST', `/orders/${order1.id}/shipment`, 200, {
+      token: seller.accessToken,
+      body: { status },
+    });
+    console.log(`    shipment ${updated.shipment.status}`);
   }
   const received = await call('POST', `/orders/${order1.id}/receive`, 200, {
     token: buyer.accessToken,

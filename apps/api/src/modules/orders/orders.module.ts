@@ -2,7 +2,6 @@ import { Module } from '@nestjs/common';
 import { AuthModule } from '../auth/auth.module.js';
 import { LedgerModule } from '../ledger/ledger.module.js';
 import { PromotionsModule } from '../promotions/promotions.module.js';
-import { CarrierController } from './carrier.controller.js';
 import { CheckoutService } from './checkout.service.js';
 import { AdminOrdersController } from './admin-orders.controller.js';
 import { OrdersController } from './orders.controller.js';
@@ -18,7 +17,6 @@ import { ReturnsService } from './returns.service.js';
   controllers: [
     OrdersController,
     AdminOrdersController,
-    CarrierController,
     ReturnsController,
     AdminReturnsController,
   ],
