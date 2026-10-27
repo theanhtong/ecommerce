@@ -123,6 +123,7 @@ model Item {
   shop           Shop            @relation(fields: [shopId], references: [id])
   tierVariations TierVariation[]
   models         Model[]
+  images         ItemImage[]
   reviews        Review[]
   ratingCount    Int             @default(0) @map("rating_count")
   ratingSum      Int             @default(0) @map("rating_sum")
@@ -153,6 +154,19 @@ model TierOption {
 
   @@unique([tierVariationId, position])
   @@map("tier_options")
+}
+
+// Position 0 is the cover. key is the object key in storage.
+model ItemImage {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  itemId    String   @map("item_id") @db.Uuid
+  key       String   @unique
+  position  Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, position])
+  @@map("item_images")
 }
 
 model Model {
@@ -364,6 +378,8 @@ model OrderItem {
   quantity         Int
   sellerDiscount   Int     @default(0) @map("seller_discount")
   platformDiscount Int     @default(0) @map("platform_discount")
+  // Cover image at checkout; its object is kept while an order line points at it.
+  imageKey         String? @map("image_key")
   order            Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   model            Model   @relation(fields: [modelId], references: [id])
   review           Review?

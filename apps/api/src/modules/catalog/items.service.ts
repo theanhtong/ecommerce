@@ -12,6 +12,8 @@ import {
 } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { ratingView } from '../reviews/review-view.js';
+import { imageView } from '../storage/images.js';
+import { mediaUrl, StorageService } from '../storage/storage.service.js';
 import type {
   AdminListItemsQuery,
   CreateItemDto,
@@ -25,8 +27,11 @@ import { validateVariations } from './variations.js';
 
 const modelInclude = { inventory: true } satisfies Prisma.ModelInclude;
 
+const imagesInclude = { orderBy: { position: 'asc' } } as const;
+
 const detailInclude = {
   shop: { select: { id: true, name: true } },
+  images: imagesInclude,
   tierVariations: {
     orderBy: { position: 'asc' },
     include: { options: { orderBy: { position: 'asc' } } },
@@ -40,6 +45,7 @@ const detailInclude = {
 
 const summaryInclude = {
   shop: { select: { id: true, name: true } },
+  images: { ...imagesInclude, take: 1 },
   models: { where: { deletedAt: null }, include: modelInclude },
 } satisfies Prisma.ItemInclude;
 
@@ -74,10 +80,18 @@ const modelView = (m: ModelWithInventory, seller: boolean) => ({
 });
 
 const detailView = (
-  { tierVariations, models, ratingCount, ratingSum, ...item }: ItemDetail,
+  {
+    tierVariations,
+    models,
+    images,
+    ratingCount,
+    ratingSum,
+    ...item
+  }: ItemDetail,
   seller: boolean,
 ) => ({
   ...item,
+  images: images.map(imageView),
   ...ratingView({ ratingCount, ratingSum }),
   tierVariations: tierVariations.map((t) => ({
     name: t.name,
@@ -86,13 +100,14 @@ const detailView = (
   models: models.map((m) => modelView(m, seller)),
 });
 
-const summaryView = ({ models, ...item }: ItemSummary) => {
+const summaryView = ({ models, images, ...item }: ItemSummary) => {
   const prices = models.map((m) => m.price);
   return {
     id: item.id,
     name: item.name,
     status: item.status,
     shop: item.shop,
+    image: images[0] ? mediaUrl(images[0].key) : null,
     priceMin: Math.min(...prices),
     priceMax: Math.max(...prices),
     stock: models.reduce((sum, m) => sum + available(m), 0),
@@ -142,7 +157,10 @@ const isForeignKeyViolation = (error: unknown) =>
 
 @Injectable()
 export class ItemsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: StorageService,
+  ) {}
 
   async activeShopOf(ownerId: string) {
     const shop = await this.prisma.shop.findUnique({ where: { ownerId } });
@@ -201,12 +219,16 @@ export class ItemsService {
     ) {
       throw ordered();
     }
+    const images = await this.prisma.itemImage.findMany({
+      where: { itemId: id },
+    });
     try {
       await this.prisma.item.delete({ where: { id } });
     } catch (error) {
       if (isForeignKeyViolation(error)) throw ordered();
       throw error;
     }
+    await this.storage.delete(images.map((i) => i.key));
   }
 
   async setStatus(ownerId: string, id: string, status: ItemStatus) {
@@ -463,7 +485,7 @@ export class ItemsService {
     return detailView(item, true);
   }
 
-  private async writableItem(ownerId: string, id: string) {
+  async writableItem(ownerId: string, id: string) {
     const item = await this.prisma.item.findFirst({
       where: { id, shop: { ownerId } },
       include: { shop: true },

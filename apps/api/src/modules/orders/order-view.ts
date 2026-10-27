@@ -1,5 +1,6 @@
 import type { Prisma } from '@ecommerce/db';
 import { reviewView } from '../reviews/review-view.js';
+import { mediaUrl } from '../storage/storage.service.js';
 
 export const orderInclude = {
   checkout: { select: { paymentMethod: true } },
@@ -42,6 +43,7 @@ export const orderView = ({
     modelId: i.modelId,
     itemName: i.itemName,
     modelName: i.modelName,
+    image: i.imageKey && mediaUrl(i.imageKey),
     sku: i.sku,
     price: i.price,
     quantity: i.quantity,
