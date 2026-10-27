@@ -6,6 +6,7 @@ import {
   Pencil,
   ReceiptText,
   Store,
+  Star,
   TicketPercent,
 } from 'lucide-react';
 import { useState } from 'react';
@@ -137,6 +138,7 @@ const TABS = [
   ['/account/seller/items', 'Sản phẩm', Package],
   ['/account/seller/orders', 'Đơn hàng', ReceiptText],
   ['/account/seller/vouchers', 'Khuyến mãi', TicketPercent],
+  ['/account/seller/reviews', 'Đánh giá', Star],
 ] as const;
 
 export function SellerLayout() {

@@ -37,6 +37,7 @@ model User {
   addresses         Address[]
   orders            Order[]
   checkouts         Checkout[]
+  reviews           Review[]
   voucherUsages     VoucherUsage[]
   notifications     Notification[]
 
@@ -90,6 +91,10 @@ model Shop {
   ledgerAccount LedgerAccount?
   payouts       Payout[]
   promotions    Promotion[]
+  reviews       Review[]
+  // Running totals kept in the same transaction as each review; average = ratingSum / ratingCount.
+  ratingCount   Int            @default(0) @map("rating_count")
+  ratingSum     Int            @default(0) @map("rating_sum")
 
   @@index([status])
   @@map("shops")
@@ -118,6 +123,9 @@ model Item {
   shop           Shop            @relation(fields: [shopId], references: [id])
   tierVariations TierVariation[]
   models         Model[]
+  reviews        Review[]
+  ratingCount    Int             @default(0) @map("rating_count")
+  ratingSum      Int             @default(0) @map("rating_sum")
 
   @@unique([shopId, parentSku])
   @@index([shopId, status])
@@ -358,6 +366,7 @@ model OrderItem {
   platformDiscount Int     @default(0) @map("platform_discount")
   order            Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
   model            Model   @relation(fields: [modelId], references: [id])
+  review           Review?
 
   @@index([orderId])
   @@index([modelId])
@@ -680,6 +689,7 @@ enum NotificationType {
   order_returned
   return_requested
   return_rejected
+  new_review
 
   @@map("notification_type")
 }
@@ -699,4 +709,27 @@ model Notification {
   @@unique([eventId, userId])
   @@index([userId, id])
   @@map("notifications")
+}
+
+// Assumption: one review per order line, rated 1 to 5 stars.
+model Review {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  orderItemId String    @unique @map("order_item_id") @db.Uuid
+  itemId      String    @map("item_id") @db.Uuid
+  shopId      String    @map("shop_id") @db.Uuid
+  buyerId     String    @map("buyer_id") @db.Uuid
+  rating      Int
+  comment     String?
+  editedAt    DateTime? @map("edited_at") @db.Timestamptz(3)
+  sellerReply String?   @map("seller_reply")
+  repliedAt   DateTime? @map("replied_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  item        Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  shop        Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  buyer       User      @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, id])
+  @@index([shopId, id])
+  @@map("reviews")
 }

@@ -199,6 +199,7 @@ export function SellerOrderPage() {
   return (
     <OrderDetail
       backTo="/account/seller/orders"
+      viewer="seller"
       actions={(o) => {
         if (o.returnRequest?.status === 'requested') {
           return [

@@ -12,6 +12,7 @@ import {
   QuantityInput,
   StockLabel,
 } from '@/components/common';
+import { ItemReviews, RatingSummary } from '@/components/reviews';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
@@ -41,6 +42,7 @@ function ItemGrid({ path, queryKey }: { path: string; queryKey: unknown[] }) {
                 <p className="text-xs text-muted-foreground">
                   {item.shop.name} · <StockLabel stock={item.stock} />
                 </p>
+                <RatingSummary rating={item.rating} count={item.ratingCount} />
               </CardContent>
             </Card>
           </Link>
@@ -75,6 +77,12 @@ export function ShopPage() {
   return (
     <>
       <PageHeader title={shop.data.name} />
+      <div className="-mt-2 mb-4">
+        <RatingSummary
+          rating={shop.data.rating ?? null}
+          count={shop.data.ratingCount ?? 0}
+        />
+      </div>
       {shop.data.description && (
         <p className="-mt-2 mb-4 text-muted-foreground">
           {shop.data.description}
@@ -123,95 +131,110 @@ export function ItemPage() {
   const qty = Math.min(quantity, Math.max(1, maxAdd ?? quantity));
 
   return (
-    <Card>
-      <CardContent className="grid gap-8 md:grid-cols-[2fr_3fr]">
-        <ItemImage className="rounded-lg" />
-        <div className="flex flex-col gap-5">
-          <div>
-            <h1 className="text-xl font-medium">{item.data.name}</h1>
-            <Button asChild variant="secondary" size="sm" className="mt-2">
-              <Link to={`/shops/${item.data.shop.id}`}>
-                {item.data.shop.name}
-              </Link>
-            </Button>
-          </div>
-          <p className="text-2xl font-medium text-primary">
-            {model
-              ? money(model.price)
-              : priceRange(Math.min(...prices), Math.max(...prices))}
-          </p>
-          {tierVariations.map((tier, t) => (
-            <div key={tier.name} className="grid gap-2">
-              <span className="text-sm text-muted-foreground">{tier.name}</span>
-              <div className="flex flex-wrap gap-2">
-                {tier.options.map((option, o) => (
-                  <Button
-                    key={option}
-                    size="sm"
-                    variant={picked[t] === o ? 'default' : 'outline'}
-                    onClick={() => {
-                      const next = [...picked];
-                      next[t] = o;
-                      setPicked(next);
-                    }}
-                  >
-                    {option}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          ))}
-          {user?.role !== 'admin' && (
-            <>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-muted-foreground">Số lượng</span>
-                <QuantityInput
-                  value={qty}
-                  max={maxAdd || undefined}
-                  onChange={setQuantity}
-                />
-                <span className="text-sm">
-                  <StockLabel
-                    stock={
-                      model?.stock ?? models.reduce((n, m) => n + m.stock, 0)
-                    }
-                  />
-                  {inCart > 0 && (
-                    <span className="text-muted-foreground">
-                      {' '}
-                      · Trong giỏ {inCart}
-                    </span>
-                  )}
-                </span>
-              </div>
-              <Button
-                size="lg"
-                className="w-fit"
-                disabled={!model || maxAdd === 0 || addToCart.isPending}
-                onClick={() => {
-                  if (!user)
-                    navigate('/login', { state: { from: `/items/${id}` } });
-                  else if (model) addToCart.mutate(model.id);
-                }}
-              >
-                {model?.stock === 0
-                  ? 'Hết hàng'
-                  : maxAdd === 0
-                    ? 'Đã đạt số lượng tối đa'
-                    : 'Thêm vào giỏ hàng'}
+    <div className="grid gap-4">
+      <Card>
+        <CardContent className="grid gap-8 md:grid-cols-[2fr_3fr]">
+          <ItemImage className="rounded-lg" />
+          <div className="flex flex-col gap-5">
+            <div>
+              <h1 className="text-xl font-medium">{item.data.name}</h1>
+              <RatingSummary
+                rating={item.data.rating}
+                count={item.data.ratingCount}
+              />
+              <Button asChild variant="secondary" size="sm" className="mt-2">
+                <Link to={`/shops/${item.data.shop.id}`}>
+                  {item.data.shop.name}
+                </Link>
               </Button>
-            </>
-          )}
-          {item.data.description && (
-            <>
-              <Separator />
-              <p className="whitespace-pre-line text-sm">
-                {item.data.description}
-              </p>
-            </>
-          )}
-        </div>
-      </CardContent>
-    </Card>
+            </div>
+            <p className="text-2xl font-medium text-primary">
+              {model
+                ? money(model.price)
+                : priceRange(Math.min(...prices), Math.max(...prices))}
+            </p>
+            {tierVariations.map((tier, t) => (
+              <div key={tier.name} className="grid gap-2">
+                <span className="text-sm text-muted-foreground">
+                  {tier.name}
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {tier.options.map((option, o) => (
+                    <Button
+                      key={option}
+                      size="sm"
+                      variant={picked[t] === o ? 'default' : 'outline'}
+                      onClick={() => {
+                        const next = [...picked];
+                        next[t] = o;
+                        setPicked(next);
+                      }}
+                    >
+                      {option}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            {user?.role !== 'admin' && (
+              <>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground">
+                    Số lượng
+                  </span>
+                  <QuantityInput
+                    value={qty}
+                    max={maxAdd || undefined}
+                    onChange={setQuantity}
+                  />
+                  <span className="text-sm">
+                    <StockLabel
+                      stock={
+                        model?.stock ?? models.reduce((n, m) => n + m.stock, 0)
+                      }
+                    />
+                    {inCart > 0 && (
+                      <span className="text-muted-foreground">
+                        {' '}
+                        · Trong giỏ {inCart}
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <Button
+                  size="lg"
+                  className="w-fit"
+                  disabled={!model || maxAdd === 0 || addToCart.isPending}
+                  onClick={() => {
+                    if (!user)
+                      navigate('/login', { state: { from: `/items/${id}` } });
+                    else if (model) addToCart.mutate(model.id);
+                  }}
+                >
+                  {model?.stock === 0
+                    ? 'Hết hàng'
+                    : maxAdd === 0
+                      ? 'Đã đạt số lượng tối đa'
+                      : 'Thêm vào giỏ hàng'}
+                </Button>
+              </>
+            )}
+            {item.data.description && (
+              <>
+                <Separator />
+                <p className="whitespace-pre-line text-sm">
+                  {item.data.description}
+                </p>
+              </>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+      <ItemReviews
+        itemId={item.data.id}
+        rating={item.data.rating}
+        count={item.data.ratingCount}
+      />
+    </div>
   );
 }

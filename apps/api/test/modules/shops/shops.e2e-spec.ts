@@ -91,6 +91,8 @@ describe('Shops (e2e)', () => {
       id: shop.id,
       name: shop.name,
       description: null,
+      rating: null,
+      ratingCount: 0,
       createdAt: shop.createdAt,
     });
     await http().get('/shops/not-a-uuid').expect(400);
