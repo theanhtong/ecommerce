@@ -17,6 +17,8 @@
     "db:seed": "pnpm --filter @ecommerce/api db:seed",
     "db:studio": "pnpm --filter @ecommerce/db studio",
     "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
+    "infra:down": "docker compose down",
+    "app:up": "docker compose --profile app up -d --build",
+    "app:down": "docker compose --profile app down"
   }
 }

@@ -27,6 +27,49 @@ services:
       timeout: 5s
       retries: 10
 
+  # The app services only start with the `app` profile, so `pnpm infra:up` keeps starting just the databases.
+  migrate:
+    profiles: [app]
+    build: { context: ., target: api }
+    image: ecommerce-api
+    env_file: .env
+    environment: &app-env
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+    command: >
+      sh -c "pnpm --filter @ecommerce/db exec prisma migrate deploy
+      && node scripts/seed-regions.ts"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    profiles: [app]
+    image: ecommerce-api
+    env_file: .env
+    environment: *app-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  worker:
+    profiles: [app]
+    image: ecommerce-api
+    env_file: .env
+    environment: *app-env
+    command: ["node", "dist/worker.js"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  web:
+    profiles: [app]
+    build: { context: ., target: web }
+    image: ecommerce-web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on: [api]
+
 volumes:
   postgres-data:
   redis-data:
