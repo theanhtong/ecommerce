@@ -1,0 +1,11 @@
+**/node_modules
+**/dist
+**/dist-worker
+**/*.tsbuildinfo
+**/coverage
+packages/db/generated
+.env
+.git
+.vscode
+CLAUDE.md
+cookies.txt

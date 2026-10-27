@@ -1,11 +1,45 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller.js';
-import { AppService } from './app.service.js';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { HealthController } from './health.controller.js';
+import { AddressesModule } from './modules/addresses/addresses.module.js';
+import { AuthModule } from './modules/auth/auth.module.js';
+import { CartModule } from './modules/cart/cart.module.js';
+import { LedgerModule } from './modules/ledger/ledger.module.js';
+import { NotificationsModule } from './modules/notifications/notifications.module.js';
+import { OrdersModule } from './modules/orders/orders.module.js';
+import { PaymentsModule } from './modules/payments/payments.module.js';
+import { PayoutsModule } from './modules/payouts/payouts.module.js';
+import { PromotionsModule } from './modules/promotions/promotions.module.js';
+import { RegionsModule } from './modules/regions/regions.module.js';
+import { ReviewsModule } from './modules/reviews/reviews.module.js';
+import { CatalogModule } from './modules/catalog/catalog.module.js';
+import { ShopsModule } from './modules/shops/shops.module.js';
+import { StorageModule } from './modules/storage/storage.module.js';
+import { UsersModule } from './modules/users/users.module.js';
 import { PrismaModule } from './prisma/prisma.module.js';
 
 @Module({
-  imports: [PrismaModule],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [
+    PrismaModule,
+    StorageModule,
+    ThrottlerModule.forRoot([{ limit: 100, ttl: 60_000 }]),
+    AuthModule,
+    UsersModule,
+    ShopsModule,
+    CatalogModule,
+    CartModule,
+    RegionsModule,
+    AddressesModule,
+    OrdersModule,
+    PaymentsModule,
+    PayoutsModule,
+    PromotionsModule,
+    LedgerModule,
+    NotificationsModule,
+    ReviewsModule,
+  ],
+  controllers: [HealthController],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

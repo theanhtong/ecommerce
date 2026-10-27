@@ -6,3 +6,771 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum Role {
+  user
+  admin
+
+  @@map("role")
+}
+
+enum UserStatus {
+  active
+  banned
+
+  @@map("user_status")
+}
+
+model User {
+  id                String         @id @default(uuid(7)) @db.Uuid
+  email             String         @unique
+  passwordHash      String         @map("password_hash")
+  username          String         @unique
+  usernameChangedAt DateTime?      @map("username_changed_at") @db.Timestamptz(3)
+  role              Role           @default(user)
+  status            UserStatus     @default(active)
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  sessions          Session[]
+  shop              Shop?
+  cartItems         CartItem[]
+  addresses         Address[]
+  orders            Order[]
+  checkouts         Checkout[]
+  reviews           Review[]
+  voucherUsages     VoucherUsage[]
+  notifications     Notification[]
+
+  @@map("users")
+}
+
+model Session {
+  id                String    @id @default(uuid(7)) @db.Uuid
+  userId            String    @map("user_id") @db.Uuid
+  tokenHash         String    @unique @map("token_hash")
+  previousTokenHash String?   @unique @map("previous_token_hash")
+  expiresAt         DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt         DateTime? @map("revoked_at") @db.Timestamptz(3)
+  userAgent         String?   @map("user_agent")
+  ip                String?
+  createdAt         DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+enum ShopStatus {
+  pending
+  active
+  rejected
+  banned
+
+  @@map("shop_status")
+}
+
+model Shop {
+  id            String         @id @default(uuid(7)) @db.Uuid
+  ownerId       String         @unique @map("owner_id") @db.Uuid
+  name          String         @unique
+  nameChangedAt DateTime?      @map("name_changed_at") @db.Timestamptz(3)
+  description   String?
+  status        ShopStatus     @default(pending)
+  // Pickup and return address: one per shop.
+  contactName   String         @map("contact_name")
+  phone         String
+  wardCode      String         @map("ward_code")
+  street        String
+  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  owner         User           @relation(fields: [ownerId], references: [id])
+  ward          Ward           @relation(fields: [wardCode], references: [code])
+  items         Item[]
+  orders        Order[]
+  ledgerAccount LedgerAccount?
+  payouts       Payout[]
+  promotions    Promotion[]
+  reviews       Review[]
+  // Running totals kept in the same transaction as each review; average = ratingSum / ratingCount.
+  ratingCount   Int            @default(0) @map("rating_count")
+  ratingSum     Int            @default(0) @map("rating_sum")
+
+  @@index([status])
+  @@map("shops")
+}
+
+enum ItemStatus {
+  active
+  hidden
+  banned
+
+  @@map("item_status")
+}
+
+model Item {
+  id             String          @id @default(uuid(7)) @db.Uuid
+  shopId         String          @map("shop_id") @db.Uuid
+  // Seller's own product code; groups rows in a CSV import and blocks duplicate imports.
+  parentSku      String?         @map("parent_sku")
+  name           String
+  description    String?
+  // Packed weight in grams, used for shipping fees.
+  weight         Int
+  status         ItemStatus      @default(active)
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  shop           Shop            @relation(fields: [shopId], references: [id])
+  tierVariations TierVariation[]
+  models         Model[]
+  images         ItemImage[]
+  reviews        Review[]
+  ratingCount    Int             @default(0) @map("rating_count")
+  ratingSum      Int             @default(0) @map("rating_sum")
+
+  @@unique([shopId, parentSku])
+  @@index([shopId, status])
+  @@map("items")
+}
+
+model TierVariation {
+  id       String       @id @default(uuid(7)) @db.Uuid
+  itemId   String       @map("item_id") @db.Uuid
+  position Int
+  name     String
+  item     Item         @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  options  TierOption[]
+
+  @@unique([itemId, position])
+  @@map("tier_variations")
+}
+
+model TierOption {
+  id              String        @id @default(uuid(7)) @db.Uuid
+  tierVariationId String        @map("tier_variation_id") @db.Uuid
+  position        Int
+  option          String
+  tierVariation   TierVariation @relation(fields: [tierVariationId], references: [id], onDelete: Cascade)
+
+  @@unique([tierVariationId, position])
+  @@map("tier_options")
+}
+
+// Position 0 is the cover. key is the object key in storage.
+model ItemImage {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  itemId    String   @map("item_id") @db.Uuid
+  key       String   @unique
+  position  Int
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  item      Item     @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, position])
+  @@map("item_images")
+}
+
+model Model {
+  id         String              @id @default(uuid(7)) @db.Uuid
+  itemId     String              @map("item_id") @db.Uuid
+  tierIndex  Int[]               @map("tier_index")
+  sku        String?
+  price      Int
+  // Set when variations are replaced; kept because order items reference it.
+  // tier_index is unique per item among live models (partial index models_live_tier_index).
+  deletedAt  DateTime?           @map("deleted_at") @db.Timestamptz(3)
+  createdAt  DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  item       Item                @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  inventory  Inventory?
+  movements  InventoryMovement[]
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+  flashSales FlashSaleModel[]
+
+  @@index([itemId])
+  @@map("models")
+}
+
+// Sellable quantity = onHand - reserved. reserved holds stock for orders awaiting payment.
+model Inventory {
+  modelId   String   @id @map("model_id") @db.Uuid
+  onHand    Int      @map("on_hand")
+  reserved  Int      @default(0)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  model     Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@map("inventory")
+}
+
+enum InventoryReason {
+  restock
+  adjust
+  reserve
+  release
+  sale
+  return
+
+  @@map("inventory_reason")
+}
+
+// Append-only. delta changes on_hand (restock/adjust/sale/return) or reserved (reserve/release); a sale also releases reserved.
+model InventoryMovement {
+  id             String          @id @default(uuid(7)) @db.Uuid
+  modelId        String          @map("model_id") @db.Uuid
+  delta          Int
+  reason         InventoryReason
+  refType        String?         @map("ref_type")
+  refId          String?         @map("ref_id")
+  idempotencyKey String?         @unique @map("idempotency_key")
+  actorId        String?         @map("actor_id") @db.Uuid
+  createdAt      DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  model          Model           @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@index([modelId, createdAt])
+  @@map("inventory_movements")
+}
+
+// One line per user and model; stock is not reserved until checkout.
+model CartItem {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  modelId    String   @map("model_id") @db.Uuid
+  quantity   Int
+  // Model price when last added, so the cart can show how the price moved since.
+  addedPrice Int      @map("added_price")
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  model      Model    @relation(fields: [modelId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, modelId])
+  @@index([modelId])
+  @@map("cart_items")
+}
+
+enum WardType {
+  ward
+  commune
+  special_zone
+
+  @@map("ward_type")
+}
+
+model Province {
+  code     String @id
+  name     String
+  fullName String @map("full_name")
+  wards    Ward[]
+
+  @@map("provinces")
+}
+
+model Ward {
+  code         String    @id
+  name         String
+  fullName     String    @map("full_name")
+  provinceCode String    @map("province_code")
+  type         WardType
+  province     Province  @relation(fields: [provinceCode], references: [code])
+  addresses    Address[]
+  shops        Shop[]
+
+  @@index([provinceCode])
+  @@map("wards")
+}
+
+model Address {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  recipientName String   @map("recipient_name")
+  phone         String
+  wardCode      String   @map("ward_code")
+  street        String
+  isDefault     Boolean  @default(false) @map("is_default")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @map("updated_at") @db.Timestamptz(3)
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ward          Ward     @relation(fields: [wardCode], references: [code])
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+enum OrderStatus {
+  unpaid
+  to_ship
+  shipping
+  delivered
+  completed
+  cancelled
+  returned
+
+  @@map("order_status")
+}
+
+enum PaymentMethod {
+  cod
+  online
+
+  @@map("payment_method")
+}
+
+// One buyer action, one order per shop, paid once; replays return the same orders.
+model Checkout {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  buyerId        String         @map("buyer_id") @db.Uuid
+  idempotencyKey String         @map("idempotency_key")
+  paymentMethod  PaymentMethod  @map("payment_method")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  buyer          User           @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  orders         Order[]
+  payment        Payment?
+  voucherUsages  VoucherUsage[]
+
+  @@unique([buyerId, idempotencyKey])
+  @@map("checkouts")
+}
+
+// Addresses, names and prices are snapshots, so later edits never change a placed order.
+model Order {
+  id               String               @id @default(uuid(7)) @db.Uuid
+  checkoutId       String               @map("checkout_id") @db.Uuid
+  buyerId          String               @map("buyer_id") @db.Uuid
+  shopId           String               @map("shop_id") @db.Uuid
+  status           OrderStatus          @default(to_ship)
+  itemsTotal       Int                  @map("items_total")
+  // Shop-funded and platform-funded item discounts, summed from order_items.
+  sellerDiscount   Int                  @default(0) @map("seller_discount")
+  platformDiscount Int                  @default(0) @map("platform_discount")
+  shippingFee      Int                  @map("shipping_fee")
+  // Platform-funded.
+  shippingDiscount Int                  @default(0) @map("shipping_discount")
+  total            Int
+  shippingAddress  Json                 @map("shipping_address")
+  pickupAddress    Json                 @map("pickup_address")
+  cancelReason     CancelReason?        @map("cancel_reason")
+  cancelNote       String?              @map("cancel_note")
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  checkout         Checkout             @relation(fields: [checkoutId], references: [id])
+  buyer            User                 @relation(fields: [buyerId], references: [id])
+  shop             Shop                 @relation(fields: [shopId], references: [id])
+  items            OrderItem[]
+  history          OrderStatusHistory[]
+  shipment         Shipment?
+  returnRequest    ReturnRequest?
+  refund           Refund?
+  notifications    Notification[]
+
+  @@index([buyerId, status])
+  @@index([shopId, status])
+  @@index([checkoutId])
+  @@map("orders")
+}
+
+model OrderItem {
+  id               String          @id @default(uuid(7)) @db.Uuid
+  orderId          String          @map("order_id") @db.Uuid
+  modelId          String          @map("model_id") @db.Uuid
+  itemName         String          @map("item_name")
+  modelName        String?         @map("model_name")
+  sku              String?
+  price            Int
+  quantity         Int
+  sellerDiscount   Int             @default(0) @map("seller_discount")
+  platformDiscount Int             @default(0) @map("platform_discount")
+  // Cover image at checkout; its object is kept while an order line points at it.
+  imageKey         String?         @map("image_key")
+  // Set when bought at a flash sale price; price is then the sale price and this the regular one.
+  flashSaleModelId String?         @map("flash_sale_model_id") @db.Uuid
+  originalPrice    Int?            @map("original_price")
+  order            Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  model            Model           @relation(fields: [modelId], references: [id])
+  flashSaleModel   FlashSaleModel? @relation(fields: [flashSaleModelId], references: [id], onDelete: Restrict)
+  review           Review?
+
+  @@index([orderId])
+  @@index([modelId])
+  @@map("order_items")
+}
+
+// Assumption: the buyer picks one fixed reason when cancelling; the platform does not publish its list.
+enum CancelReason {
+  change_address
+  change_items
+  change_voucher
+  found_cheaper
+  changed_mind
+  other
+
+  @@map("cancel_reason")
+}
+
+model OrderStatusHistory {
+  id         String       @id @default(uuid(7)) @db.Uuid
+  orderId    String       @map("order_id") @db.Uuid
+  fromStatus OrderStatus? @map("from_status")
+  toStatus   OrderStatus  @map("to_status")
+  actorId    String?      @map("actor_id") @db.Uuid
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@map("order_status_history")
+}
+
+enum ShipmentStatus {
+  awaiting_pickup
+  picked_up
+  delivered
+
+  @@map("shipment_status")
+}
+
+// Created when the seller arranges shipment; the carrier service moves it forward.
+model Shipment {
+  id          String         @id @default(uuid(7)) @db.Uuid
+  orderId     String         @unique @map("order_id") @db.Uuid
+  status      ShipmentStatus @default(awaiting_pickup)
+  pickedUpAt  DateTime?      @map("picked_up_at") @db.Timestamptz(3)
+  deliveredAt DateTime?      @map("delivered_at") @db.Timestamptz(3)
+  createdAt   DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  order       Order          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@map("shipments")
+}
+
+enum LedgerAccountType {
+  receivable
+  commission
+  shipping
+  wallet
+  bank
+  prepaid
+  refund_due
+  payout_due
+  promotion
+
+  @@map("ledger_account_type")
+}
+
+model LedgerAccount {
+  id        String            @id @default(uuid(7)) @db.Uuid
+  type      LedgerAccountType
+  shopId    String?           @unique @map("shop_id") @db.Uuid
+  createdAt DateTime          @default(now()) @map("created_at") @db.Timestamptz(3)
+  shop      Shop?             @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  lines     LedgerLine[]
+
+  @@map("ledger_accounts")
+}
+
+// Balanced entries and append-only rows are enforced by triggers in the migration.
+model LedgerEntry {
+  id             String       @id @default(uuid(7)) @db.Uuid
+  idempotencyKey String       @unique @map("idempotency_key")
+  refType        String       @map("ref_type")
+  refId          String       @map("ref_id") @db.Uuid
+  createdAt      DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  lines          LedgerLine[]
+
+  @@index([refType, refId])
+  @@map("ledger_entries")
+}
+
+// Positive debits, negative credits.
+model LedgerLine {
+  id        String        @id @default(uuid(7)) @db.Uuid
+  entryId   String        @map("entry_id") @db.Uuid
+  accountId String        @map("account_id") @db.Uuid
+  amount    Int
+  entry     LedgerEntry   @relation(fields: [entryId], references: [id])
+  account   LedgerAccount @relation(fields: [accountId], references: [id])
+
+  @@index([entryId])
+  @@index([accountId, id])
+  @@map("ledger_lines")
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  expired
+
+  @@map("payment_status")
+}
+
+// One bank transfer pays a whole online checkout; the note carries `code`.
+model Payment {
+  id         String         @id @default(uuid(7)) @db.Uuid
+  checkoutId String         @unique @map("checkout_id") @db.Uuid
+  code       String         @unique
+  amount     Int
+  status     PaymentStatus  @default(pending)
+  expiresAt  DateTime       @map("expires_at") @db.Timestamptz(3)
+  paidAt     DateTime?      @map("paid_at") @db.Timestamptz(3)
+  createdAt  DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt  DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  checkout   Checkout       @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+  transfers  BankTransfer[]
+
+  @@map("payments")
+}
+
+// Every incoming transfer, matched or not, so received money is never lost.
+model BankTransfer {
+  id            String   @id @default(uuid(7)) @db.Uuid
+  providerId    BigInt   @unique @map("provider_id")
+  paymentId     String?  @map("payment_id") @db.Uuid
+  matched       Boolean
+  amount        Int
+  content       String
+  referenceCode String?  @map("reference_code")
+  payload       Json
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  payment       Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  refund        Refund?
+
+  @@index([paymentId])
+  @@map("bank_transfers")
+}
+
+enum RefundStatus {
+  pending
+  paid
+
+  @@map("refund_status")
+}
+
+// Money owed back for a cancelled paid order or for a transfer that matched no checkout.
+model Refund {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  orderId        String?       @unique @map("order_id") @db.Uuid
+  bankTransferId String?       @unique @map("bank_transfer_id") @db.Uuid
+  amount         Int
+  status         RefundStatus  @default(pending)
+  paidAt         DateTime?     @map("paid_at") @db.Timestamptz(3)
+  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  order          Order?        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  bankTransfer   BankTransfer? @relation(fields: [bankTransferId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("refunds")
+}
+
+enum PayoutStatus {
+  pending
+  paid
+  rejected
+
+  @@map("payout_status")
+}
+
+// The bank account is a snapshot of what the seller entered for this payout.
+model Payout {
+  id            String       @id @default(uuid(7)) @db.Uuid
+  shopId        String       @map("shop_id") @db.Uuid
+  amount        Int
+  status        PayoutStatus @default(pending)
+  bankName      String       @map("bank_name")
+  accountNumber String       @map("account_number")
+  accountName   String       @map("account_name")
+  decidedAt     DateTime?    @map("decided_at") @db.Timestamptz(3)
+  createdAt     DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  shop          Shop         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
+  @@index([status])
+  @@map("payouts")
+}
+
+enum PromotionType {
+  shop_voucher
+  platform_voucher
+  shipping_voucher
+  flash_sale
+
+  @@map("promotion_type")
+}
+
+// Parent of every promotion; each kind of promotion adds its own child table.
+model Promotion {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  type      PromotionType
+  // Set for promotions the shop runs and pays for: shop vouchers and flash sales.
+  shopId    String?          @map("shop_id") @db.Uuid
+  name      String
+  startsAt  DateTime         @map("starts_at") @db.Timestamptz(3)
+  endsAt    DateTime         @map("ends_at") @db.Timestamptz(3)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  shop      Shop?            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  voucher   Voucher?
+  flashSale FlashSaleModel[]
+
+  @@index([type, endsAt])
+  @@index([shopId])
+  @@map("promotions")
+}
+
+enum DiscountKind {
+  fixed
+  percent
+
+  @@map("discount_kind")
+}
+
+model Voucher {
+  promotionId   String         @id @map("promotion_id") @db.Uuid
+  code          String         @unique
+  discountKind  DiscountKind   @map("discount_kind")
+  // Đồng for fixed, 1-100 for percent.
+  discountValue Int            @map("discount_value")
+  maxDiscount   Int?           @map("max_discount")
+  minSpend      Int            @default(0) @map("min_spend")
+  usageLimit    Int            @map("usage_limit")
+  usedCount     Int            @default(0) @map("used_count")
+  promotion     Promotion      @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  usages        VoucherUsage[]
+
+  @@map("vouchers")
+}
+
+// One discounted model in a flash sale. sold counts units taken by orders that are not cancelled.
+model FlashSaleModel {
+  id            String      @id @default(uuid(7)) @db.Uuid
+  promotionId   String      @map("promotion_id") @db.Uuid
+  modelId       String      @map("model_id") @db.Uuid
+  price         Int
+  quota         Int
+  sold          Int         @default(0)
+  purchaseLimit Int         @map("purchase_limit")
+  promotion     Promotion   @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  model         Model       @relation(fields: [modelId], references: [id], onDelete: Cascade)
+  orderItems    OrderItem[]
+
+  @@unique([promotionId, modelId])
+  @@index([modelId])
+  @@map("flash_sale_models")
+}
+
+// Assumption: a buyer can use each voucher once.
+model VoucherUsage {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  voucherId  String   @map("voucher_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  checkoutId String   @map("checkout_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  voucher    Voucher  @relation(fields: [voucherId], references: [promotionId], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkout   Checkout @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+
+  @@unique([voucherId, userId])
+  @@index([checkoutId])
+  @@map("voucher_usages")
+}
+
+// The platform's list of return reasons; change of mind is limited to top-tier members, so it is left out.
+enum ReturnReason {
+  not_received
+  missing_items
+  wrong_item
+  damaged
+  defective
+  not_as_described
+  counterfeit
+
+  @@map("return_reason")
+}
+
+// requested: waiting for the seller; disputed: the seller refused and an admin decides.
+enum ReturnStatus {
+  requested
+  disputed
+  accepted
+  rejected
+
+  @@map("return_status")
+}
+
+// shortcut: whole-order returns only; per-item returns need item quantities and pro-rata refunds.
+model ReturnRequest {
+  id         String       @id @default(uuid(7)) @db.Uuid
+  orderId    String       @unique @map("order_id") @db.Uuid
+  reason     ReturnReason
+  note       String?
+  sellerNote String?      @map("seller_note")
+  status     ReturnStatus @default(requested)
+  decidedAt  DateTime?    @map("decided_at") @db.Timestamptz(3)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("return_requests")
+}
+
+// Written in the same transaction as the change it reports; the worker relays it to the queue.
+model OutboxEvent {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  type        String
+  payload     Json
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  publishedAt DateTime? @map("published_at") @db.Timestamptz(3)
+
+  @@index([publishedAt])
+  @@map("outbox_events")
+}
+
+enum NotificationType {
+  new_order
+  order_shipping
+  order_delivered
+  order_completed
+  order_cancelled
+  order_returned
+  return_requested
+  return_rejected
+  new_review
+
+  @@map("notification_type")
+}
+
+model Notification {
+  id        String           @id @default(uuid(7)) @db.Uuid
+  // The event it came from, so a redelivered event adds nothing.
+  eventId   String           @map("event_id") @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  orderId   String           @map("order_id") @db.Uuid
+  type      NotificationType
+  readAt    DateTime?        @map("read_at") @db.Timestamptz(3)
+  createdAt DateTime         @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  order     Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId, id])
+  @@map("notifications")
+}
+
+// Assumption: one review per order line, rated 1 to 5 stars.
+model Review {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  orderItemId String    @unique @map("order_item_id") @db.Uuid
+  itemId      String    @map("item_id") @db.Uuid
+  shopId      String    @map("shop_id") @db.Uuid
+  buyerId     String    @map("buyer_id") @db.Uuid
+  rating      Int
+  comment     String?
+  editedAt    DateTime? @map("edited_at") @db.Timestamptz(3)
+  sellerReply String?   @map("seller_reply")
+  repliedAt   DateTime? @map("replied_at") @db.Timestamptz(3)
+  createdAt   DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  orderItem   OrderItem @relation(fields: [orderItemId], references: [id], onDelete: Cascade)
+  item        Item      @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  shop        Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  buyer       User      @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([itemId, id])
+  @@index([shopId, id])
+  @@map("reviews")
+}

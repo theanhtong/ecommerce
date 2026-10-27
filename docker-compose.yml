@@ -27,6 +27,78 @@ services:
       timeout: 5s
       retries: 10
 
+  # Object storage for uploaded images.
+  minio:
+    image: pgsty/minio:RELEASE.2026-08-04T00-00-00Z
+    command: server /data --console-address :9001
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY}
+    ports:
+      - "${MINIO_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9000/minio/health/live"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # The app services only start with the `app` profile, so `pnpm infra:up` keeps starting just the databases.
+  migrate:
+    profiles: [app]
+    build: { context: ., target: api }
+    image: ecommerce-api
+    env_file: .env
+    environment: &app-env
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: http://minio:9000
+      # nginx is the one proxy in front of the API.
+      TRUST_PROXY_HOPS: "1"
+    command: >
+      sh -c "pnpm --filter @ecommerce/db exec prisma migrate deploy
+      && node scripts/seed-regions.ts"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  api:
+    profiles: [app]
+    image: ecommerce-api
+    env_file: .env
+    environment: *app-env
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/ready').then((r) => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+      minio: { condition: service_healthy }
+
+  worker:
+    profiles: [app]
+    image: ecommerce-api
+    env_file: .env
+    environment: *app-env
+    command: ["node", "dist/worker.js"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  web:
+    profiles: [app]
+    build: { context: ., target: web }
+    image: ecommerce-web
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on:
+      api: { condition: service_healthy }
+
 volumes:
   postgres-data:
   redis-data:
+  minio-data:
