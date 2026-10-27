@@ -66,6 +66,8 @@ import {
   ORDER_STATUS,
   PAYMENT_METHOD,
   phone,
+  RETURN_REASON,
+  RETURN_STATUS,
   place,
   voucherTerms,
 } from '@/lib/format';
@@ -76,6 +78,7 @@ import type {
   Cart,
   Order,
   OrderStatus,
+  ReturnReason,
   Voucher,
 } from '@/lib/types';
 
@@ -601,6 +604,7 @@ const ORDER_TABS: (OrderStatus | 'all')[] = [
   'delivered',
   'completed',
   'cancelled',
+  'returned',
 ];
 
 export function CancelOrderDialog({
@@ -679,6 +683,102 @@ export function CancelOrderDialog({
             onClick={() => cancel.mutate()}
           >
             Hủy đơn
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// The buyer asks for a return with a reason; the seller refuses with a note for the admin.
+function ReturnDialog({
+  orderId,
+  mode,
+  open,
+  onOpenChange,
+}: {
+  orderId: string;
+  mode: 'request' | 'reject';
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const queryClient = useQueryClient();
+  const [reason, setReason] = useState<ReturnReason>();
+  const [note, setNote] = useState('');
+  const send = useMutation({
+    mutationFn: () =>
+      api<Order>(
+        mode === 'request'
+          ? `/orders/${orderId}/return`
+          : `/orders/${orderId}/return/reject`,
+        {
+          method: 'POST',
+          body:
+            mode === 'request'
+              ? { reason, ...(note.trim() && { note }) }
+              : { note },
+        },
+      ),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['order', orderId], data);
+      void queryClient.invalidateQueries({ queryKey: ['orders'] });
+      onOpenChange(false);
+    },
+  });
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        onOpenChange(next);
+        if (next) {
+          setReason(undefined);
+          setNote('');
+          send.reset();
+        }
+      }}
+    >
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>
+            {mode === 'request' ? 'Trả hàng/Hoàn tiền' : 'Từ chối trả hàng'}
+          </DialogTitle>
+        </DialogHeader>
+        {mode === 'request' && (
+          <RadioGroup
+            value={reason ?? ''}
+            onValueChange={(v) => setReason(v as ReturnReason)}
+          >
+            {(Object.keys(RETURN_REASON) as ReturnReason[]).map((r) => (
+              <Label
+                key={r}
+                className="flex items-center gap-3 rounded-md border p-3 font-normal has-data-[state=checked]:border-primary"
+              >
+                <RadioGroupItem value={r} />
+                {RETURN_REASON[r]}
+              </Label>
+            ))}
+          </RadioGroup>
+        )}
+        <Textarea
+          aria-label={mode === 'request' ? 'Mô tả' : 'Lý do từ chối'}
+          placeholder={mode === 'request' ? 'Mô tả' : 'Lý do từ chối'}
+          maxLength={500}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+        />
+        {send.error && <ErrorMessage error={send.error} />}
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="ghost">Đóng</Button>
+          </DialogClose>
+          <Button
+            disabled={
+              (mode === 'request' ? !reason : !note.trim()) || send.isPending
+            }
+            onClick={() => send.mutate()}
+          >
+            Gửi
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -851,18 +951,20 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
                         {step.label}
                       </Button>
                     )}
-                    {party === 'buyer' && o.status === 'delivered' && (
-                      <Button
-                        size="sm"
-                        disabled={act.isPending}
-                        onClick={() =>
-                          act.mutate({ id: o.id, path: 'receive' })
-                        }
-                      >
-                        <PackageCheck />
-                        Đã nhận được hàng
-                      </Button>
-                    )}
+                    {party === 'buyer' &&
+                      o.status === 'delivered' &&
+                      !openReturn(o) && (
+                        <Button
+                          size="sm"
+                          disabled={act.isPending}
+                          onClick={() =>
+                            act.mutate({ id: o.id, path: 'receive' })
+                          }
+                        >
+                          <PackageCheck />
+                          Đã nhận được hàng
+                        </Button>
+                      )}
                     {cancellable && (
                       <Button
                         variant="ghost"
@@ -919,7 +1021,7 @@ export function OrderDetail({
     path: string;
     body?: object;
     variant?: 'default' | 'outline' | 'destructive';
-    askReason?: boolean;
+    dialog?: 'cancel' | 'request' | 'reject';
   }[];
 }) {
   const { id } = useParams();
@@ -928,7 +1030,7 @@ export function OrderDetail({
     queryKey: ['order', id],
     queryFn: () => api<Order>(`/orders/${id}`),
   });
-  const [cancelling, setCancelling] = useState(false);
+  const [dialog, setDialog] = useState<'cancel' | 'request' | 'reject'>();
   const act = useMutation({
     mutationFn: ({ path, body }: { path: string; body?: object }) =>
       api<Order>(`/orders/${id}/${path}`, { method: 'POST', body }),
@@ -965,8 +1067,8 @@ export function OrderDetail({
               variant={x.variant ?? 'default'}
               disabled={act.isPending}
               onClick={() =>
-                x.askReason
-                  ? setCancelling(true)
+                x.dialog
+                  ? setDialog(x.dialog)
                   : act.mutate({ path: x.path, body: x.body })
               }
             >
@@ -977,9 +1079,17 @@ export function OrderDetail({
       />
       <CancelOrderDialog
         orderId={o.id}
-        open={cancelling}
-        onOpenChange={setCancelling}
+        open={dialog === 'cancel'}
+        onOpenChange={(open) => setDialog(open ? 'cancel' : undefined)}
       />
+      {(dialog === 'request' || dialog === 'reject') && (
+        <ReturnDialog
+          orderId={o.id}
+          mode={dialog}
+          open
+          onOpenChange={(open) => !open && setDialog(undefined)}
+        />
+      )}
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-4">
           <Card size="sm" className="hidden md:flex">
@@ -1080,6 +1190,35 @@ export function OrderDetail({
               </div>
             </CardContent>
           </Card>
+          {o.returnRequest && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Trả hàng/Hoàn tiền</CardTitle>
+                <CardAction>
+                  <Badge variant="outline">
+                    {RETURN_STATUS[o.returnRequest.status]}
+                  </Badge>
+                </CardAction>
+              </CardHeader>
+              <CardContent className="grid gap-2 text-sm">
+                <p>{RETURN_REASON[o.returnRequest.reason]}</p>
+                {o.returnRequest.note && (
+                  <p className="text-muted-foreground">
+                    {o.returnRequest.note}
+                  </p>
+                )}
+                {o.returnRequest.sellerNote && (
+                  <p>
+                    <span className="text-muted-foreground">Người bán: </span>
+                    {o.returnRequest.sellerNote}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {dateTime(o.returnRequest.createdAt)}
+                </p>
+              </CardContent>
+            </Card>
+          )}
           <Card>
             <CardHeader>
               <CardTitle>Lịch sử</CardTitle>
@@ -1109,6 +1248,18 @@ export function OrderDetail({
   );
 }
 
+const RETURN_WINDOW_MS = 15 * 24 * 60 * 60 * 1000;
+
+const openReturn = (o: Order) =>
+  o.returnRequest?.status === 'requested' ||
+  o.returnRequest?.status === 'disputed';
+
+const canRequestReturn = (o: Order) =>
+  (o.status === 'delivered' || o.status === 'completed') &&
+  !o.returnRequest &&
+  !!o.shipment?.deliveredAt &&
+  Date.now() - Date.parse(o.shipment.deliveredAt) <= RETURN_WINDOW_MS;
+
 export function BuyerOrderPage() {
   return (
     <OrderDetail
@@ -1125,12 +1276,22 @@ export function BuyerOrderPage() {
                 label: 'Hủy đơn',
                 path: 'cancel',
                 variant: 'outline' as const,
-                askReason: true,
+                dialog: 'cancel' as const,
               },
             ]
           : []),
-        ...(o.status === 'delivered'
+        ...(o.status === 'delivered' && !openReturn(o)
           ? [{ label: 'Đã nhận được hàng', path: 'receive' }]
+          : []),
+        ...(canRequestReturn(o)
+          ? [
+              {
+                label: 'Trả hàng/Hoàn tiền',
+                path: 'return',
+                variant: 'outline' as const,
+                dialog: 'request' as const,
+              },
+            ]
           : []),
       ]}
     />

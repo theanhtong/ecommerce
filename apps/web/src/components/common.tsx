@@ -81,6 +81,7 @@ const STATUS_VARIANT: Record<
   delivered: 'default',
   completed: 'default',
   cancelled: 'destructive',
+  returned: 'destructive',
 };
 
 export function OrderStatusBadge({ status }: { status: OrderStatus }) {

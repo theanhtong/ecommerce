@@ -12,6 +12,7 @@ import {
   PaymentMethod,
   PaymentStatus,
   Prisma,
+  ReturnStatus,
   ShipmentStatus,
 } from '@ecommerce/db';
 import { cursorArgs, toPage } from '../../common/pagination.js';
@@ -39,6 +40,13 @@ const RELEASE: StockEffect = {
   onHand: 0,
   reserved: -1,
 };
+// Assumption: returned goods are sellable again once the return is accepted.
+const RETURN: StockEffect = {
+  reason: InventoryReason.return,
+  onHand: 1,
+  reserved: 0,
+};
+const OPEN_RETURN = { in: [ReturnStatus.requested, ReturnStatus.disputed] };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Assumption: a seller has 3 days from when an order becomes payable to arrange shipment.
@@ -195,8 +203,41 @@ export class OrdersService {
     return this.transition(userId, id, {
       from: { delivered: ['buyer'] },
       to: OrderStatus.completed,
+      guard: async (tx) => {
+        if (
+          await tx.returnRequest.count({
+            where: { orderId: id, status: OPEN_RETURN },
+          })
+        ) {
+          throw new ConflictException('A return is open for this order');
+        }
+      },
       after: (tx, order) => this.settle(tx, order),
     });
+  }
+
+  // Called inside the transaction that accepts a return. A delivered order is settled first,
+  // so the reversal always undoes a real settlement.
+  async returnOrder(
+    tx: Prisma.TransactionClient,
+    id: string,
+    actorId: string | null,
+  ) {
+    const status = await this.lockOrder(tx, id);
+    if (status !== OrderStatus.delivered && status !== OrderStatus.completed) {
+      throw new ConflictException(`Order is ${status}`);
+    }
+    const order = await tx.order.findUniqueOrThrow({
+      where: { id },
+      include: { items: true, checkout: { select: { paymentMethod: true } } },
+    });
+    if (status === OrderStatus.delivered) await this.settle(tx, order);
+    await this.move(tx, order, status, OrderStatus.returned, {
+      actorId,
+      stock: RETURN,
+    });
+    await this.ledger.reverseSettlement(tx, order);
+    await this.vouchers.releaseIfCancelled(tx, order.checkoutId);
   }
 
   // All orders of the checkout or none; false when any is no longer unpaid.
@@ -301,6 +342,7 @@ export class OrdersService {
       {
         status: OrderStatus.delivered,
         shipment: { is: { deliveredAt: { lt: cutoff } } },
+        NOT: { returnRequest: { is: { status: OPEN_RETURN } } },
       },
       OrderStatus.completed,
       { after: (tx, order) => this.settle(tx, order) },
@@ -484,7 +526,7 @@ export class OrdersService {
     await tx.inventoryMovement.createMany({
       data: order.items.map((item) => ({
         modelId: item.modelId,
-        delta: -item.quantity,
+        delta: (stock.onHand || stock.reserved) * item.quantity,
         reason: stock.reason,
         refType: 'order',
         refId: order.id,

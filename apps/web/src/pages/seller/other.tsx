@@ -4,6 +4,7 @@ import {
   CircleX,
   Download,
   FileDown,
+  PackageX,
   Percent,
   ShoppingBag,
   TicketPercent,
@@ -199,6 +200,17 @@ export function SellerOrderPage() {
     <OrderDetail
       backTo="/account/seller/orders"
       actions={(o) => {
+        if (o.returnRequest?.status === 'requested') {
+          return [
+            { label: 'Đồng ý trả hàng', path: 'return/accept' },
+            {
+              label: 'Từ chối',
+              path: 'return/reject',
+              variant: 'outline' as const,
+              dialog: 'reject' as const,
+            },
+          ];
+        }
         if (o.status === 'to_ship' && !o.shipment) {
           return [
             { label: 'Chuẩn bị hàng', path: 'ship' },
@@ -238,6 +250,7 @@ interface ShopReport {
     itemsTotal: number;
     commission: number;
     sellerDiscount: number;
+    returned: number;
     orders: number;
     averageOrder: number;
     placedOrders: number;
@@ -280,7 +293,7 @@ export function ShopReportSection() {
               value={money(t.averageOrder)}
             />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
             <IconStat
               icon={TicketPercent}
               label="Giảm giá của shop"
@@ -301,6 +314,11 @@ export function ShopReportSection() {
               label="Đơn bị hủy"
               value={count(t.cancelledOrders)}
               note={cancelRate(t.cancelledOrders, t.orders)}
+            />
+            <IconStat
+              icon={PackageX}
+              label="Tiền trả hàng"
+              value={money(t.returned)}
             />
           </div>
           <div className="grid gap-4 lg:grid-cols-2">

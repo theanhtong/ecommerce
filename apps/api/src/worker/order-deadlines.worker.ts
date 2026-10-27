@@ -7,6 +7,7 @@ import {
 import { Queue, Worker } from 'bullmq';
 import { Redis } from 'ioredis';
 import { OrdersService } from '../modules/orders/orders.service.js';
+import { ReturnsService } from '../modules/orders/returns.service.js';
 
 const QUEUE = 'order-deadlines';
 
@@ -28,7 +29,10 @@ export class OrderDeadlinesWorker
   private readonly queue = new Queue(QUEUE, { connection: this.connection });
   private worker?: Worker;
 
-  constructor(private readonly orders: OrdersService) {}
+  constructor(
+    private readonly orders: OrdersService,
+    private readonly returns: ReturnsService,
+  ) {}
 
   async onApplicationBootstrap() {
     await this.queue.upsertJobScheduler(
@@ -54,9 +58,12 @@ export class OrderDeadlinesWorker
     const cancelled =
       (await this.orders.expireUnpaid()) +
       (await this.orders.cancelUnshipped());
+    const returned = await this.returns.acceptUnanswered();
     const completed = await this.orders.completeDelivered();
-    if (cancelled || completed) {
-      this.logger.log(`Cancelled ${cancelled}, completed ${completed} orders`);
+    if (cancelled || returned || completed) {
+      this.logger.log(
+        `Cancelled ${cancelled}, returned ${returned}, completed ${completed} orders`,
+      );
     }
   }
 }

@@ -16,6 +16,7 @@ const refundInclude = {
   order: {
     select: {
       id: true,
+      status: true,
       buyer: { select: { id: true, username: true, email: true } },
     },
   },
@@ -34,7 +35,11 @@ const refundView = ({
   status: r.status,
   paidAt: r.paidAt,
   createdAt: r.createdAt,
-  order: order && { id: order.id, buyer: order.buyer },
+  order: order && {
+    id: order.id,
+    returned: order.status === 'returned',
+    buyer: order.buyer,
+  },
   transfer: bankTransfer,
 });
 

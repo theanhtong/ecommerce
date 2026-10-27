@@ -279,6 +279,7 @@ enum OrderStatus {
   delivered
   completed
   cancelled
+  returned
 
   @@map("order_status")
 }
@@ -333,6 +334,7 @@ model Order {
   items            OrderItem[]
   history          OrderStatusHistory[]
   shipment         Shipment?
+  returnRequest    ReturnRequest?
   refund           Refund?
 
   @@index([buyerId, status])
@@ -614,4 +616,43 @@ model VoucherUsage {
   @@unique([voucherId, userId])
   @@index([checkoutId])
   @@map("voucher_usages")
+}
+
+// The platform's list of return reasons; change of mind is limited to top-tier members, so it is left out.
+enum ReturnReason {
+  not_received
+  missing_items
+  wrong_item
+  damaged
+  defective
+  not_as_described
+  counterfeit
+
+  @@map("return_reason")
+}
+
+// requested: waiting for the seller; disputed: the seller refused and an admin decides.
+enum ReturnStatus {
+  requested
+  disputed
+  accepted
+  rejected
+
+  @@map("return_status")
+}
+
+// shortcut: whole-order returns only; per-item returns need item quantities and pro-rata refunds.
+model ReturnRequest {
+  id         String       @id @default(uuid(7)) @db.Uuid
+  orderId    String       @unique @map("order_id") @db.Uuid
+  reason     ReturnReason
+  note       String?
+  sellerNote String?      @map("seller_note")
+  status     ReturnStatus @default(requested)
+  decidedAt  DateTime?    @map("decided_at") @db.Timestamptz(3)
+  createdAt  DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("return_requests")
 }

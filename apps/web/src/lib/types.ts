@@ -105,7 +105,24 @@ export type CancelReason =
   | 'other';
 
 export type OrderStatus =
-  'unpaid' | 'to_ship' | 'shipping' | 'delivered' | 'completed' | 'cancelled';
+  | 'unpaid'
+  | 'to_ship'
+  | 'shipping'
+  | 'delivered'
+  | 'completed'
+  | 'cancelled'
+  | 'returned';
+
+export type ReturnReason =
+  | 'not_received'
+  | 'missing_items'
+  | 'wrong_item'
+  | 'damaged'
+  | 'defective'
+  | 'not_as_described'
+  | 'counterfeit';
+
+export type ReturnStatus = 'requested' | 'disputed' | 'accepted' | 'rejected';
 
 export interface Order {
   id: string;
@@ -146,6 +163,15 @@ export interface Order {
     pickedUpAt: string | null;
     deliveredAt: string | null;
   } | null;
+  returnRequest: {
+    id: string;
+    status: ReturnStatus;
+    reason: ReturnReason;
+    note: string | null;
+    sellerNote: string | null;
+    createdAt: string;
+    decidedAt: string | null;
+  } | null;
   createdAt: string;
 }
 
@@ -181,6 +207,7 @@ export interface Refund {
   createdAt: string;
   order: {
     id: string;
+    returned: boolean;
     buyer: { id: string; username: string; email: string };
   } | null;
   transfer: {

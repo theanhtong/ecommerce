@@ -154,6 +154,43 @@ export class LedgerService {
     });
   }
 
+  // Undoes the settlement of a returned order: the seller, commission, carrier and promotion lines
+  // flip, and what the buyer paid becomes owed back.
+  async reverseSettlement(
+    tx: Prisma.TransactionClient,
+    order: { id: string; total: number },
+  ) {
+    const settlement = await tx.ledgerEntry.findUniqueOrThrow({
+      where: { idempotencyKey: `order:${order.id}:settlement` },
+      include: { lines: { include: { account: true } } },
+    });
+    const flipped = settlement.lines
+      .filter(
+        (l) =>
+          l.account.type !== LedgerAccountType.receivable &&
+          l.account.type !== LedgerAccountType.prepaid,
+      )
+      .map((l) => ({ account: l.accountId, amount: -l.amount }));
+    await this.post(tx, {
+      idempotencyKey: `order:${order.id}:return`,
+      refType: 'return',
+      refId: order.id,
+      lines: [
+        ...flipped,
+        {
+          account: await this.account(tx, LedgerAccountType.refund_due),
+          amount: -order.total,
+        },
+      ],
+    });
+    if (order.total > 0) {
+      await tx.refund.createMany({
+        data: { orderId: order.id, amount: order.total },
+        skipDuplicates: true,
+      });
+    }
+  }
+
   async refundOrder(
     tx: Prisma.TransactionClient,
     order: { id: string; total: number },
@@ -288,10 +325,10 @@ export class LedgerService {
       >`
         SELECT to_char(b.bucket, ${label}) AS period,
                count(DISTINCT e.id) FILTER (WHERE e.ref_type = 'order') AS orders,
-               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'commission'), 0) AS commission,
-               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'wallet'), 0) AS sellers,
-               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'shipping'), 0) AS shipping,
-               coalesce(sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'promotion'), 0) AS promotion
+               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type IN ('order', 'return') AND a.type = 'commission'), 0) AS commission,
+               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type IN ('order', 'return') AND a.type = 'wallet'), 0) AS sellers,
+               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type IN ('order', 'return') AND a.type = 'shipping'), 0) AS shipping,
+               coalesce(sum(l.amount) FILTER (WHERE e.ref_type IN ('order', 'return') AND a.type = 'promotion'), 0) AS promotion
         FROM generate_series(${start}, ${end}, ('1 ' || ${unit})::interval) AS b(bucket)
         LEFT JOIN ledger_entries e
           ON date_trunc(${unit}, ${local(Prisma.sql`e.created_at`)}) = b.bucket
@@ -344,7 +381,7 @@ export class LedgerService {
     };
   }
 
-  // Earnings are what completed orders paid into the wallet, after commission.
+  // Earnings are what completed orders paid into the wallet after commission, less what returns took back.
   async shopReport(ownerId: string, range: ReportRange) {
     const shop = await this.prisma.shop.findUnique({
       where: { ownerId },
@@ -362,20 +399,22 @@ export class LedgerService {
           period: string;
           orders: bigint;
           earnings: bigint;
+          returned: bigint;
           items: bigint;
           discounts: bigint;
         }[]
       >`
         SELECT to_char(b.bucket, ${label}) AS period,
-               count(e.id) AS orders,
-               coalesce(-sum(l.amount), 0) AS earnings,
-               coalesce(sum(o.items_total), 0) AS items,
-               coalesce(sum(o.seller_discount), 0) AS discounts
+               count(e.id) FILTER (WHERE e.ref_type = 'order') AS orders,
+               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order'), 0) AS earnings,
+               coalesce(sum(l.amount) FILTER (WHERE e.ref_type = 'return'), 0) AS returned,
+               coalesce(sum(o.items_total) FILTER (WHERE e.ref_type = 'order'), 0) AS items,
+               coalesce(sum(o.seller_discount) FILTER (WHERE e.ref_type = 'order'), 0) AS discounts
         FROM generate_series(${start}, ${end}, ('1 ' || ${unit})::interval) AS b(bucket)
         LEFT JOIN (ledger_entries e
           JOIN ledger_lines l ON l.entry_id = e.id AND l.account_id = ${walletId}::uuid
           JOIN orders o ON o.id = e.ref_id)
-          ON e.ref_type = 'order'
+          ON e.ref_type IN ('order', 'return')
           AND date_trunc(${unit}, ${local(Prisma.sql`e.created_at`)}) = b.bucket
         GROUP BY b.bucket
         ORDER BY b.bucket`,
@@ -397,12 +436,13 @@ export class LedgerService {
     const series = rows.map((r) => ({
       period: r.period,
       orders: Number(r.orders),
-      earnings: Number(r.earnings),
+      earnings: Number(r.earnings - r.returned),
+      returned: Number(r.returned),
       itemsTotal: Number(r.items),
       sellerDiscount: Number(r.discounts),
     }));
     const sum = (
-      key: 'orders' | 'earnings' | 'itemsTotal' | 'sellerDiscount',
+      key: 'orders' | 'earnings' | 'returned' | 'itemsTotal' | 'sellerDiscount',
     ) => series.reduce((n, p) => n + p[key], 0);
     const orders = sum('orders');
     return {
@@ -411,7 +451,12 @@ export class LedgerService {
         earnings: sum('earnings'),
         itemsTotal: sum('itemsTotal'),
         sellerDiscount: sum('sellerDiscount'),
-        commission: sum('itemsTotal') - sum('sellerDiscount') - sum('earnings'),
+        returned: sum('returned'),
+        commission:
+          sum('itemsTotal') -
+          sum('sellerDiscount') -
+          sum('earnings') -
+          sum('returned'),
         orders,
         averageOrder: orders ? Math.round(sum('itemsTotal') / orders) : 0,
         placedOrders: Number(counts.placed),
