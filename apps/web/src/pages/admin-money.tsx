@@ -9,19 +9,11 @@ import {
   Loading,
   PageHeader,
 } from '@/components/common';
+import { ConfirmButton } from '@/components/confirm-button';
 import { SELECTED } from '@/components/report';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   Table,
   TableBody,
@@ -58,51 +50,6 @@ function Filter<S extends string>({
         </Button>
       ))}
     </div>
-  );
-}
-
-function ConfirmButton({
-  label,
-  title,
-  description,
-  variant = 'default',
-  onConfirm,
-  pending,
-}: {
-  label: string;
-  title: string;
-  description: string;
-  variant?: 'default' | 'outline';
-  onConfirm: () => void;
-  pending: boolean;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <Button size="sm" variant={variant} onClick={() => setOpen(true)}>
-        {label}
-      </Button>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-          <DialogDescription>{description}</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">Hủy</Button>
-          </DialogClose>
-          <Button
-            disabled={pending}
-            onClick={() => {
-              onConfirm();
-              setOpen(false);
-            }}
-          >
-            {label}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
   );
 }
 

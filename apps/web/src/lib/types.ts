@@ -114,7 +114,10 @@ export interface Order {
   status: OrderStatus;
   paymentMethod: 'cod' | 'online';
   itemsTotal: number;
+  sellerDiscount: number;
+  platformDiscount: number;
   shippingFee: number;
+  shippingDiscount: number;
   total: number;
   shippingAddress: Location & {
     recipientName: string;
@@ -185,4 +188,23 @@ export interface Refund {
     referenceCode: string | null;
     createdAt: string;
   } | null;
+}
+
+export type VoucherType =
+  'shop_voucher' | 'platform_voucher' | 'shipping_voucher';
+
+export interface Voucher {
+  id: string;
+  type: VoucherType;
+  shopId: string | null;
+  name: string;
+  code: string;
+  discountKind: 'fixed' | 'percent';
+  discountValue: number;
+  maxDiscount: number | null;
+  minSpend: number;
+  usageLimit: number;
+  usedCount: number;
+  startsAt: string;
+  endsAt: string;
 }

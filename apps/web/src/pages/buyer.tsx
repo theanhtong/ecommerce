@@ -1,9 +1,15 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  keepPreviousData,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import {
   ChevronLeft,
   MapPin,
   PackageCheck,
   Store,
+  TicketPercent,
   Truck,
   UserRound,
 } from 'lucide-react';
@@ -43,6 +49,13 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
@@ -54,6 +67,7 @@ import {
   PAYMENT_METHOD,
   phone,
   place,
+  voucherTerms,
 } from '@/lib/format';
 import { useCart, usePaged } from '@/lib/queries';
 import type {
@@ -62,6 +76,7 @@ import type {
   Cart,
   Order,
   OrderStatus,
+  Voucher,
 } from '@/lib/types';
 
 const CART_COLS =
@@ -241,6 +256,59 @@ export function CartPage() {
   );
 }
 
+interface Preview {
+  shops: {
+    shop: { id: string; name: string };
+    itemsTotal: number;
+    sellerDiscount: number;
+    platformDiscount: number;
+    shippingFee: number;
+    shippingDiscount: number;
+    total: number;
+  }[];
+  total: number;
+}
+
+const NO_VOUCHER = 'none';
+
+function VoucherSelect({
+  label,
+  vouchers,
+  value,
+  onChange,
+}: {
+  label: string;
+  vouchers: Voucher[];
+  value?: string;
+  onChange: (code?: string) => void;
+}) {
+  if (!vouchers.length) return null;
+  return (
+    <div className="grid gap-2">
+      <span className="flex items-center gap-2 text-sm text-muted-foreground">
+        <TicketPercent className="size-4" />
+        {label}
+      </span>
+      <Select
+        value={value ?? NO_VOUCHER}
+        onValueChange={(v) => onChange(v === NO_VOUCHER ? undefined : v)}
+      >
+        <SelectTrigger className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent position="popper">
+          <SelectItem value={NO_VOUCHER}>Không dùng</SelectItem>
+          {vouchers.map((v) => (
+            <SelectItem key={v.code} value={v.code}>
+              {v.name} · {voucherTerms(v)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 const CHECKOUT_COLS =
   'flex flex-wrap items-center gap-4 md:grid md:grid-cols-[1fr_7rem_5rem_7rem]';
 
@@ -252,11 +320,41 @@ export function CheckoutPage() {
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [addressId, setAddressId] = useState<string>();
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
+  // One voucher code per slot: each shop, the platform and shipping.
+  const [picked, setPicked] = useState<Record<string, string | undefined>>({});
   const cart = useCart();
   const addresses = useQuery({
     queryKey: ['addresses'],
     queryFn: () => api<Address[]>('/addresses'),
   });
+  const chosenAddress =
+    addressId ?? addresses.data?.find((a) => a.isDefault)?.id ?? '';
+  const shopIds = (cart.data?.shops ?? [])
+    .filter((g) => g.items.some((l) => lineIds.includes(l.id)))
+    .map((g) => g.shop.id);
+  const vouchers = useQuery({
+    queryKey: ['vouchers', shopIds.join()],
+    queryFn: () => api<Voucher[]>(`/vouchers?shopIds=${shopIds.join(',')}`),
+    enabled: shopIds.length > 0,
+  });
+  const voucherCodes = Object.values(picked).filter((c): c is string => !!c);
+  const preview = useQuery({
+    queryKey: ['checkout-preview', chosenAddress, lineIds, voucherCodes],
+    queryFn: () =>
+      api<Preview>('/checkout/preview', {
+        method: 'POST',
+        body: { cartItemIds: lineIds, addressId: chosenAddress, voucherCodes },
+      }),
+    enabled: !!chosenAddress && lineIds.length > 0,
+    retry: false,
+    placeholderData: keepPreviousData,
+  });
+  const pick = (slot: string) => (code?: string) =>
+    setPicked((p) => ({ ...p, [slot]: code }));
+  const ofType = (type: Voucher['type'], shopId?: string) =>
+    (vouchers.data ?? []).filter(
+      (v) => v.type === type && (!shopId || v.shopId === shopId),
+    );
   const place_ = useMutation({
     mutationFn: () =>
       api<{ checkoutId: string; orders: Order[] }>('/checkout', {
@@ -264,8 +362,9 @@ export function CheckoutPage() {
         headers: { 'Idempotency-Key': idempotencyKey },
         body: {
           cartItemIds: lineIds,
-          addressId: addressId ?? addresses.data?.find((a) => a.isDefault)?.id,
+          addressId: chosenAddress,
           paymentMethod,
+          voucherCodes,
         },
       }),
     onSuccess: (data) => {
@@ -273,7 +372,7 @@ export function CheckoutPage() {
       void queryClient.invalidateQueries({ queryKey: ['cart'] });
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
       navigate(
-        paymentMethod === 'online'
+        data.orders[0]?.status === 'unpaid'
           ? `/checkouts/${data.checkoutId}/payment`
           : '/orders',
         { replace: true },
@@ -294,8 +393,15 @@ export function CheckoutPage() {
   const itemsTotal = groups
     .flatMap((g) => g.items)
     .reduce((sum, l) => sum + l.price * l.quantity, 0);
-  const chosenAddress =
-    addressId ?? addresses.data.find((a) => a.isDefault)?.id ?? '';
+  const sum = (key: keyof Omit<Preview['shops'][number], 'shop'>) =>
+    preview.data?.shops.reduce((n, x) => n + x[key], 0) ?? 0;
+  const summary: [string, number, boolean][] = [
+    ['Tiền hàng', preview.data ? sum('itemsTotal') : itemsTotal, false],
+    ['Voucher của shop', sum('sellerDiscount'), true],
+    ['Voucher sàn', sum('platformDiscount'), true],
+    ['Phí vận chuyển', sum('shippingFee'), false],
+    ['Giảm phí vận chuyển', sum('shippingDiscount'), true],
+  ];
 
   return (
     <>
@@ -389,8 +495,16 @@ export function CheckoutPage() {
                   </div>
                 ))}
               </CardContent>
-              <CardFooter className="justify-end gap-2 text-sm">
-                <span className="text-muted-foreground">
+              <CardFooter className="flex-wrap justify-end gap-x-2 gap-y-3 text-sm">
+                <div className="w-full sm:max-w-sm sm:flex-1">
+                  <VoucherSelect
+                    label="Voucher của shop"
+                    vouchers={ofType('shop_voucher', group.shop.id)}
+                    value={picked[`shop:${group.shop.id}`]}
+                    onChange={pick(`shop:${group.shop.id}`)}
+                  />
+                </div>
+                <span className="ml-auto text-muted-foreground">
                   Tổng ({group.items.reduce((n, l) => n + l.quantity, 0)} sản
                   phẩm)
                 </span>
@@ -423,16 +537,51 @@ export function CheckoutPage() {
                 </Label>
               ))}
             </RadioGroup>
+            <VoucherSelect
+              label="Voucher sàn"
+              vouchers={ofType('platform_voucher')}
+              value={picked.platform}
+              onChange={pick('platform')}
+            />
+            <VoucherSelect
+              label="Mã miễn phí vận chuyển"
+              vouchers={ofType('shipping_voucher')}
+              value={picked.shipping}
+              onChange={pick('shipping')}
+            />
             <Separator />
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">Tiền hàng</span>
-              <span>{money(itemsTotal)}</span>
+            <div className="grid gap-2">
+              {summary
+                .filter(([, amount, discount]) => !discount || amount > 0)
+                .map(([label, amount, discount]) => (
+                  <div key={label} className="flex justify-between">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="tabular-nums">
+                      {discount ? `-${money(amount)}` : money(amount)}
+                    </span>
+                  </div>
+                ))}
             </div>
+            {preview.data && (
+              <div className="flex items-baseline justify-between">
+                <span>Tổng thanh toán</span>
+                <span className="text-xl font-medium text-primary tabular-nums">
+                  {money(preview.data.total)}
+                </span>
+              </div>
+            )}
+            {preview.error && <ErrorMessage error={preview.error} />}
+            {place_.error && <ErrorMessage error={place_.error} />}
           </CardContent>
           <CardFooter>
             <Button
               className="w-full"
-              disabled={!chosenAddress || place_.isPending}
+              disabled={
+                !chosenAddress ||
+                !!preview.error ||
+                preview.isFetching ||
+                place_.isPending
+              }
               onClick={() => place_.mutate()}
             >
               Đặt hàng
@@ -904,14 +1053,24 @@ export function OrderDetail({
                 <span className="text-muted-foreground">Phương thức</span>
                 <span>{PAYMENT_METHOD[o.paymentMethod]}</span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Tiền hàng</span>
-                <span>{money(o.itemsTotal)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Phí vận chuyển</span>
-                <span>{money(o.shippingFee)}</span>
-              </div>
+              {(
+                [
+                  ['Tiền hàng', o.itemsTotal, false],
+                  ['Voucher của shop', o.sellerDiscount, true],
+                  ['Voucher sàn', o.platformDiscount, true],
+                  ['Phí vận chuyển', o.shippingFee, false],
+                  ['Giảm phí vận chuyển', o.shippingDiscount, true],
+                ] as const
+              )
+                .filter(([, amount, discount]) => !discount || amount > 0)
+                .map(([label, amount, discount]) => (
+                  <div key={label} className="flex justify-between">
+                    <span className="text-muted-foreground">{label}</span>
+                    <span className="tabular-nums">
+                      {discount ? `-${money(amount)}` : money(amount)}
+                    </span>
+                  </div>
+                ))}
               <Separator />
               <div className="flex items-baseline justify-between">
                 <span>Tổng cộng</span>

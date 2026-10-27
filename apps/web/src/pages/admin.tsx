@@ -6,6 +6,7 @@ import {
   CircleX,
   LogOut,
   Store,
+  TicketPercent,
   Truck,
   UserPlus,
   UserRound,
@@ -76,6 +77,7 @@ const TABS = [
   ['/admin/users', 'Người dùng', Users],
   ['/admin/payouts', 'Rút tiền', Banknote],
   ['/admin/refunds', 'Hoàn tiền', Undo2],
+  ['/admin/vouchers', 'Khuyến mãi', TicketPercent],
 ] as const;
 
 export function AdminLayout() {
@@ -410,6 +412,7 @@ type Report = {
     profit: number;
     itemsTotal: number;
     shippingFees: number;
+    promotions: number;
     orders: number;
     averageOrder: number;
     cancelledOrders: number;
@@ -421,6 +424,7 @@ type Report = {
     orders: number;
     itemsTotal: number;
     shippingFees: number;
+    promotions: number;
     profit: number;
   }[];
 };
@@ -470,7 +474,12 @@ export function AdminLedgerPage() {
               value={money(t.averageOrder)}
             />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+            <IconStat
+              icon={TicketPercent}
+              label="Chi phí khuyến mãi"
+              value={money(t.promotions)}
+            />
             <IconStat
               icon={Truck}
               label="Phí vận chuyển thu hộ"

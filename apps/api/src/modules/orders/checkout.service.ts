@@ -16,7 +16,9 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { variationName } from '../catalog/items.service.js';
 import { PAYMENT_WINDOW_MS, paymentCode } from '../payments/payment-code.js';
 import { locationInclude, locationView } from '../regions/location.js';
-import type { CheckoutDto } from './dto/order.dto.js';
+import type { CheckoutDto, PreviewDto } from './dto/order.dto.js';
+import { priceCart } from '../promotions/pricing.js';
+import { VouchersService } from '../promotions/vouchers.service.js';
 import { orderInclude, orderView } from './order-view.js';
 import { shippingFee } from './shipping-fee.js';
 
@@ -40,7 +42,10 @@ type Line = Prisma.CartItemGetPayload<{ include: typeof lineInclude }>;
 
 @Injectable()
 export class CheckoutService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly vouchers: VouchersService,
+  ) {}
 
   async checkout(buyerId: string, dto: CheckoutDto, idempotencyKey: string) {
     const replay = await this.findCheckout(buyerId, idempotencyKey);
@@ -58,11 +63,30 @@ export class CheckoutService {
     }
   }
 
-  private async place(
+  async preview(buyerId: string, dto: PreviewDto) {
+    return this.prisma.$transaction(async (tx) => {
+      const { shops } = await this.quote(tx, buyerId, dto, false);
+      return {
+        shops: shops.map(({ shop, priced }) => ({
+          shop: { id: shop.id, name: shop.name },
+          itemsTotal: priced.itemsTotal,
+          sellerDiscount: priced.sellerDiscount,
+          platformDiscount: priced.platformDiscount,
+          shippingFee: priced.shippingFee,
+          shippingDiscount: priced.shippingDiscount,
+          total: priced.total,
+        })),
+        total: shops.reduce((n, s) => n + s.priced.total, 0),
+      };
+    });
+  }
+
+  // Prices the selected cart lines with their vouchers; place() locks the lines first.
+  private async quote(
     tx: Prisma.TransactionClient,
     buyerId: string,
-    dto: CheckoutDto,
-    idempotencyKey: string,
+    dto: PreviewDto,
+    lock: boolean,
   ) {
     const address = await tx.address.findFirst({
       where: { id: dto.addressId, userId: buyerId },
@@ -70,30 +94,96 @@ export class CheckoutService {
     });
     if (!address) throw new NotFoundException('Address not found');
 
-    // Lock cart lines first so a concurrent checkout of them fails instead of ordering twice.
-    const locked = await tx.$queryRaw<{ id: string }[]>`
-      SELECT id FROM cart_items
-      WHERE id IN (${Prisma.join(dto.cartItemIds.map((id) => Prisma.sql`${id}::uuid`))})
-        AND user_id = ${buyerId}::uuid
-      FOR UPDATE`;
-    if (locked.length !== dto.cartItemIds.length) {
-      throw new ConflictException('Cart changed, reload it');
+    if (lock) {
+      // Lock cart lines first so a concurrent checkout of them fails instead of ordering twice.
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM cart_items
+        WHERE id IN (${Prisma.join(dto.cartItemIds.map((id) => Prisma.sql`${id}::uuid`))})
+          AND user_id = ${buyerId}::uuid
+        FOR UPDATE`;
+      if (locked.length !== dto.cartItemIds.length) {
+        throw new ConflictException('Cart changed, reload it');
+      }
     }
     const lines = await tx.cartItem.findMany({
-      where: { id: { in: dto.cartItemIds } },
+      where: { id: { in: dto.cartItemIds }, userId: buyerId },
       include: lineInclude,
     });
+    if (lines.length !== dto.cartItemIds.length) {
+      throw new ConflictException('Cart changed, reload it');
+    }
     for (const line of lines) this.assertPurchasable(buyerId, line);
+
+    const byShop = new Map<string, Line[]>();
+    for (const line of lines) {
+      const shopId = line.model.item.shopId;
+      byShop.set(shopId, [...(byShop.get(shopId) ?? []), line]);
+    }
+    const groups = [...byShop.values()].map((shopLines) => {
+      const { shop } = shopLines[0].model.item;
+      const weight = shopLines.reduce(
+        (sum, l) => sum + l.model.item.weight * l.quantity,
+        0,
+      );
+      const fee = shippingFee(
+        {
+          fromProvinceCode: shop.ward.provinceCode,
+          toProvinceCode: address.ward.provinceCode,
+          toWardType: address.ward.type,
+        },
+        weight,
+      );
+      return { shop, lines: shopLines, fee };
+    });
+
+    const vouchers = await this.vouchers.resolve(
+      tx,
+      buyerId,
+      dto.voucherCodes ?? [],
+      groups.map((g) => g.shop.id),
+    );
+    const priced = priceCart(
+      groups.map((g) => ({
+        shopId: g.shop.id,
+        shippingFee: g.fee,
+        lines: g.lines.map((l) => ({
+          id: l.id,
+          amount: l.model.price * l.quantity,
+        })),
+      })),
+      vouchers.cart,
+    );
+    return {
+      address,
+      lines,
+      voucherRows: vouchers.rows,
+      shops: groups.map((g, i) => ({ ...g, priced: priced[i] })),
+    };
+  }
+
+  private async place(
+    tx: Prisma.TransactionClient,
+    buyerId: string,
+    dto: CheckoutDto,
+    idempotencyKey: string,
+  ) {
+    const { address, lines, shops, voucherRows } = await this.quote(
+      tx,
+      buyerId,
+      dto,
+      true,
+    );
+    const checkoutTotal = shops.reduce((n, s) => n + s.priced.total, 0);
+    // Cash on delivery can ship right away; online orders wait for payment, holding their stock.
+    const awaitsPayment =
+      dto.paymentMethod === PaymentMethod.online && checkoutTotal > 0;
+    const initialStatus = awaitsPayment
+      ? OrderStatus.unpaid
+      : OrderStatus.to_ship;
 
     const checkout = await tx.checkout.create({
       data: { buyerId, idempotencyKey, paymentMethod: dto.paymentMethod },
     });
-    // Cash on delivery can ship right away; online orders wait for payment, holding their stock.
-    const initialStatus =
-      dto.paymentMethod === PaymentMethod.cod
-        ? OrderStatus.to_ship
-        : OrderStatus.unpaid;
-
     for (const line of [...lines].sort((a, b) =>
       a.modelId.localeCompare(b.modelId),
     )) {
@@ -115,40 +205,20 @@ export class CheckoutService {
       street: address.street,
       ...locationView(address),
     };
-    let checkoutTotal = 0;
-    const byShop = new Map<string, Line[]>();
-    for (const line of lines) {
-      const shopId = line.model.item.shopId;
-      byShop.set(shopId, [...(byShop.get(shopId) ?? []), line]);
-    }
-    for (const shopLines of byShop.values()) {
-      const { shop } = shopLines[0].model.item;
-      const itemsTotal = shopLines.reduce(
-        (sum, l) => sum + l.model.price * l.quantity,
-        0,
-      );
-      const weight = shopLines.reduce(
-        (sum, l) => sum + l.model.item.weight * l.quantity,
-        0,
-      );
-      const fee = shippingFee(
-        {
-          fromProvinceCode: shop.ward.provinceCode,
-          toProvinceCode: address.ward.provinceCode,
-          toWardType: address.ward.type,
-        },
-        weight,
-      );
-
+    for (const { shop, lines: shopLines, priced } of shops) {
+      const discounts = new Map(priced.lines.map((l) => [l.id, l]));
       const order = await tx.order.create({
         data: {
           checkoutId: checkout.id,
           buyerId,
           shopId: shop.id,
-          itemsTotal,
           status: initialStatus,
-          shippingFee: fee,
-          total: itemsTotal + fee,
+          itemsTotal: priced.itemsTotal,
+          sellerDiscount: priced.sellerDiscount,
+          platformDiscount: priced.platformDiscount,
+          shippingFee: priced.shippingFee,
+          shippingDiscount: priced.shippingDiscount,
+          total: priced.total,
           shippingAddress,
           pickupAddress: {
             contactName: shop.contactName,
@@ -157,7 +227,7 @@ export class CheckoutService {
             ...locationView(shop),
           },
           items: {
-            create: shopLines.map(({ model, quantity }) => ({
+            create: shopLines.map(({ id, model, quantity }) => ({
               modelId: model.id,
               itemName: model.item.name,
               modelName: variationName(
@@ -167,6 +237,8 @@ export class CheckoutService {
               sku: model.sku,
               price: model.price,
               quantity,
+              sellerDiscount: discounts.get(id)!.sellerDiscount,
+              platformDiscount: discounts.get(id)!.platformDiscount,
             })),
           },
           history: {
@@ -174,7 +246,6 @@ export class CheckoutService {
           },
         },
       });
-      checkoutTotal += order.total;
       await tx.inventoryMovement.createMany({
         data: shopLines.map((l) => ({
           modelId: l.modelId,
@@ -186,8 +257,9 @@ export class CheckoutService {
         })),
       });
     }
+    await this.vouchers.claim(tx, buyerId, checkout.id, voucherRows);
 
-    if (dto.paymentMethod === PaymentMethod.online) {
+    if (awaitsPayment) {
       await tx.payment.create({
         data: {
           checkoutId: checkout.id,

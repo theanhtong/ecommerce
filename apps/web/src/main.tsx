@@ -33,6 +33,7 @@ import {
   OrdersPage,
 } from '@/pages/buyer';
 import { PaymentPage } from '@/pages/payment';
+import { AdminVouchersPage, SellerVouchersPage } from '@/pages/vouchers';
 import { SellerItemPage, SellerItemsPage } from '@/pages/seller/items';
 import { SellerLayout, SellerShopPage } from '@/pages/seller/layout';
 import { SellerOrderPage, SellerOrdersPage } from '@/pages/seller/other';
@@ -79,6 +80,7 @@ const router = createBrowserRouter([
                       { path: 'items/:id', element: <SellerItemPage /> },
                       { path: 'orders', element: <SellerOrdersPage /> },
                       { path: 'orders/:id', element: <SellerOrderPage /> },
+                      { path: 'vouchers', element: <SellerVouchersPage /> },
                     ],
                   },
                 ],
@@ -111,6 +113,7 @@ const router = createBrowserRouter([
                   { path: 'ledger', element: <AdminLedgerPage /> },
                   { path: 'payouts', element: <AdminPayoutsPage /> },
                   { path: 'refunds', element: <AdminRefundsPage /> },
+                  { path: 'vouchers', element: <AdminVouchersPage /> },
                 ],
               },
             ],
