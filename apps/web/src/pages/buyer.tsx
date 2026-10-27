@@ -29,6 +29,7 @@ import {
   StockLabel,
 } from '@/components/common';
 import { Badge } from '@/components/ui/badge';
+import { LineReview } from '@/components/reviews';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -1011,10 +1012,12 @@ export function OrdersPage() {
 
 export function OrderDetail({
   backTo,
+  viewer,
   actions,
   links,
 }: {
   backTo: string;
+  viewer: 'buyer' | 'seller';
   links?: (order: Order) => { label: string; to: string }[];
   actions: (order: Order) => {
     label: string;
@@ -1131,6 +1134,7 @@ export function OrderDetail({
                   <p className="text-right font-medium">
                     {money(i.price * i.quantity)}
                   </p>
+                  <LineReview order={o} line={i} viewer={viewer} />
                 </div>
               ))}
             </CardContent>
@@ -1264,6 +1268,7 @@ export function BuyerOrderPage() {
   return (
     <OrderDetail
       backTo="/orders"
+      viewer="buyer"
       links={(o) =>
         o.status === 'unpaid'
           ? [{ label: 'Thanh toán', to: `/checkouts/${o.checkoutId}/payment` }]

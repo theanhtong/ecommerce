@@ -33,10 +33,12 @@ export class NotificationsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async handle(event: PublishedEvent) {
-    const notice =
+    const notice: [NotificationType, Audience[]] | undefined =
       event.type === 'order.status_changed'
         ? ORDER_NOTICES[event.payload.to]
-        : RETURN_NOTICES[event.payload.status];
+        : event.type === 'return.status_changed'
+          ? RETURN_NOTICES[event.payload.status]
+          : [NotificationType.new_review, ['seller']];
     if (!notice) return 0;
     const [type, audience] = notice;
     const order = await this.prisma.order.findUnique({

@@ -11,6 +11,7 @@ import {
   type CursorQuery,
 } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { ratingView } from '../reviews/review-view.js';
 import type {
   AdminListItemsQuery,
   CreateItemDto,
@@ -71,10 +72,11 @@ const modelView = (m: ModelWithInventory, seller: boolean) => ({
 });
 
 const detailView = (
-  { tierVariations, models, ...item }: ItemDetail,
+  { tierVariations, models, ratingCount, ratingSum, ...item }: ItemDetail,
   seller: boolean,
 ) => ({
   ...item,
+  ...ratingView({ ratingCount, ratingSum }),
   tierVariations: tierVariations.map((t) => ({
     name: t.name,
     options: t.options.map((o) => o.option),
@@ -92,6 +94,7 @@ const summaryView = ({ models, ...item }: ItemSummary) => {
     priceMin: Math.min(...prices),
     priceMax: Math.max(...prices),
     stock: models.reduce((sum, m) => sum + available(m), 0),
+    ...ratingView(item),
     createdAt: item.createdAt,
   };
 };

@@ -1,9 +1,10 @@
 import type { Prisma } from '@ecommerce/db';
+import { reviewView } from '../reviews/review-view.js';
 
 export const orderInclude = {
   checkout: { select: { paymentMethod: true } },
   shop: { select: { id: true, name: true } },
-  items: { orderBy: { id: 'asc' } },
+  items: { orderBy: { id: 'asc' }, include: { review: true } },
   history: { orderBy: { id: 'asc' } },
   shipment: true,
   returnRequest: true,
@@ -37,6 +38,7 @@ export const orderView = ({
   cancelReason: order.cancelReason,
   cancelNote: order.cancelNote,
   items: items.map((i) => ({
+    id: i.id,
     modelId: i.modelId,
     itemName: i.itemName,
     modelName: i.modelName,
@@ -45,6 +47,7 @@ export const orderView = ({
     quantity: i.quantity,
     sellerDiscount: i.sellerDiscount,
     platformDiscount: i.platformDiscount,
+    review: i.review && reviewView(i.review),
   })),
   history: history.map((h) => ({
     from: h.fromStatus,

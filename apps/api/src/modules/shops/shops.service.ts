@@ -8,6 +8,7 @@ import { LedgerAccountType, Prisma, ShopStatus } from '@ecommerce/db';
 import { withinChangeCooldown } from '../../common/cooldown.js';
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
+import { ratingView } from '../reviews/review-view.js';
 import {
   assertWardExists,
   locationInclude,
@@ -30,6 +31,8 @@ const publicSelect = {
   id: true,
   name: true,
   description: true,
+  ratingCount: true,
+  ratingSum: true,
   createdAt: true,
 } satisfies Prisma.ShopSelect;
 
@@ -147,7 +150,8 @@ export class ShopsService {
       select: publicSelect,
     });
     if (!shop) throw new NotFoundException('Shop not found');
-    return shop;
+    const { ratingCount, ratingSum, ...rest } = shop;
+    return { ...rest, ...ratingView({ ratingCount, ratingSum }) };
   }
 
   async getForAdmin(id: string) {

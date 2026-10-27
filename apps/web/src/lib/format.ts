@@ -73,6 +73,7 @@ export const NOTIFICATION_TYPE: Record<NotificationType, string> = {
   order_returned: 'Đơn hàng đã được trả',
   return_requested: 'Có yêu cầu trả hàng',
   return_rejected: 'Yêu cầu trả hàng bị từ chối',
+  new_review: 'Có đánh giá mới',
 };
 
 export const SHOP_STATUS: Record<ShopStatus, string> = {

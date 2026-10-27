@@ -19,6 +19,10 @@ export type DomainEvent =
         status: ReturnStatus;
         actorId: string | null;
       };
+    }
+  | {
+      type: 'review.created';
+      payload: { orderId: string; reviewId: string; actorId: string };
     };
 
 export type PublishedEvent = DomainEvent & { id: string };

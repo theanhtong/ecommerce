@@ -10,7 +10,7 @@ import {
   PageHeader,
 } from '@/components/common';
 import { ConfirmButton } from '@/components/confirm-button';
-import { SELECTED } from '@/components/report';
+import { Filter } from '@/components/report';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -32,32 +32,6 @@ import {
 } from '@/lib/format';
 import { usePaged } from '@/lib/queries';
 import type { Payout, Refund, ReturnReason, ReturnStatus } from '@/lib/types';
-
-function Filter<S extends string>({
-  labels,
-  value,
-  onChange,
-}: {
-  labels: Record<S, string>;
-  value: S;
-  onChange: (value: S) => void;
-}) {
-  return (
-    <div className="mb-4 flex gap-2">
-      {(Object.keys(labels) as S[]).map((s) => (
-        <Button
-          key={s}
-          size="sm"
-          variant="outline"
-          className={value === s ? SELECTED : undefined}
-          onClick={() => onChange(s)}
-        >
-          {labels[s]}
-        </Button>
-      ))}
-    </div>
-  );
-}
 
 export function AdminPayoutsPage() {
   const page = usePaged<Payout & { shop: { id: string; name: string } }>(

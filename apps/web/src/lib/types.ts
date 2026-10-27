@@ -20,6 +20,8 @@ export interface Shop {
   name: string;
   description: string | null;
   status: ShopStatus;
+  rating?: number | null;
+  ratingCount?: number;
   createdAt: string;
   owner?: { id: string; email: string; username: string };
 }
@@ -32,6 +34,8 @@ export interface ItemSummary {
   priceMin: number;
   priceMax: number;
   stock: number;
+  rating: number | null;
+  ratingCount: number;
   createdAt: string;
 }
 
@@ -55,6 +59,8 @@ export interface ItemDetail {
   shop: { id: string; name: string };
   tierVariations: { name: string; options: string[] }[];
   models: Model[];
+  rating: number | null;
+  ratingCount: number;
 }
 
 export interface CartLine {
@@ -149,12 +155,14 @@ export interface Order {
   cancelReason: CancelReason | null;
   cancelNote: string | null;
   items: {
+    id: string;
     modelId: string;
     itemName: string;
     modelName: string | null;
     sku: string | null;
     price: number;
     quantity: number;
+    review: Review | null;
   }[];
   history: { from: OrderStatus | null; to: OrderStatus; at: string }[];
   shipment: {
@@ -244,7 +252,8 @@ export type NotificationType =
   | 'order_cancelled'
   | 'order_returned'
   | 'return_requested'
-  | 'return_rejected';
+  | 'return_rejected'
+  | 'new_review';
 
 export interface Notification {
   id: string;
@@ -253,4 +262,20 @@ export interface Notification {
   audience: 'buyer' | 'seller';
   readAt: string | null;
   createdAt: string;
+}
+
+export interface Review {
+  id: string;
+  rating: number;
+  comment: string | null;
+  editedAt: string | null;
+  sellerReply: string | null;
+  repliedAt: string | null;
+  createdAt: string;
+}
+
+export interface ListedReview extends Review {
+  buyer: string;
+  modelName: string | null;
+  item?: { id: string; name: string };
 }
