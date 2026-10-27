@@ -12,6 +12,7 @@
     "test:e2e": "pnpm --filter @ecommerce/api test:e2e",
     "demo:flow": "pnpm --filter @ecommerce/api demo:flow",
     "lint": "pnpm -r lint",
+    "format:check": "pnpm -r format:check",
     "db:generate": "pnpm --filter @ecommerce/db generate",
     "db:migrate": "pnpm --filter @ecommerce/db migrate:dev",
     "db:seed": "pnpm --filter @ecommerce/api db:seed",
