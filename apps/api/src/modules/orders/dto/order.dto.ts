@@ -15,7 +15,7 @@ import { Transform } from 'class-transformer';
 import { CursorQuery } from '../../../common/pagination.js';
 import { trim } from '../../../common/transforms.js';
 
-export class CheckoutDto {
+export class PreviewDto {
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(100)
@@ -26,6 +26,15 @@ export class CheckoutDto {
   @IsUUID()
   addressId: string;
 
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(20)
+  @IsString({ each: true })
+  @MaxLength(20, { each: true })
+  voucherCodes?: string[];
+}
+
+export class CheckoutDto extends PreviewDto {
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;
 }

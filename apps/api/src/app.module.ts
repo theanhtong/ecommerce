@@ -10,6 +10,7 @@ import { LedgerModule } from './modules/ledger/ledger.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
 import { PaymentsModule } from './modules/payments/payments.module.js';
 import { PayoutsModule } from './modules/payouts/payouts.module.js';
+import { PromotionsModule } from './modules/promotions/promotions.module.js';
 import { RegionsModule } from './modules/regions/regions.module.js';
 import { CatalogModule } from './modules/catalog/catalog.module.js';
 import { ShopsModule } from './modules/shops/shops.module.js';
@@ -30,6 +31,7 @@ import { PrismaModule } from './prisma/prisma.module.js';
     OrdersModule,
     PaymentsModule,
     PayoutsModule,
+    PromotionsModule,
     LedgerModule,
   ],
   controllers: [AppController],

@@ -65,12 +65,17 @@ export class LedgerService {
       id: string;
       shopId: string;
       itemsTotal: number;
+      sellerDiscount: number;
+      platformDiscount: number;
       shippingFee: number;
+      shippingDiscount: number;
       total: number;
       paymentMethod: PaymentMethod;
     },
   ) {
-    const commission = Math.round((order.itemsTotal * this.rateBps) / 10_000);
+    // Commission is charged after the shop's own discount, before the platform's.
+    const sellerRevenue = order.itemsTotal - order.sellerDiscount;
+    const commission = Math.round((sellerRevenue * this.rateBps) / 10_000);
     // Cash on delivery is still owed by the carrier; an online order was paid upfront.
     const source = await this.account(
       tx,
@@ -90,7 +95,11 @@ export class LedgerService {
       refId: order.id,
       lines: [
         { account: source, amount: order.total },
-        { account: wallet, amount: -(order.itemsTotal - commission) },
+        {
+          account: await this.account(tx, LedgerAccountType.promotion),
+          amount: order.platformDiscount + order.shippingDiscount,
+        },
+        { account: wallet, amount: -(sellerRevenue - commission) },
         { account: commissionAccount, amount: -commission },
         { account: shipping, amount: -order.shippingFee },
       ],
@@ -262,7 +271,7 @@ export class LedgerService {
     };
   }
 
-  // Profit is commission only; buckets use Vietnam time and include empty periods.
+  // Profit is commission minus platform-funded discounts; buckets use Vietnam time and include empty periods.
   async report(range: ReportRange) {
     const { unit, label, start, end, until, local } = reportWindow(range);
 
@@ -274,13 +283,15 @@ export class LedgerService {
           commission: bigint;
           sellers: bigint;
           shipping: bigint;
+          promotion: bigint;
         }[]
       >`
         SELECT to_char(b.bucket, ${label}) AS period,
                count(DISTINCT e.id) FILTER (WHERE e.ref_type = 'order') AS orders,
                coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'commission'), 0) AS commission,
                coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'wallet'), 0) AS sellers,
-               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'shipping'), 0) AS shipping
+               coalesce(-sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'shipping'), 0) AS shipping,
+               coalesce(sum(l.amount) FILTER (WHERE e.ref_type = 'order' AND a.type = 'promotion'), 0) AS promotion
         FROM generate_series(${start}, ${end}, ('1 ' || ${unit})::interval) AS b(bucket)
         LEFT JOIN ledger_entries e
           ON date_trunc(${unit}, ${local(Prisma.sql`e.created_at`)}) = b.bucket
@@ -309,10 +320,12 @@ export class LedgerService {
       orders: Number(r.orders),
       itemsTotal: Number(r.commission + r.sellers),
       shippingFees: Number(r.shipping),
-      profit: Number(r.commission),
+      promotions: Number(r.promotion),
+      profit: Number(r.commission - r.promotion),
     }));
-    const sum = (key: 'orders' | 'itemsTotal' | 'shippingFees' | 'profit') =>
-      series.reduce((n, p) => n + p[key], 0);
+    const sum = (
+      key: 'orders' | 'itemsTotal' | 'shippingFees' | 'promotions' | 'profit',
+    ) => series.reduce((n, p) => n + p[key], 0);
     const orders = sum('orders');
     return {
       range,
@@ -320,6 +333,7 @@ export class LedgerService {
         profit: sum('profit'),
         itemsTotal: sum('itemsTotal'),
         shippingFees: sum('shippingFees'),
+        promotions: sum('promotions'),
         orders,
         averageOrder: orders ? Math.round(sum('itemsTotal') / orders) : 0,
         cancelledOrders: Number(counts.cancelled),
@@ -344,12 +358,19 @@ export class LedgerService {
 
     const [rows, [counts], balance] = await Promise.all([
       this.prisma.$queryRaw<
-        { period: string; orders: bigint; earnings: bigint; items: bigint }[]
+        {
+          period: string;
+          orders: bigint;
+          earnings: bigint;
+          items: bigint;
+          discounts: bigint;
+        }[]
       >`
         SELECT to_char(b.bucket, ${label}) AS period,
                count(e.id) AS orders,
                coalesce(-sum(l.amount), 0) AS earnings,
-               coalesce(sum(o.items_total), 0) AS items
+               coalesce(sum(o.items_total), 0) AS items,
+               coalesce(sum(o.seller_discount), 0) AS discounts
         FROM generate_series(${start}, ${end}, ('1 ' || ${unit})::interval) AS b(bucket)
         LEFT JOIN (ledger_entries e
           JOIN ledger_lines l ON l.entry_id = e.id AND l.account_id = ${walletId}::uuid
@@ -378,16 +399,19 @@ export class LedgerService {
       orders: Number(r.orders),
       earnings: Number(r.earnings),
       itemsTotal: Number(r.items),
+      sellerDiscount: Number(r.discounts),
     }));
-    const sum = (key: 'orders' | 'earnings' | 'itemsTotal') =>
-      series.reduce((n, p) => n + p[key], 0);
+    const sum = (
+      key: 'orders' | 'earnings' | 'itemsTotal' | 'sellerDiscount',
+    ) => series.reduce((n, p) => n + p[key], 0);
     const orders = sum('orders');
     return {
       range,
       totals: {
         earnings: sum('earnings'),
         itemsTotal: sum('itemsTotal'),
-        commission: sum('itemsTotal') - sum('earnings'),
+        sellerDiscount: sum('sellerDiscount'),
+        commission: sum('itemsTotal') - sum('sellerDiscount') - sum('earnings'),
         orders,
         averageOrder: orders ? Math.round(sum('itemsTotal') / orders) : 0,
         placedOrders: Number(counts.placed),

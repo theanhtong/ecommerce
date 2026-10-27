@@ -22,21 +22,22 @@ enum UserStatus {
 }
 
 model User {
-  id                String     @id @default(uuid(7)) @db.Uuid
-  email             String     @unique
-  passwordHash      String     @map("password_hash")
-  username          String     @unique
-  usernameChangedAt DateTime?  @map("username_changed_at") @db.Timestamptz(3)
-  role              Role       @default(user)
-  status            UserStatus @default(active)
-  createdAt         DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime   @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                String         @id @default(uuid(7)) @db.Uuid
+  email             String         @unique
+  passwordHash      String         @map("password_hash")
+  username          String         @unique
+  usernameChangedAt DateTime?      @map("username_changed_at") @db.Timestamptz(3)
+  role              Role           @default(user)
+  status            UserStatus     @default(active)
+  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
   sessions          Session[]
   shop              Shop?
   cartItems         CartItem[]
   addresses         Address[]
   orders            Order[]
   checkouts         Checkout[]
+  voucherUsages     VoucherUsage[]
 
   @@map("users")
 }
@@ -87,6 +88,7 @@ model Shop {
   orders        Order[]
   ledgerAccount LedgerAccount?
   payouts       Payout[]
+  promotions    Promotion[]
 
   @@index([status])
   @@map("shops")
@@ -290,14 +292,15 @@ enum PaymentMethod {
 
 // One buyer action, one order per shop, paid once; replays return the same orders.
 model Checkout {
-  id             String        @id @default(uuid(7)) @db.Uuid
-  buyerId        String        @map("buyer_id") @db.Uuid
-  idempotencyKey String        @map("idempotency_key")
-  paymentMethod  PaymentMethod @map("payment_method")
-  createdAt      DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  buyer          User          @relation(fields: [buyerId], references: [id], onDelete: Cascade)
+  id             String         @id @default(uuid(7)) @db.Uuid
+  buyerId        String         @map("buyer_id") @db.Uuid
+  idempotencyKey String         @map("idempotency_key")
+  paymentMethod  PaymentMethod  @map("payment_method")
+  createdAt      DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  buyer          User           @relation(fields: [buyerId], references: [id], onDelete: Cascade)
   orders         Order[]
   payment        Payment?
+  voucherUsages  VoucherUsage[]
 
   @@unique([buyerId, idempotencyKey])
   @@map("checkouts")
@@ -305,27 +308,32 @@ model Checkout {
 
 // Addresses, names and prices are snapshots, so later edits never change a placed order.
 model Order {
-  id              String               @id @default(uuid(7)) @db.Uuid
-  checkoutId      String               @map("checkout_id") @db.Uuid
-  buyerId         String               @map("buyer_id") @db.Uuid
-  shopId          String               @map("shop_id") @db.Uuid
-  status          OrderStatus          @default(to_ship)
-  itemsTotal      Int                  @map("items_total")
-  shippingFee     Int                  @map("shipping_fee")
-  total           Int
-  shippingAddress Json                 @map("shipping_address")
-  pickupAddress   Json                 @map("pickup_address")
-  cancelReason    CancelReason?        @map("cancel_reason")
-  cancelNote      String?              @map("cancel_note")
-  createdAt       DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
-  checkout        Checkout             @relation(fields: [checkoutId], references: [id])
-  buyer           User                 @relation(fields: [buyerId], references: [id])
-  shop            Shop                 @relation(fields: [shopId], references: [id])
-  items           OrderItem[]
-  history         OrderStatusHistory[]
-  shipment        Shipment?
-  refund          Refund?
+  id               String               @id @default(uuid(7)) @db.Uuid
+  checkoutId       String               @map("checkout_id") @db.Uuid
+  buyerId          String               @map("buyer_id") @db.Uuid
+  shopId           String               @map("shop_id") @db.Uuid
+  status           OrderStatus          @default(to_ship)
+  itemsTotal       Int                  @map("items_total")
+  // Shop-funded and platform-funded item discounts, summed from order_items.
+  sellerDiscount   Int                  @default(0) @map("seller_discount")
+  platformDiscount Int                  @default(0) @map("platform_discount")
+  shippingFee      Int                  @map("shipping_fee")
+  // Platform-funded.
+  shippingDiscount Int                  @default(0) @map("shipping_discount")
+  total            Int
+  shippingAddress  Json                 @map("shipping_address")
+  pickupAddress    Json                 @map("pickup_address")
+  cancelReason     CancelReason?        @map("cancel_reason")
+  cancelNote       String?              @map("cancel_note")
+  createdAt        DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt        DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  checkout         Checkout             @relation(fields: [checkoutId], references: [id])
+  buyer            User                 @relation(fields: [buyerId], references: [id])
+  shop             Shop                 @relation(fields: [shopId], references: [id])
+  items            OrderItem[]
+  history          OrderStatusHistory[]
+  shipment         Shipment?
+  refund           Refund?
 
   @@index([buyerId, status])
   @@index([shopId, status])
@@ -334,16 +342,18 @@ model Order {
 }
 
 model OrderItem {
-  id        String  @id @default(uuid(7)) @db.Uuid
-  orderId   String  @map("order_id") @db.Uuid
-  modelId   String  @map("model_id") @db.Uuid
-  itemName  String  @map("item_name")
-  modelName String? @map("model_name")
-  sku       String?
-  price     Int
-  quantity  Int
-  order     Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  model     Model   @relation(fields: [modelId], references: [id])
+  id               String  @id @default(uuid(7)) @db.Uuid
+  orderId          String  @map("order_id") @db.Uuid
+  modelId          String  @map("model_id") @db.Uuid
+  itemName         String  @map("item_name")
+  modelName        String? @map("model_name")
+  sku              String?
+  price            Int
+  quantity         Int
+  sellerDiscount   Int     @default(0) @map("seller_discount")
+  platformDiscount Int     @default(0) @map("platform_discount")
+  order            Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  model            Model   @relation(fields: [modelId], references: [id])
 
   @@index([orderId])
   @@index([modelId])
@@ -406,6 +416,7 @@ enum LedgerAccountType {
   prepaid
   refund_due
   payout_due
+  promotion
 
   @@map("ledger_account_type")
 }
@@ -538,4 +549,69 @@ model Payout {
   @@index([shopId])
   @@index([status])
   @@map("payouts")
+}
+
+enum PromotionType {
+  shop_voucher
+  platform_voucher
+  shipping_voucher
+
+  @@map("promotion_type")
+}
+
+// Parent of every promotion; each kind of promotion adds its own child table.
+model Promotion {
+  id        String        @id @default(uuid(7)) @db.Uuid
+  type      PromotionType
+  // Set only for shop vouchers, which the shop pays for.
+  shopId    String?       @map("shop_id") @db.Uuid
+  name      String
+  startsAt  DateTime      @map("starts_at") @db.Timestamptz(3)
+  endsAt    DateTime      @map("ends_at") @db.Timestamptz(3)
+  createdAt DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  shop      Shop?         @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  voucher   Voucher?
+
+  @@index([type, endsAt])
+  @@index([shopId])
+  @@map("promotions")
+}
+
+enum DiscountKind {
+  fixed
+  percent
+
+  @@map("discount_kind")
+}
+
+model Voucher {
+  promotionId   String         @id @map("promotion_id") @db.Uuid
+  code          String         @unique
+  discountKind  DiscountKind   @map("discount_kind")
+  // Đồng for fixed, 1-100 for percent.
+  discountValue Int            @map("discount_value")
+  maxDiscount   Int?           @map("max_discount")
+  minSpend      Int            @default(0) @map("min_spend")
+  usageLimit    Int            @map("usage_limit")
+  usedCount     Int            @default(0) @map("used_count")
+  promotion     Promotion      @relation(fields: [promotionId], references: [id], onDelete: Cascade)
+  usages        VoucherUsage[]
+
+  @@map("vouchers")
+}
+
+// Assumption: a buyer can use each voucher once.
+model VoucherUsage {
+  id         String   @id @default(uuid(7)) @db.Uuid
+  voucherId  String   @map("voucher_id") @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  checkoutId String   @map("checkout_id") @db.Uuid
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  voucher    Voucher  @relation(fields: [voucherId], references: [promotionId], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  checkout   Checkout @relation(fields: [checkoutId], references: [id], onDelete: Cascade)
+
+  @@unique([voucherId, userId])
+  @@index([checkoutId])
+  @@map("voucher_usages")
 }

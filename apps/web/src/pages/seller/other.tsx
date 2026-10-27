@@ -6,6 +6,7 @@ import {
   FileDown,
   Percent,
   ShoppingBag,
+  TicketPercent,
   Upload,
   Wallet,
 } from 'lucide-react';
@@ -236,6 +237,7 @@ interface ShopReport {
     earnings: number;
     itemsTotal: number;
     commission: number;
+    sellerDiscount: number;
     orders: number;
     averageOrder: number;
     placedOrders: number;
@@ -278,7 +280,12 @@ export function ShopReportSection() {
               value={money(t.averageOrder)}
             />
           </div>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <IconStat
+              icon={TicketPercent}
+              label="Giảm giá của shop"
+              value={money(t.sellerDiscount)}
+            />
             <IconStat
               icon={Percent}
               label="Phí sàn"

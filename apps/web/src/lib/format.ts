@@ -54,3 +54,24 @@ export const REFUND_STATUS = {
   pending: 'Chờ hoàn',
   paid: 'Đã hoàn',
 } as const;
+
+export const VOUCHER_TYPE = {
+  shop_voucher: 'Voucher của shop',
+  platform_voucher: 'Voucher sàn',
+  shipping_voucher: 'Mã miễn phí vận chuyển',
+} as const;
+
+export const voucherTerms = (v: {
+  discountKind: 'fixed' | 'percent';
+  discountValue: number;
+  maxDiscount: number | null;
+  minSpend: number;
+}) =>
+  [
+    v.discountKind === 'fixed'
+      ? `Giảm ${money(v.discountValue)}`
+      : `Giảm ${v.discountValue}%${v.maxDiscount ? ` tối đa ${money(v.maxDiscount)}` : ''}`,
+    v.minSpend ? `đơn từ ${money(v.minSpend)}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');

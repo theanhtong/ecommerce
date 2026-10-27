@@ -19,6 +19,7 @@ import {
   CancelOrderDto,
   CheckoutDto,
   ListOrdersQuery,
+  PreviewDto,
   ShipmentStatusDto,
 } from './dto/order.dto.js';
 import { OrdersService } from './orders.service.js';
@@ -42,6 +43,12 @@ export class OrdersController {
       throw new BadRequestException('Idempotency-Key header is required');
     }
     return this.checkouts.checkout(user.sub, dto, key);
+  }
+
+  @Post('checkout/preview')
+  @HttpCode(HttpStatus.OK)
+  preview(@CurrentUser() user: AccessTokenPayload, @Body() dto: PreviewDto) {
+    return this.checkouts.preview(user.sub, dto);
   }
 
   @Get('orders')

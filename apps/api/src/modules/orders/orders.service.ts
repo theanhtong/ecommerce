@@ -17,6 +17,7 @@ import {
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
+import { VouchersService } from '../promotions/vouchers.service.js';
 import type { AdminListOrdersQuery, ListOrdersQuery } from './dto/order.dto.js';
 import { orderInclude, orderView } from './order-view.js';
 
@@ -96,6 +97,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
+    private readonly vouchers: VouchersService,
   ) {}
 
   async listForBuyer(buyerId: string, query: ListOrdersQuery) {
@@ -175,7 +177,7 @@ export class OrdersService {
         }
       },
       after: async (tx, order) => {
-        if (order.status === OrderStatus.to_ship) await this.refund(tx, order);
+        await this.cancelled(tx, order);
         if (reason) {
           await tx.order.update({
             where: { id },
@@ -266,7 +268,7 @@ export class OrdersService {
         },
       },
       OrderStatus.cancelled,
-      { stock: RELEASE, after: (tx, order) => this.refund(tx, order) },
+      { stock: RELEASE, after: (tx, order) => this.cancelled(tx, order) },
     );
   }
 
@@ -287,6 +289,7 @@ export class OrdersService {
             },
             data: { status: PaymentStatus.expired },
           });
+          await this.cancelled(tx, order);
         },
       },
     );
@@ -314,13 +317,19 @@ export class OrdersService {
     });
   }
 
-  private async refund(
+  // Money already paid is owed back, and the platform voucher returns with the last order.
+  private async cancelled(
     tx: Prisma.TransactionClient,
     order: Omit<SweptOrder, 'items'>,
   ) {
-    if (order.checkout.paymentMethod === PaymentMethod.online) {
+    if (
+      order.status !== OrderStatus.unpaid &&
+      order.checkout.paymentMethod === PaymentMethod.online &&
+      order.total > 0
+    ) {
       await this.ledger.refundOrder(tx, order);
     }
+    await this.vouchers.releaseIfCancelled(tx, order.checkoutId);
   }
 
   // Re-checks `where` under the row lock, so orders changed meanwhile are skipped.
