@@ -9,15 +9,16 @@ export default defineConfig(({ command, mode }) => {
     path.resolve(import.meta.dirname, '../..'),
     'DEMO_ADMIN_',
   );
-  // Accounts created by apps/api/scripts/demo-flow.ts. Dev server only, so no credentials
-  // (the admin one comes from .env) ever land in a production bundle.
+  // Accounts created by apps/api/scripts/demo-seed.ts: on the dev server, or in a build with
+  // DEMO_LOGIN=true. Such a build carries the admin password, so it is for local demos only.
   const password = 'demo password 123';
   const demoAccounts =
-    command === 'serve'
+    command === 'serve' || process.env.DEMO_LOGIN === 'true'
       ? [
           { label: 'Người mua', email: 'buyer@demo.vn', password },
-          { label: 'Người bán', email: 'seller@demo.vn', password },
-          { label: 'Người bán 2', email: 'seller2@demo.vn', password },
+          { label: 'Người mua 2', email: 'buyer2@demo.vn', password },
+          { label: 'Thời Trang Basic', email: 'seller@demo.vn', password },
+          { label: 'Nhà Gỗ Mộc An', email: 'seller2@demo.vn', password },
           ...(env.DEMO_ADMIN_EMAIL && env.DEMO_ADMIN_PASSWORD
             ? [
                 {
