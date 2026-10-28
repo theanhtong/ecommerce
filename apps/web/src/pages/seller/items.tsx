@@ -14,7 +14,7 @@ import {
 import {
   Empty,
   ErrorMessage,
-  LoadMore,
+  Pager,
   Loading,
   PageHeader,
 } from '@/components/common';
@@ -154,7 +154,7 @@ export function SellerItemsPage() {
                     <TableCell>
                       <div className="flex justify-end gap-1">
                         <Button asChild variant="outline" size="sm">
-                          <Link to={`/account/seller/items/${i.id}`}>
+                          <Link to={`/seller/items/${i.id}`}>
                             <Pencil />
                             Sửa
                           </Link>
@@ -171,11 +171,7 @@ export function SellerItemsPage() {
           </CardContent>
         </Card>
       )}
-      <LoadMore
-        hasMore={page.hasNextPage}
-        loading={page.isFetchingNextPage}
-        onClick={() => void page.fetchNextPage()}
-      />
+      <Pager page={page.page} prev={page.prev} next={page.next} />
     </>
   );
 }
@@ -609,7 +605,7 @@ export function SellerItemPage() {
   return (
     <>
       <Button asChild variant="ghost" size="sm" className="mb-2 -ml-2">
-        <Link to="/account/seller/items">
+        <Link to="/seller/items">
           <ChevronLeft />
           Quay lại
         </Link>
@@ -622,7 +618,7 @@ export function SellerItemPage() {
               <DeleteItem
                 id={i.id}
                 name={i.name}
-                onDeleted={() => navigate('/account/seller/items')}
+                onDeleted={() => navigate('/seller/items')}
               />
             )}
             {i.status !== 'banned' && (

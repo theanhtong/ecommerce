@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type SubmitEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/lib/auth-context';
+import { myShopQuery } from '@/lib/queries';
 
 function AuthCard({
   title,
@@ -69,10 +70,19 @@ function AuthCard({
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const from = (useLocation().state as { from?: string } | null)?.from ?? '/';
+  const queryClient = useQueryClient();
+  const from = (useLocation().state as { from?: string } | null)?.from;
   const mutation = useMutation({
     mutationFn: (v: Record<string, string>) => login(v.email, v.password),
-    onSuccess: () => navigate(from, { replace: true }),
+    // Back to the page that asked for a login; otherwise a shop owner lands in the seller centre.
+    onSuccess: async () => {
+      const shop = from
+        ? null
+        : await queryClient.fetchQuery(myShopQuery).catch(() => null);
+      navigate(from ?? (shop?.status === 'active' ? '/seller' : '/'), {
+        replace: true,
+      });
+    },
   });
   return (
     <AuthCard

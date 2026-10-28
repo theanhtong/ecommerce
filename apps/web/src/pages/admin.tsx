@@ -1,27 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Banknote,
   BookOpen,
   ChevronLeft,
-  CircleX,
   LogOut,
   PackageX,
   Store,
   TicketPercent,
-  Truck,
-  UserPlus,
   UserRound,
   Undo2,
   Users,
 } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router';
 import { useAuth } from '@/lib/auth-context';
 import {
   AddressBlock,
   Empty,
   ErrorMessage,
-  LoadMore,
+  Pager,
   Loading,
   OrderStatusBadge,
   PageHeader,
@@ -36,16 +33,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
-import {
-  cancelRate,
-  IconStat,
-  periodLabel,
-  RangePicker,
-  type Range,
-  SELECTED,
-  SeriesChart,
-  StatCard,
-} from '@/components/report';
+import { SELECTED } from '@/components/report';
 import {
   Table,
   TableBody,
@@ -76,7 +64,6 @@ const TABS = [
   ['/admin/ledger', 'Sổ cái', BookOpen],
   ['/admin/shops', 'Cửa hàng', Store],
   ['/admin/users', 'Người dùng', Users],
-  ['/admin/payouts', 'Rút tiền', Banknote],
   ['/admin/returns', 'Trả hàng', PackageX],
   ['/admin/refunds', 'Hoàn tiền', Undo2],
   ['/admin/vouchers', 'Khuyến mãi', TicketPercent],
@@ -121,7 +108,7 @@ export function AdminLayout() {
             <Button
               variant="outline"
               className="justify-start"
-              onClick={() => void logout().then(() => navigate('/'))}
+              onClick={() => void logout().then(() => navigate('/login'))}
             >
               <LogOut />
               Đăng xuất
@@ -162,11 +149,25 @@ const SHOP_ACTIONS: Record<ShopStatus, [ShopStatus, string][]> = {
 
 export function AdminShopsPage() {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<ShopStatus>('active');
+  // The extra tab lists shops asking to join Freeship, whatever their status.
+  const [status, setStatus] = useState<ShopStatus | 'freeship'>('active');
   const page = usePaged<AdminShopRow>(
     ['admin-shops', status],
-    `/admin/shops?status=${status}`,
+    status === 'freeship'
+      ? '/admin/shops?freeship=requested'
+      : `/admin/shops?status=${status}`,
   );
+  const decide = useMutation({
+    mutationFn: ({ id, approve }: { id: string; approve: boolean }) =>
+      api(`/admin/shops/${id}/freeship`, {
+        method: 'PATCH',
+        body: { approve },
+      }),
+    onSuccess: (_, { approve }) => {
+      toast.success(approve ? 'Đã duyệt Freeship' : 'Đã từ chối');
+      void queryClient.invalidateQueries({ queryKey: ['admin-shops'] });
+    },
+  });
   const update = useMutation({
     mutationFn: ({ id, next }: { id: string; next: ShopStatus }) =>
       api(`/admin/shops/${id}/status`, {
@@ -192,6 +193,14 @@ export function AdminShopsPage() {
             {SHOP_STATUS[s]}
           </Button>
         ))}
+        <Button
+          size="sm"
+          variant="outline"
+          className={status === 'freeship' ? SELECTED : undefined}
+          onClick={() => setStatus('freeship')}
+        >
+          Chờ duyệt Freeship
+        </Button>
       </div>
       {page.isPending ? (
         <Loading />
@@ -242,17 +251,35 @@ export function AdminShopsPage() {
                       <Button asChild size="sm" variant="outline">
                         <Link to={`/admin/shops/${s.id}`}>Chi tiết</Link>
                       </Button>
-                      {SHOP_ACTIONS[s.status].map(([next, label]) => (
-                        <Button
-                          key={next}
-                          size="sm"
-                          variant="outline"
-                          disabled={update.isPending}
-                          onClick={() => update.mutate({ id: s.id, next })}
-                        >
-                          {label}
-                        </Button>
-                      ))}
+                      {status === 'freeship' &&
+                        (
+                          [
+                            [true, 'Duyệt Freeship'],
+                            [false, 'Từ chối'],
+                          ] as const
+                        ).map(([approve, label]) => (
+                          <Button
+                            key={label}
+                            size="sm"
+                            variant={approve ? 'default' : 'outline'}
+                            disabled={decide.isPending}
+                            onClick={() => decide.mutate({ id: s.id, approve })}
+                          >
+                            {label}
+                          </Button>
+                        ))}
+                      {status !== 'freeship' &&
+                        SHOP_ACTIONS[s.status].map(([next, label]) => (
+                          <Button
+                            key={next}
+                            size="sm"
+                            variant="outline"
+                            disabled={update.isPending}
+                            onClick={() => update.mutate({ id: s.id, next })}
+                          >
+                            {label}
+                          </Button>
+                        ))}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -261,11 +288,7 @@ export function AdminShopsPage() {
           </CardContent>
         </Card>
       )}
-      <LoadMore
-        hasMore={page.hasNextPage}
-        loading={page.isFetchingNextPage}
-        onClick={() => void page.fetchNextPage()}
-      />
+      <Pager page={page.page} prev={page.prev} next={page.next} />
     </>
   );
 }
@@ -400,177 +423,7 @@ export function AdminUsersPage() {
           </CardContent>
         </Card>
       )}
-      <LoadMore
-        hasMore={page.hasNextPage}
-        loading={page.isFetchingNextPage}
-        onClick={() => void page.fetchNextPage()}
-      />
-    </>
-  );
-}
-
-type Report = {
-  totals: {
-    profit: number;
-    itemsTotal: number;
-    shippingFees: number;
-    promotions: number;
-    orders: number;
-    averageOrder: number;
-    cancelledOrders: number;
-    newUsers: number;
-    newShops: number;
-  };
-  series: {
-    period: string;
-    orders: number;
-    itemsTotal: number;
-    shippingFees: number;
-    promotions: number;
-    profit: number;
-  }[];
-};
-
-export function AdminLedgerPage() {
-  const [range, setRange] = useState<Range>('30d');
-  const report = useQuery({
-    queryKey: ['ledger-report', range],
-    queryFn: () => api<Report>(`/admin/ledger/report?range=${range}`),
-  });
-  const balances = useQuery({
-    queryKey: ['ledger'],
-    queryFn: () => api<{ total: number }>('/admin/ledger/accounts'),
-  });
-  const count = (n: number) => String(n);
-  const t = report.data?.totals;
-
-  return (
-    <>
-      <PageHeader
-        title="Sổ cái"
-        actions={
-          balances.data && (
-            <Badge
-              variant={balances.data.total === 0 ? 'default' : 'destructive'}
-            >
-              {balances.data.total === 0
-                ? 'Cân đối'
-                : `Lệch ${money(balances.data.total)}`}
-            </Badge>
-          )
-        }
-      />
-      <RangePicker value={range} onChange={setRange} />
-      {report.isPending ? (
-        <Loading />
-      ) : report.error || !t ? (
-        <ErrorMessage error={report.error} />
-      ) : (
-        <div className="grid gap-4">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Lợi nhuận" value={money(t.profit)} />
-            <StatCard label="Tiền hàng" value={money(t.itemsTotal)} />
-            <StatCard label="Đơn hoàn thành" value={count(t.orders)} />
-            <StatCard
-              label="Giá trị đơn trung bình"
-              value={money(t.averageOrder)}
-            />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <IconStat
-              icon={TicketPercent}
-              label="Chi phí khuyến mãi"
-              value={money(t.promotions)}
-            />
-            <IconStat
-              icon={Truck}
-              label="Phí vận chuyển thu hộ"
-              value={money(t.shippingFees)}
-            />
-            <IconStat
-              icon={CircleX}
-              label="Đơn bị hủy"
-              value={count(t.cancelledOrders)}
-              note={cancelRate(t.cancelledOrders, t.orders)}
-            />
-            <IconStat
-              icon={UserPlus}
-              label="Người dùng mới"
-              value={count(t.newUsers)}
-            />
-            <IconStat
-              icon={Store}
-              label="Cửa hàng mới"
-              value={count(t.newShops)}
-            />
-          </div>
-          <SeriesChart
-            title="Lợi nhuận"
-            data={report.data.series}
-            dataKey="profit"
-            range={range}
-            format={money}
-          />
-          <div className="grid gap-4 lg:grid-cols-2">
-            <SeriesChart
-              title="Tiền hàng"
-              data={report.data.series}
-              dataKey="itemsTotal"
-              range={range}
-              format={money}
-            />
-            <SeriesChart
-              title="Đơn hoàn thành"
-              data={report.data.series}
-              dataKey="orders"
-              range={range}
-              format={count}
-            />
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Chi tiết</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Thời gian</TableHead>
-                    <TableHead className="text-right">Đơn hoàn thành</TableHead>
-                    <TableHead className="text-right">Tiền hàng</TableHead>
-                    <TableHead className="text-right">Phí vận chuyển</TableHead>
-                    <TableHead className="text-right">Lợi nhuận</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {[...report.data.series]
-                    .reverse()
-                    .filter((p) => p.orders > 0)
-                    .map((p) => (
-                      <TableRow key={p.period}>
-                        <TableCell>
-                          {periodLabel(range, p.period, true)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.orders}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {money(p.itemsTotal)}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground tabular-nums">
-                          {money(p.shippingFees)}
-                        </TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">
-                          {money(p.profit)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <Pager page={page.page} prev={page.prev} next={page.next} />
     </>
   );
 }
@@ -859,11 +712,7 @@ function AdminOrdersTable({
             </TableBody>
           </Table>
         )}
-        <LoadMore
-          hasMore={page.hasNextPage}
-          loading={page.isFetchingNextPage}
-          onClick={() => void page.fetchNextPage()}
-        />
+        <Pager page={page.page} prev={page.prev} next={page.next} />
       </CardContent>
     </Card>
   );
@@ -959,11 +808,7 @@ function AdminItemsTable({ shopId }: { shopId: string }) {
             </TableBody>
           </Table>
         )}
-        <LoadMore
-          hasMore={page.hasNextPage}
-          loading={page.isFetchingNextPage}
-          onClick={() => void page.fetchNextPage()}
-        />
+        <Pager page={page.page} prev={page.prev} next={page.next} />
       </CardContent>
     </Card>
   );

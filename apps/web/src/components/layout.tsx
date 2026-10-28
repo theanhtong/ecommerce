@@ -11,6 +11,7 @@ import {
   ReceiptText,
   Search,
   ShoppingCart,
+  Store,
   User,
   type LucideIcon,
 } from 'lucide-react';
@@ -18,6 +19,7 @@ import { NotificationBell } from '@/components/notifications';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth-context';
+import { useCart, useMyShop } from '@/lib/queries';
 
 const nav = (to: string, label: string, Icon: LucideIcon) => (
   <Button asChild variant="ghost" size="sm" key={to}>
@@ -27,6 +29,25 @@ const nav = (to: string, label: string, Icon: LucideIcon) => (
     </NavLink>
   </Button>
 );
+
+// Counts distinct cart lines, not units.
+function CartLink() {
+  const count =
+    useCart().data?.shops.reduce((n, g) => n + g.items.length, 0) ?? 0;
+  return (
+    <Button asChild variant="ghost" size="sm">
+      <NavLink to="/cart" className="relative">
+        <ShoppingCart />
+        Giỏ hàng
+        {count > 0 && (
+          <span className="absolute -top-1 left-5 min-w-4 rounded-full bg-primary px-1 text-center text-[10px] leading-4 text-primary-foreground">
+            {count > 99 ? '99+' : count}
+          </span>
+        )}
+      </NavLink>
+    </Button>
+  );
+}
 
 function SearchBox() {
   const navigate = useNavigate();
@@ -58,11 +79,12 @@ function SearchBox() {
 export function Layout() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+  const shop = useMyShop(user?.role === 'user');
 
   return (
     <div className="app-bg min-h-svh">
       <header className="sticky top-0 z-10 border-t-2 border-b border-t-primary bg-card">
-        <div className="mx-auto flex h-14 max-w-7xl items-center gap-2 px-4">
+        <div className="mx-auto flex h-14 max-w-screen-2xl items-center gap-2 px-4">
           <Link
             to={user?.role === 'admin' ? '/admin' : '/'}
             className="mr-4 text-base font-medium"
@@ -71,8 +93,10 @@ export function Layout() {
           </Link>
           <nav className="flex items-center gap-1">
             {user?.role !== 'admin' && nav('/', 'Trang chủ', House)}
-            {user?.role === 'user' && nav('/cart', 'Giỏ hàng', ShoppingCart)}
+            {user?.role === 'user' && <CartLink />}
             {user?.role === 'user' && nav('/orders', 'Đơn mua', ReceiptText)}
+            {shop.data?.status === 'active' &&
+              nav('/seller', 'Kênh người bán', Store)}
           </nav>
           <div className="flex flex-1 justify-center px-2">
             {user?.role !== 'admin' && <SearchBox />}
@@ -94,7 +118,7 @@ export function Layout() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => void logout().then(() => navigate('/'))}
+                onClick={() => void logout().then(() => navigate('/login'))}
               >
                 <LogOut />
                 Đăng xuất
@@ -112,7 +136,7 @@ export function Layout() {
           )}
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-4 py-5">
+      <main className="mx-auto max-w-screen-2xl px-4 py-5">
         <Outlet />
       </main>
     </div>

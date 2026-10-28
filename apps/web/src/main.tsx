@@ -18,17 +18,12 @@ import { AuthProvider } from '@/lib/auth';
 import { AccountLayout, AccountPage, AddressesPage } from '@/pages/account';
 import {
   AdminLayout,
-  AdminLedgerPage,
   AdminShopPage,
   AdminShopsPage,
   AdminUserPage,
   AdminUsersPage,
 } from '@/pages/admin';
-import {
-  AdminPayoutsPage,
-  AdminRefundsPage,
-  AdminReturnsPage,
-} from '@/pages/admin-money';
+import { AdminRefundsPage, AdminReturnsPage } from '@/pages/admin-money';
 import { LoginPage, RegisterPage } from '@/pages/auth';
 import {
   BuyerOrderPage,
@@ -36,14 +31,27 @@ import {
   CheckoutPage,
   OrdersPage,
 } from '@/pages/buyer';
+import { AdminLedgerPage } from '@/pages/admin-ledger';
 import { PaymentPage } from '@/pages/payment';
 import { AdminVouchersPage, SellerVouchersPage } from '@/pages/vouchers';
 import { ShopReviews } from '@/components/reviews';
 import { SellerFlashSalesPage } from '@/pages/flash-sales';
 import { SellerItemPage, SellerItemsPage } from '@/pages/seller/items';
-import { SellerLayout, SellerShopPage } from '@/pages/seller/layout';
+import {
+  AccountShopPage,
+  SellerDashboardPage,
+  SellerLayout,
+  SellerShopPage,
+  SellerWalletPage,
+} from '@/pages/seller/layout';
 import { SellerOrderPage, SellerOrdersPage } from '@/pages/seller/other';
-import { HomePage, ItemPage, SearchPage, ShopPage } from '@/pages/shop';
+import {
+  FlashSalePage,
+  HomePage,
+  ItemPage,
+  SearchPage,
+  ShopPage,
+} from '@/pages/shop';
 import './index.css';
 
 const queryClient = new QueryClient({
@@ -65,6 +73,7 @@ const router = createBrowserRouter([
         ],
       },
       { path: 'items/:id', element: <ItemPage /> },
+      { path: 'flash-sales/:id', element: <FlashSalePage /> },
       { path: 'shops/:id', element: <ShopPage /> },
       { path: 'login', element: <LoginPage /> },
       { path: 'register', element: <RegisterPage /> },
@@ -80,23 +89,7 @@ const router = createBrowserRouter([
                 element: <RequireNonAdmin />,
                 children: [
                   { path: 'addresses', element: <AddressesPage /> },
-                  {
-                    path: 'seller',
-                    element: <SellerLayout />,
-                    children: [
-                      { index: true, element: <SellerShopPage /> },
-                      { path: 'items', element: <SellerItemsPage /> },
-                      { path: 'items/:id', element: <SellerItemPage /> },
-                      { path: 'orders', element: <SellerOrdersPage /> },
-                      { path: 'orders/:id', element: <SellerOrderPage /> },
-                      { path: 'vouchers', element: <SellerVouchersPage /> },
-                      { path: 'reviews', element: <ShopReviews /> },
-                      {
-                        path: 'flash-sales',
-                        element: <SellerFlashSalesPage />,
-                      },
-                    ],
-                  },
+                  { path: 'shop', element: <AccountShopPage /> },
                 ],
               },
             ],
@@ -109,6 +102,25 @@ const router = createBrowserRouter([
               { path: 'checkouts/:id/payment', element: <PaymentPage /> },
               { path: 'orders', element: <OrdersPage /> },
               { path: 'orders/:id', element: <BuyerOrderPage /> },
+              {
+                path: 'seller',
+                element: <SellerLayout />,
+                children: [
+                  { index: true, element: <SellerDashboardPage /> },
+                  { path: 'profile', element: <SellerShopPage /> },
+                  { path: 'wallet', element: <SellerWalletPage /> },
+                  { path: 'items', element: <SellerItemsPage /> },
+                  { path: 'items/:id', element: <SellerItemPage /> },
+                  { path: 'orders', element: <SellerOrdersPage /> },
+                  { path: 'orders/:id', element: <SellerOrderPage /> },
+                  { path: 'vouchers', element: <SellerVouchersPage /> },
+                  { path: 'reviews', element: <ShopReviews /> },
+                  {
+                    path: 'flash-sales',
+                    element: <SellerFlashSalesPage />,
+                  },
+                ],
+              },
             ],
           },
           {
@@ -125,7 +137,6 @@ const router = createBrowserRouter([
                   { path: 'users', element: <AdminUsersPage /> },
                   { path: 'users/:id', element: <AdminUserPage /> },
                   { path: 'ledger', element: <AdminLedgerPage /> },
-                  { path: 'payouts', element: <AdminPayoutsPage /> },
                   { path: 'refunds', element: <AdminRefundsPage /> },
                   { path: 'returns', element: <AdminReturnsPage /> },
                   { path: 'vouchers', element: <AdminVouchersPage /> },

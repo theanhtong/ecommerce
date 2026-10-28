@@ -1,24 +1,30 @@
 import {
-  useInfiniteQuery,
+  keepPreviousData,
   useMutation,
+  useQueries,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { Zap } from 'lucide-react';
+import { Store, Zap } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import {
   Empty,
   ErrorMessage,
-  LoadMore,
+  Pager,
   Loading,
   ItemImage,
   PageHeader,
   QuantityInput,
   StockLabel,
 } from '@/components/common';
-import { Countdown, FlashSaleStrip, SalePrice } from '@/components/flash-sale';
+import {
+  Countdown,
+  FlashSaleStrip,
+  SalePrice,
+  SoldBar,
+} from '@/components/flash-sale';
 import { ItemGallery } from '@/components/item-images';
 import { ItemReviews, RatingSummary } from '@/components/reviews';
 import { Filter } from '@/components/report';
@@ -30,7 +36,12 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { money, priceRange } from '@/lib/format';
 import { useCart, usePaged } from '@/lib/queries';
-import type { ItemDetail, ItemSummary, Shop } from '@/lib/types';
+import type {
+  FlashSalePage as FlashSalePageData,
+  ItemDetail,
+  ItemSummary,
+  Shop,
+} from '@/lib/types';
 
 const GRID = 'grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4';
 
@@ -67,11 +78,7 @@ function ItemGrid({ path, queryKey }: { path: string; queryKey: unknown[] }) {
           <ItemCard key={item.id} item={item} />
         ))}
       </div>
-      <LoadMore
-        hasMore={page.hasNextPage}
-        loading={page.isFetchingNextPage}
-        onClick={() => void page.fetchNextPage()}
-      />
+      <Pager page={page.page} prev={page.prev} next={page.next} />
     </>
   );
 }
@@ -132,14 +139,16 @@ export function SearchPage() {
     const value = params.get(key);
     if (value) query.set(key, value);
   }
-  const results = useInfiniteQuery({
-    queryKey: ['search', query.toString()],
-    queryFn: ({ pageParam }) =>
-      api<SearchResult>(`/items/search?${query}&page=${pageParam}`),
-    initialPageParam: 1,
-    getNextPageParam: (last) => (last.hasMore ? last.page + 1 : undefined),
+  // Back to page 1 whenever the search or its filters change.
+  const [paged, setPaged] = useState({ query: query.toString(), page: 1 });
+  const page = paged.query === query.toString() ? paged.page : 1;
+  const goTo = (to: number) => setPaged({ query: query.toString(), page: to });
+  const results = useQuery({
+    queryKey: ['search', query.toString(), page],
+    queryFn: () => api<SearchResult>(`/items/search?${query}&page=${page}`),
+    placeholderData: keepPreviousData,
   });
-  const items = results.data?.pages.flatMap((p) => p.items) ?? [];
+  const items = results.data?.items ?? [];
 
   return (
     <>
@@ -196,7 +205,7 @@ export function SearchPage() {
       ) : (
         <>
           <p className="mb-3 text-sm text-muted-foreground">
-            {results.data.pages[0].total} sản phẩm
+            {results.data.total} sản phẩm
           </p>
           <div className={GRID}>
             {items.map((item) => (
@@ -205,10 +214,10 @@ export function SearchPage() {
           </div>
         </>
       )}
-      <LoadMore
-        hasMore={results.hasNextPage}
-        loading={results.isFetchingNextPage}
-        onClick={() => void results.fetchNextPage()}
+      <Pager
+        page={page}
+        prev={page > 1 ? () => goTo(page - 1) : undefined}
+        next={results.data?.hasMore ? () => goTo(page + 1) : undefined}
       />
     </>
   );
@@ -241,6 +250,35 @@ export function ShopPage() {
   );
 }
 
+function ShopStrip({ id, name }: { id: string; name: string }) {
+  const shop = useQuery({
+    queryKey: ['shop', id],
+    queryFn: () => api<Shop>(`/shops/${id}`),
+  });
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center gap-4">
+        <span className="grid size-12 shrink-0 place-items-center rounded-full bg-primary/10 text-primary">
+          <Store className="size-6" />
+        </span>
+        <div className="grid min-w-0 flex-1 gap-1">
+          <p className="truncate font-medium">{name}</p>
+          <RatingSummary
+            rating={shop.data?.rating ?? null}
+            count={shop.data?.ratingCount ?? 0}
+          />
+        </div>
+        <Button asChild variant="outline" size="sm">
+          <Link to={`/shops/${id}`}>
+            <Store />
+            Xem shop
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ItemPage() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -254,6 +292,20 @@ export function ItemPage() {
     queryFn: () => api<ItemDetail>(`/items/${id}`),
   });
   const cart = useCart(!!user);
+  // The buyer's flash sale allowance per model on sale; a used-up one hides its strip.
+  const saleIds = (item.data?.models ?? []).flatMap((m) =>
+    m.flashSale ? [m.flashSale.id] : [],
+  );
+  const allowances = useQueries({
+    queries: saleIds.map((saleId) => ({
+      queryKey: ['flash-sale', saleId, 'allowance'],
+      queryFn: () =>
+        api<{ allowance: number }>(`/flash-sales/${saleId}/allowance`),
+      enabled: user?.role === 'user',
+    })),
+  });
+  const usedUp = (saleId: string) =>
+    allowances[saleIds.indexOf(saleId)]?.data?.allowance === 0;
   const addToCart = useMutation({
     mutationFn: (modelId: string) =>
       api('/cart/items', { method: 'POST', body: { modelId, quantity: qty } }),
@@ -271,8 +323,12 @@ export function ItemPage() {
     picked.length === tierVariations.length
       ? models.find((m) => m.tierIndex.join() === picked.join())
       : undefined;
-  const prices = models.map((m) => m.flashSale?.price ?? m.price);
-  const onSale = models.find((m) => m.flashSale)?.flashSale;
+  const prices = models.map((m) => m.price);
+  // The picked model's flash sale, or any model's while none is picked.
+  const open = models.map((m) => m.flashSale).filter((f) => f && !usedUp(f.id));
+  const onSale = model
+    ? model.flashSale && !usedUp(model.flashSale.id) && model.flashSale
+    : open[0];
   const inCart =
     cart.data?.shops
       .flatMap((s) => s.items)
@@ -296,11 +352,6 @@ export function ItemPage() {
                 rating={item.data.rating}
                 count={item.data.ratingCount}
               />
-              <Button asChild variant="secondary" size="sm" className="mt-2">
-                <Link to={`/shops/${item.data.shop.id}`}>
-                  {item.data.shop.name}
-                </Link>
-              </Button>
             </div>
             {onSale && (
               <div className="flex flex-wrap items-center gap-3 rounded-md bg-primary/10 px-3 py-2 text-sm">
@@ -309,25 +360,17 @@ export function ItemPage() {
                   Flash Sale
                 </span>
                 <Countdown to={onSale.endsAt} />
-                {model?.flashSale && (
-                  <span className="text-muted-foreground">
-                    Còn {model.flashSale.quota - model.flashSale.sold} suất ·
-                    Tối đa {model.flashSale.purchaseLimit}/người
-                  </span>
-                )}
+                <Button asChild size="sm" className="ml-auto">
+                  <Link to={`/flash-sales/${onSale.id}`}>
+                    Mua giá {money(onSale.price)}
+                  </Link>
+                </Button>
               </div>
             )}
             <p className="text-2xl font-medium text-primary">
-              {model?.flashSale ? (
-                <SalePrice
-                  price={model.flashSale.price}
-                  originalPrice={model.price}
-                />
-              ) : model ? (
-                money(model.price)
-              ) : (
-                priceRange(Math.min(...prices), Math.max(...prices))
-              )}
+              {model
+                ? money(model.price)
+                : priceRange(Math.min(...prices), Math.max(...prices))}
             </p>
             {tierVariations.map((tier, t) => (
               <div key={tier.name} className="grid gap-2">
@@ -359,6 +402,7 @@ export function ItemPage() {
                     Số lượng
                   </span>
                   <QuantityInput
+                    disabled={!model}
                     value={qty}
                     max={maxAdd || undefined}
                     onChange={setQuantity}
@@ -406,8 +450,138 @@ export function ItemPage() {
           </div>
         </CardContent>
       </Card>
+      <ShopStrip id={item.data.shop.id} name={item.data.shop.name} />
       <ItemReviews
         itemId={item.data.id}
+        rating={item.data.rating}
+        count={item.data.ratingCount}
+      />
+    </div>
+  );
+}
+
+const FLASH_STATUS: Record<FlashSalePageData['status'], string> = {
+  running: 'Flash Sale',
+  upcoming: 'Flash Sale chưa bắt đầu',
+  sold_out: 'Flash Sale đã hết suất',
+  ended: 'Flash Sale đã kết thúc',
+};
+
+// A flash sale is bought on its own page, straight to checkout and never through the cart.
+export function FlashSalePage() {
+  const { id } = useParams();
+  const { user } = useAuth();
+  const navigate = useNavigate();
+  const [quantity, setQuantity] = useState(1);
+  const [shown, setShown] = useState(0);
+  const sale = useQuery({
+    queryKey: ['flash-sale', id],
+    queryFn: () => api<FlashSalePageData>(`/flash-sales/${id}`),
+  });
+  const item = useQuery({
+    queryKey: ['item', sale.data?.itemId],
+    queryFn: () => api<ItemDetail>(`/items/${sale.data!.itemId}`),
+    enabled: !!sale.data,
+  });
+  const allowance = useQuery({
+    queryKey: ['flash-sale', id, 'allowance'],
+    queryFn: () => api<{ allowance: number }>(`/flash-sales/${id}/allowance`),
+    enabled: user?.role === 'user',
+  });
+
+  if (sale.isPending || item.isPending) return <Loading />;
+  if (sale.error) return <ErrorMessage error={sale.error} />;
+  if (item.error) return <ErrorMessage error={item.error} />;
+  const s = sale.data;
+  const running = s.status === 'running';
+  // Already bought the whole allowance: nothing left to buy here.
+  const canBuy = running && allowance.data?.allowance !== 0;
+  const max =
+    allowance.data?.allowance ?? Math.min(s.quota - s.sold, s.purchaseLimit);
+  const qty = Math.min(quantity, Math.max(1, max));
+
+  return (
+    <div className="grid gap-4">
+      <Card>
+        <CardContent className="grid gap-8 md:grid-cols-[2fr_3fr]">
+          <ItemGallery
+            images={item.data.images}
+            picked={shown}
+            onPick={setShown}
+          />
+          <div className="flex flex-col gap-5">
+            <div>
+              <h1 className="text-xl font-medium">{s.itemName}</h1>
+              {s.variation && (
+                <p className="text-muted-foreground">{s.variation}</p>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center gap-3 rounded-md bg-primary/10 px-3 py-2 text-sm">
+              <span className="flex items-center gap-1 font-semibold text-primary">
+                <Zap className="size-4 fill-primary" />
+                Flash Sale
+              </span>
+              {running ? (
+                <Countdown to={s.endsAt} />
+              ) : (
+                <span className="text-muted-foreground">
+                  {FLASH_STATUS[s.status]}
+                </span>
+              )}
+            </div>
+            <SalePrice
+              className="text-2xl font-medium text-primary"
+              price={s.price}
+              originalPrice={s.originalPrice}
+            />
+            <div className="grid max-w-xs gap-1">
+              <SoldBar sold={s.sold} quota={s.quota} />
+              <span className="text-sm text-muted-foreground">
+                Tối đa {s.purchaseLimit} sản phẩm/người
+              </span>
+            </div>
+            {user?.role !== 'admin' && canBuy && (
+              <>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-muted-foreground">
+                    Số lượng
+                  </span>
+                  <QuantityInput
+                    value={qty}
+                    max={Math.max(1, max)}
+                    onChange={setQuantity}
+                  />
+                </div>
+                <Button
+                  size="lg"
+                  className="w-fit"
+                  onClick={() => {
+                    if (!user) {
+                      navigate('/login', {
+                        state: { from: `/flash-sales/${id}` },
+                      });
+                    } else {
+                      navigate('/checkout', {
+                        state: { flash: { id, quantity: qty } },
+                      });
+                    }
+                  }}
+                >
+                  Mua ngay
+                </Button>
+              </>
+            )}
+            {!canBuy && (
+              <Button asChild variant="outline" className="w-fit">
+                <Link to={`/items/${s.itemId}`}>Xem sản phẩm</Link>
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+      <ShopStrip id={s.shop.id} name={s.shop.name} />
+      <ItemReviews
+        itemId={s.itemId}
         rating={item.data.rating}
         count={item.data.ratingCount}
       />

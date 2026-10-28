@@ -2,11 +2,19 @@ import { Navigate, Outlet, useLocation } from 'react-router';
 import { useAuth } from '@/lib/auth-context';
 
 export function RequireUser() {
-  const { user, ready } = useAuth();
+  const { user, ready, signedOut } = useAuth();
   const location = useLocation();
   if (!ready) return null;
   if (!user) {
-    return <Navigate to="/login" replace state={{ from: location.pathname }} />;
+    return (
+      <Navigate
+        to="/login"
+        replace
+        state={
+          signedOut ? undefined : { from: location.pathname + location.search }
+        }
+      />
+    );
   }
   return <Outlet />;
 }
