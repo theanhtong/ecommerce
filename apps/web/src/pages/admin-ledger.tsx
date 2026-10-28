@@ -336,7 +336,10 @@ function BalanceSheet() {
           </Badge>
         </CardTitle>
         <CardAction>
-          <CodRemittanceDialog held={b.receivable} />
+          <CodRemittanceDialog
+            held={b.receivable}
+            shippingOwed={-b.shipping || 0}
+          />
         </CardAction>
       </CardHeader>
       <CardContent className="grid items-stretch gap-3 lg:grid-cols-[1fr_auto_1fr_auto_1fr]">
@@ -384,7 +387,14 @@ function BalanceSheet() {
   );
 }
 
-function CodRemittanceDialog({ held }: { held: number }) {
+// Mirrors the API: the carrier keeps the shipping fees owed to it out of the batch.
+function CodRemittanceDialog({
+  held,
+  shippingOwed,
+}: {
+  held: number;
+  shippingOwed: number;
+}) {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [amount, setAmount] = useState('');
@@ -451,6 +461,28 @@ function CodRemittanceDialog({ held }: { held: number }) {
               onChange={(e) => setAmount(e.target.value)}
             />
           </label>
+          {(() => {
+            const gross = Number(amount) || 0;
+            const fee = Math.max(0, Math.min(gross, shippingOwed));
+            return (
+              <dl className="grid gap-1 rounded-md border p-3 text-sm">
+                {(
+                  [
+                    ['Trừ phí vận chuyển đang nợ', -fee],
+                    ['Thực nhận vào ngân hàng', gross - fee],
+                  ] as const
+                ).map(([label, value], i) => (
+                  <div
+                    key={label}
+                    className={`flex justify-between ${i ? 'font-medium' : 'text-muted-foreground'}`}
+                  >
+                    <dt>{label}</dt>
+                    <dd className="tabular-nums">{money(value)}</dd>
+                  </div>
+                ))}
+              </dl>
+            );
+          })()}
           {remit.error && <ErrorMessage error={remit.error} />}
           <Button type="submit" disabled={remit.isPending}>
             Ghi nhận
