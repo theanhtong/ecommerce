@@ -13,6 +13,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { emit } from '../notifications/outbox.service.js';
 import { reviewView } from './review-view.js';
+import { coded } from '../../common/http-error.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Buyers review within 30 days of completion and may edit once within 30 days of the first review.
@@ -62,7 +63,9 @@ export class ReviewsService {
     }
     const completedAt = line.order.history[0]?.createdAt;
     if (line.order.status !== OrderStatus.completed || !completedAt) {
-      throw new ConflictException(`Order is ${line.order.status}`);
+      throw new ConflictException(
+        coded('order_state', `Order is ${line.order.status}`),
+      );
     }
     if (now.getTime() - completedAt.getTime() > REVIEW_WINDOW_MS) {
       throw new ConflictException('The review window has closed');

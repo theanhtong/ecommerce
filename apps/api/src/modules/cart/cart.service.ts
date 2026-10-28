@@ -13,6 +13,7 @@ import {
 } from '../catalog/items.service.js';
 import { mediaUrl } from '../storage/storage.service.js';
 import type { AddCartItemDto } from './dto/cart-item.dto.js';
+import { coded } from '../../common/http-error.js';
 
 export const MAX_CART_MODELS = 200;
 
@@ -147,7 +148,9 @@ export class CartService {
 
   private assertStock(quantity: number, stock: number) {
     if (quantity > stock) {
-      throw new ConflictException(`Only ${stock} left in stock`);
+      throw new ConflictException(
+        coded('stock_left', `Only ${stock} left in stock`, { stock }),
+      );
     }
   }
 }

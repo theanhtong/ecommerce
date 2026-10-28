@@ -30,6 +30,7 @@ import { priceCart } from '../promotions/pricing.js';
 import { VouchersService } from '../promotions/vouchers.service.js';
 import { orderInclude, orderView } from './order-view.js';
 import { shippingFee } from './shipping-fee.js';
+import { coded } from '../../common/http-error.js';
 
 const modelInclude = {
   item: {
@@ -151,8 +152,8 @@ export class CheckoutService {
       })),
     }));
     // Shops in the Freeship program get the best free-shipping voucher applied for the buyer.
-    if (!vouchers.cart.shipping && carts.some((c) => c.freeship)) {
     const commissionBps = this.vouchers.fees().commissionBps;
+    if (!vouchers.cart.shipping && carts.some((c) => c.freeship)) {
       const draft = priceCart(carts, vouchers.cart, commissionBps);
       const auto = await this.vouchers.bestShipping(
         tx,
@@ -231,7 +232,9 @@ export class CheckoutService {
           AND on_hand - reserved >= ${line.quantity}`;
       if (reserved === 0) {
         throw new ConflictException(
-          `Not enough stock for ${line.model.item.name}`,
+          coded('stock_short', `Not enough stock for ${line.model.item.name}`, {
+            item: line.model.item.name,
+          }),
         );
       }
       if (line.sale) await claimFlashSale(tx, line.sale, line.quantity);
@@ -376,7 +379,11 @@ export class CheckoutService {
       const allowance = await flashAllowance(tx, buyerId, sale);
       if (quantity > allowance) {
         throw new ConflictException(
-          `You can get ${allowance} more at the flash sale price`,
+          coded(
+            'flash_sale_allowance',
+            `You can get ${allowance} more at the flash sale price`,
+            { count: allowance },
+          ),
         );
       }
       const model = await tx.model.findUniqueOrThrow({
@@ -415,7 +422,11 @@ export class CheckoutService {
       item.status !== ItemStatus.active ||
       item.shop.status !== ShopStatus.active
     ) {
-      throw new ConflictException(`${item.name} is no longer available`);
+      throw new ConflictException(
+        coded('item_unavailable', `${item.name} is no longer available`, {
+          item: item.name,
+        }),
+      );
     }
     if (item.shop.ownerId === buyerId) {
       throw new ForbiddenException('You cannot buy from your own shop');

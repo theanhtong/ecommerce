@@ -19,6 +19,7 @@ import type { CreateShopDto } from './dto/create-shop.dto.js';
 import type { ListShopsQuery } from './dto/list-shops.query.js';
 import type { ShopAddressDto } from './dto/shop-address.dto.js';
 import type { UpdateShopDto } from './dto/update-shop.dto.js';
+import { coded } from '../../common/http-error.js';
 
 // Rejected shops go back to pending when the owner edits them, not through admin.
 const ADMIN_TRANSITIONS: Record<ShopStatus, ShopStatus[]> = {
@@ -267,7 +268,10 @@ export class ShopsService {
     if (!shop) throw new NotFoundException('Shop not found');
     if (!ADMIN_TRANSITIONS[shop.status].includes(status)) {
       throw new ConflictException(
-        `Cannot change shop from ${shop.status} to ${status}`,
+        coded(
+          'shop_status_change',
+          `Cannot change shop from ${shop.status} to ${status}`,
+        ),
       );
     }
     await this.prisma.$transaction(async (tx) => {
