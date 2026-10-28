@@ -14,10 +14,9 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { emit } from '../notifications/outbox.service.js';
 import { OrdersService } from './orders.service.js';
 import { coded } from '../../common/http-error.js';
+import { RETURN_WINDOW_MS } from './return-window.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-// Buyers may ask for a return within 15 days of delivery.
-const RETURN_WINDOW_MS = 15 * DAY_MS;
 // Assumption: a seller who does not answer within 3 days is taken to accept the return.
 const SELLER_ANSWER_MS = 3 * DAY_MS;
 

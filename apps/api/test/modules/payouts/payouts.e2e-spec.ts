@@ -87,13 +87,24 @@ describe('Payouts and refunds (e2e)', () => {
     };
   }
 
-  async function completed(s: Awaited<ReturnType<typeof seller>>) {
+  // By default the return window has closed, so the order's money can be withdrawn.
+  async function completed(
+    s: Awaited<ReturnType<typeof seller>>,
+    returnable = false,
+  ) {
     const { buyer, order: o } = await order(s);
     await as(s).post(`/orders/${o.id}/ship`).expect(200);
     await carrier(app, o.id, 'delivered');
     await as(buyer).post(`/orders/${o.id}/receive`).expect(200);
-    return o;
+    if (!returnable) await closeReturnWindow(o.id);
+    return { ...o, buyer };
   }
+
+  const closeReturnWindow = (orderId: string) =>
+    prisma.shipment.update({
+      where: { orderId },
+      data: { deliveredAt: new Date(Date.now() - 16 * 24 * 60 * 60 * 1000) },
+    });
 
   const balance = async (s: Account) =>
     (await as(s).get('/shops/me/wallet').expect(200)).body.balance as number;
@@ -169,6 +180,37 @@ describe('Payouts and refunds (e2e)', () => {
 
     const accounts = await as(admin).get('/admin/ledger/accounts').expect(200);
     expect(accounts.body.total).toBe(0);
+  });
+
+  it('holds back what a buyer can still return', async () => {
+    const s = await seller();
+    const o = await completed(s, true);
+    const wallet = async () =>
+      (await as(s).get('/shops/me/wallet').expect(200)).body;
+    const earned = (await wallet()).balance;
+    expect(await wallet()).toMatchObject({ balance: earned, held: earned });
+    const refused = await as(s)
+      .post('/shops/me/payouts', { ...BANK, amount: 1000 })
+      .expect(409);
+    expect(refused.body).toMatchObject({
+      code: 'payout_over_available',
+      params: { available: 0 },
+    });
+
+    // An open return keeps it held even after the window closes.
+    await as(o.buyer)
+      .post(`/orders/${o.id}/return`, { reason: 'damaged' })
+      .expect(200);
+    await closeReturnWindow(o.id);
+    expect((await wallet()).held).toBe(earned);
+    await prisma.returnRequest.update({
+      where: { orderId: o.id },
+      data: { status: 'rejected' },
+    });
+    expect((await wallet()).held).toBe(0);
+    await as(s)
+      .post('/shops/me/payouts', { ...BANK, amount: earned })
+      .expect(201);
   });
 
   it('reports what the shop earned and sold', async () => {

@@ -1267,8 +1267,10 @@ async function main() {
         where: { account: { shopId: seller.shopId } },
         _sum: { amount: true },
       });
+      const held = await ledger.heldBalance(prisma, seller.shopId);
       const amount =
-        Math.floor((-(balance._sum.amount ?? 0) * 0.9) / 10_000) * 10_000;
+        Math.floor(((-(balance._sum.amount ?? 0) - held) * 0.9) / 10_000) *
+        10_000;
       if (amount < 100_000) continue;
       const payout = await payouts.request(
         seller.ownerId,

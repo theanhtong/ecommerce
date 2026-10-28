@@ -153,6 +153,7 @@ const vi = {
     voucher_unavailable: 'Voucher {{voucher}} không khả dụng',
     voucher_used: 'Bạn đã dùng voucher {{voucher}}',
     voucher_used_up: 'Voucher {{voucher}} đã hết lượt',
+    payout_over_available: 'Chỉ rút được tối đa {{available, money}} lúc này',
     voucher_wrong_shop: 'Voucher {{voucher}} không thuộc cửa hàng trong đơn',
   },
 };

@@ -698,6 +698,7 @@ function ShopWalletDialog({
 }) {
   const wallet = useCursorPage<{
     balance: number;
+    held: number;
     items: WalletLine[];
     nextCursor: string | null;
   }>(['ledger-shop-wallet', shop.id], `/admin/ledger/shops/${shop.id}/wallet`);
@@ -714,11 +715,20 @@ function ShopWalletDialog({
           <ErrorMessage error={wallet.error} />
         ) : (
           <>
-            <p className="text-sm">
-              Số dư{' '}
-              <span className="font-medium tabular-nums">
-                {money(wallet.data.balance)}
-              </span>
+            <p className="flex gap-6 text-sm">
+              {(
+                [
+                  ['Số dư', wallet.data.balance],
+                  ['Đang giữ', wallet.data.held],
+                ] as const
+              ).map(([label, value]) => (
+                <span key={label}>
+                  {label}{' '}
+                  <span className="font-medium tabular-nums">
+                    {money(value)}
+                  </span>
+                </span>
+              ))}
             </p>
             <Table>
               <TableHeader>

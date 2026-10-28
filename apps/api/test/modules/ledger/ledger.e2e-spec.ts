@@ -110,6 +110,7 @@ describe('Ledger (e2e)', () => {
     ).toBe(1);
     await as(s).get('/shops/me/wallet').expect(200, {
       balance: 0,
+      held: 0,
       items: [],
       nextCursor: null,
     });

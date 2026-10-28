@@ -12,6 +12,7 @@ import {
 } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { toCsv } from '../catalog/import/csv.js';
+import { RETURN_WINDOW_MS } from '../orders/return-window.js';
 
 interface Posting {
   idempotencyKey: string;
@@ -385,6 +386,27 @@ export class LedgerService {
     return -(sum._sum.amount ?? 0);
   }
 
+  // What completed orders paid into the wallet while the buyer can still return them: held back from
+  // payouts until the return window closes, so a return never takes back money already paid out.
+  async heldBalance(
+    db: Prisma.TransactionClient,
+    shopId: string,
+    now = new Date(),
+  ) {
+    const [row] = await db.$queryRaw<{ held: number }[]>`
+      SELECT COALESCE(-SUM(l.amount), 0)::int AS held
+      FROM ledger_lines l
+      JOIN ledger_accounts a ON a.id = l.account_id AND a.shop_id = ${shopId}::uuid
+      JOIN ledger_entries e ON e.id = l.entry_id AND e.ref_type = 'order'
+      JOIN orders o ON o.id = e.ref_id AND o.status = 'completed'
+      JOIN shipments s ON s.order_id = o.id
+      WHERE s.delivered_at > ${new Date(now.getTime() - RETURN_WINDOW_MS)}
+        OR EXISTS (
+          SELECT 1 FROM return_requests r
+          WHERE r.order_id = o.id AND r.status IN ('requested', 'disputed'))`;
+    return row.held;
+  }
+
   async payout(
     tx: Prisma.TransactionClient,
     payout: { id: string; shopId: string; amount: number },
@@ -397,7 +419,12 @@ export class LedgerService {
   }
 
   async wallet(ownerId: string, query: CursorQuery) {
-    return this.walletPage(await this.shopAccount(ownerId), query);
+    const shop = await this.prisma.shop.findUnique({
+      where: { ownerId },
+      include: { ledgerAccount: true },
+    });
+    if (!shop) throw new NotFoundException('You do not have a shop');
+    return this.walletPage(shop.ledgerAccount!.id, shop.id, query);
   }
 
   async shopWallet(shopId: string, query: CursorQuery) {
@@ -405,15 +432,20 @@ export class LedgerService {
       where: { shopId },
     });
     if (!account) throw new NotFoundException('Shop not found');
-    return this.walletPage(account.id, query);
+    return this.walletPage(account.id, shopId, query);
   }
 
-  private async walletPage(account: string, query: CursorQuery) {
-    const [sum, lines] = await Promise.all([
+  private async walletPage(
+    account: string,
+    shopId: string,
+    query: CursorQuery,
+  ) {
+    const [sum, held, lines] = await Promise.all([
       this.prisma.ledgerLine.aggregate({
         where: { accountId: account },
         _sum: { amount: true },
       }),
+      this.heldBalance(this.prisma, shopId),
       this.prisma.ledgerLine.findMany({
         where: { accountId: account },
         include: { entry: true },
@@ -423,18 +455,10 @@ export class LedgerService {
     const page = toPage(lines, query.limit);
     return {
       balance: -(sum._sum.amount ?? 0),
+      held,
       ...page,
       items: await this.walletView(page.items),
     };
-  }
-
-  private async shopAccount(ownerId: string) {
-    const shop = await this.prisma.shop.findUnique({
-      where: { ownerId },
-      include: { ledgerAccount: true },
-    });
-    if (!shop) throw new NotFoundException('You do not have a shop');
-    return shop.ledgerAccount!.id;
   }
 
   private async walletView(
