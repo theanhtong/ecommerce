@@ -23,6 +23,7 @@ function AuthCard({
   pending,
   onSubmit,
   footer,
+  children,
 }: {
   title: string;
   fields: { name: string; label: string; type?: string }[];
@@ -30,6 +31,7 @@ function AuthCard({
   pending: boolean;
   onSubmit: (values: Record<string, string>) => void;
   footer: React.ReactNode;
+  children?: React.ReactNode;
 }) {
   const [values, setValues] = useState<Record<string, string>>({});
   const handle = (e: SubmitEvent) => {
@@ -37,35 +39,38 @@ function AuthCard({
     onSubmit(values);
   };
   return (
-    <Card className="mx-auto mt-10 max-w-sm">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <form className="contents" onSubmit={handle}>
-        <CardContent className="grid gap-4">
-          {fields.map((f) => (
-            <div className="grid gap-2" key={f.name}>
-              <Label htmlFor={f.name}>{f.label}</Label>
-              <Input
-                id={f.name}
-                type={f.type ?? 'text'}
-                required
-                value={values[f.name] ?? ''}
-                onChange={(e) =>
-                  setValues({ ...values, [f.name]: e.target.value })
-                }
-              />
-            </div>
-          ))}
-        </CardContent>
-        <CardFooter className="flex flex-col gap-3">
-          <Button type="submit" className="w-full" disabled={pending}>
-            {submit}
-          </Button>
-          {footer}
-        </CardFooter>
-      </form>
-    </Card>
+    <>
+      <Card className="mx-auto mt-10 max-w-sm">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+        </CardHeader>
+        <form className="contents" onSubmit={handle}>
+          <CardContent className="grid gap-4">
+            {fields.map((f) => (
+              <div className="grid gap-2" key={f.name}>
+                <Label htmlFor={f.name}>{f.label}</Label>
+                <Input
+                  id={f.name}
+                  type={f.type ?? 'text'}
+                  required
+                  value={values[f.name] ?? ''}
+                  onChange={(e) =>
+                    setValues({ ...values, [f.name]: e.target.value })
+                  }
+                />
+              </div>
+            ))}
+          </CardContent>
+          <CardFooter className="flex flex-col gap-3">
+            <Button type="submit" className="w-full" disabled={pending}>
+              {submit}
+            </Button>
+            {footer}
+          </CardFooter>
+        </form>
+      </Card>
+      {children}
+    </>
   );
 }
 
@@ -115,30 +120,45 @@ export function LoginPage() {
           <Button asChild variant="outline" className="w-full">
             <Link to="/register">Tạo tài khoản</Link>
           </Button>
-          {__DEMO_ACCOUNTS__.length > 0 && (
-            <div className="grid w-full gap-2 pt-2">
-              <p className="text-center text-xs text-muted-foreground">
-                Tài khoản demo
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {__DEMO_ACCOUNTS__.map(({ label, email, password }) => (
-                  <Button
-                    key={email}
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    disabled={mutation.isPending}
-                    onClick={() => mutation.mutate({ email, password })}
-                  >
-                    {label}
-                  </Button>
-                ))}
-              </div>
-            </div>
-          )}
         </>
       }
-    />
+    >
+      {__DEMO_ACCOUNTS__.length > 0 && (
+        <Card className="mx-auto mt-6 max-w-3xl">
+          <CardHeader>
+            <CardTitle className="text-base">Tài khoản demo</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-6 sm:grid-cols-3">
+            {(
+              [
+                ['buyer', 'Người mua'],
+                ['seller', 'Cửa hàng'],
+                ['admin', 'Quản trị'],
+              ] as const
+            ).map(([group, title]) => (
+              <div key={group} className="grid content-start gap-2">
+                <p className="text-sm text-muted-foreground">{title}</p>
+                {__DEMO_ACCOUNTS__
+                  .filter((a) => a.group === group)
+                  .map(({ label, email, password }) => (
+                    <Button
+                      key={email}
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="justify-start"
+                      disabled={mutation.isPending}
+                      onClick={() => mutation.mutate({ email, password })}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+    </AuthCard>
   );
 }
 

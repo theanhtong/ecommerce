@@ -111,8 +111,8 @@ export const PAYOUT_STATUS = {
 } as const;
 
 export const VOUCHER_TYPE = {
-  shop_voucher: 'Voucher của shop',
-  platform_voucher: 'Voucher sàn',
+  shop_voucher: 'Mã giảm giá của shop',
+  platform_voucher: 'Mã giảm giá của sàn',
   shipping_voucher: 'Mã miễn phí vận chuyển',
 } as const;
 

@@ -63,6 +63,7 @@ import { dateTime, money, SHOP_STATUS } from '@/lib/format';
 import type { ShopStatus } from '@/lib/types';
 import { useCursorPage } from '@/lib/queries';
 import { cn } from '@/lib/utils';
+import { useParam } from '@/lib/use-param';
 
 type AccountType =
   | 'receivable'
@@ -110,27 +111,6 @@ const count = (n: number) => String(n);
 const rate = (part: number, whole: number) =>
   whole ? Math.round((part * 1000) / whole) / 10 : null;
 const percent = (value: number | null) => (value === null ? '–' : `${value}%`);
-
-// The view lives in the URL, so a reload, a shared link or Back shows the same thing.
-function useParam<T extends string>(
-  name: string,
-  fallback: T,
-  allowed?: readonly T[],
-) {
-  const [params, setParams] = useSearchParams();
-  const raw = params.get(name) as T | null;
-  const value = raw && (!allowed || allowed.includes(raw)) ? raw : fallback;
-  // Any other filter change sends the list back to its first page.
-  const set = (next: T) =>
-    setParams((current) => {
-      const p = new URLSearchParams(current);
-      if (next === fallback) p.delete(name);
-      else p.set(name, next);
-      if (name !== 'page') p.delete('page');
-      return p;
-    });
-  return [value, set] as const;
-}
 
 const keys = <T extends object>(o: T) => Object.keys(o) as (keyof T & string)[];
 
@@ -236,7 +216,7 @@ function Overview() {
             />
             <IconStat
               icon={TicketPercent}
-              label="Voucher sàn"
+              label="Mã giảm giá của sàn"
               value={money(t.platformVouchers)}
             />
             <IconStat
@@ -586,7 +566,9 @@ function ShopsBoard() {
                   <TableHead className="text-right">Đơn</TableHead>
                   <TableHead className="text-right">Phí sàn</TableHead>
                   <TableHead className="text-right">Phí Freeship</TableHead>
-                  <TableHead className="text-right">Voucher shop</TableHead>
+                  <TableHead className="text-right">
+                    Mã giảm giá của shop
+                  </TableHead>
                   <TableHead className="text-right">Tỉ lệ hủy</TableHead>
                   <TableHead className="text-right">Tỉ lệ trả hàng</TableHead>
                   <TableHead className="text-right">Số dư ví</TableHead>

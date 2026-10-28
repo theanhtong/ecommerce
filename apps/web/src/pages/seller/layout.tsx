@@ -144,7 +144,7 @@ const TABS = [
   ['/seller/items', 'Sản phẩm', Package],
   ['/seller/orders', 'Đơn hàng', ReceiptText],
   ['/seller/vouchers', 'Khuyến mãi', TicketPercent],
-  ['/seller/flash-sales', 'Flash Sale', Zap],
+  ['/seller/flash-sales', 'Giá sốc', Zap],
   ['/seller/reviews', 'Đánh giá', Star],
 ] as const;
 

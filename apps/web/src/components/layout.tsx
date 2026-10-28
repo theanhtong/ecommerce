@@ -2,6 +2,7 @@ import {
   Link,
   NavLink,
   Outlet,
+  ScrollRestoration,
   useNavigate,
   useSearchParams,
 } from 'react-router';
@@ -83,6 +84,8 @@ export function Layout() {
 
   return (
     <div className="app-bg min-h-svh">
+      {/* New pages open at the top; Back returns to where the reader was. */}
+      <ScrollRestoration />
       <header className="sticky top-0 z-10 border-t-2 border-b border-t-primary bg-card">
         <div className="mx-auto flex h-14 max-w-screen-2xl items-center gap-2 px-4">
           <Link
