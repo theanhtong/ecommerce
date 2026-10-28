@@ -148,8 +148,6 @@ export function PeriodPicker({
   );
 }
 
-export const SELECTED = 'border-primary text-primary hover:text-primary';
-
 // A bucket is HH24, YYYY-MM-DD or YYYY-MM for a day, month or year.
 export const periodLabel = (kind: PeriodKind, bucket: string, long = false) => {
   if (kind === 'day') return `${bucket}:00`;
@@ -159,32 +157,6 @@ export const periodLabel = (kind: PeriodKind, bucket: string, long = false) => {
 };
 
 const compact = new Intl.NumberFormat('vi-VN', { notation: 'compact' });
-
-export function Filter<S extends string>({
-  labels,
-  value,
-  onChange,
-}: {
-  labels: Record<S, string>;
-  value: S;
-  onChange: (value: S) => void;
-}) {
-  return (
-    <div className="mb-4 flex gap-2">
-      {(Object.keys(labels) as S[]).map((s) => (
-        <Button
-          key={s}
-          size="sm"
-          variant="outline"
-          className={value === s ? SELECTED : undefined}
-          onClick={() => onChange(s)}
-        >
-          {labels[s]}
-        </Button>
-      ))}
-    </div>
-  );
-}
 
 export function StatCard({ label, value }: { label: string; value: string }) {
   return (

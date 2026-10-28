@@ -10,7 +10,7 @@ import {
   Undo2,
   Users,
 } from 'lucide-react';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { toast } from 'sonner';
 import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router';
 import { useAuth } from '@/lib/auth-context';
@@ -43,7 +43,7 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { SELECTED } from '@/components/report';
+import { SELECTED } from '@/components/filter';
 import {
   Table,
   TableBody,
@@ -128,7 +128,9 @@ export function AdminLayout() {
         )}
       </nav>
       <div className="min-w-0">
-        <Outlet />
+        <Suspense fallback={<Loading />}>
+          <Outlet />
+        </Suspense>
       </div>
     </div>
   );

@@ -24,7 +24,6 @@ import {
   Pager,
 } from '@/components/common';
 import {
-  Filter,
   IconStat,
   currentPeriod,
   type Period,
@@ -34,6 +33,7 @@ import {
   SeriesChart,
   StatCard,
 } from '@/components/report';
+import { Filter } from '@/components/filter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {

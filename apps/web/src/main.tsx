@@ -4,7 +4,7 @@ import {
   QueryClient,
   QueryClientProvider,
 } from '@tanstack/react-query';
-import { StrictMode } from 'react';
+import { lazy, StrictMode, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router';
 import { toast } from 'sonner';
@@ -17,14 +17,6 @@ import { Layout } from '@/components/layout';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/lib/auth';
 import { AccountLayout, AccountPage, AddressesPage } from '@/pages/account';
-import {
-  AdminLayout,
-  AdminShopPage,
-  AdminShopsPage,
-  AdminUserPage,
-  AdminUsersPage,
-} from '@/pages/admin';
-import { AdminRefundsPage, AdminReturnsPage } from '@/pages/admin-money';
 import { LoginPage, RegisterPage } from '@/pages/auth';
 import {
   BuyerOrderPage,
@@ -32,20 +24,8 @@ import {
   CheckoutPage,
   OrdersPage,
 } from '@/pages/buyer';
-import { AdminLedgerPage } from '@/pages/admin-ledger';
 import { PaymentPage } from '@/pages/payment';
-import { AdminVouchersPage, SellerVouchersPage } from '@/pages/vouchers';
 import { ShopReviews } from '@/components/reviews';
-import { SellerFlashSalesPage } from '@/pages/flash-sales';
-import { SellerItemPage, SellerItemsPage } from '@/pages/seller/items';
-import {
-  AccountShopPage,
-  SellerDashboardPage,
-  SellerLayout,
-  SellerShopPage,
-  SellerWalletPage,
-} from '@/pages/seller/layout';
-import { SellerOrderPage, SellerOrdersPage } from '@/pages/seller/other';
 import {
   FlashSalePage,
   HomePage,
@@ -54,6 +34,78 @@ import {
   ShopPage,
 } from '@/pages/shop';
 import './index.css';
+
+// Admin and seller pages, and the chart library they use, load only when first opened.
+function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
+  return lazy(() =>
+    load().then((m) => ({ default: m[name] as ComponentType })),
+  );
+}
+const AdminLayout = page(() => import('@/pages/admin'), 'AdminLayout');
+const AdminShopPage = page(() => import('@/pages/admin'), 'AdminShopPage');
+const AdminShopsPage = page(() => import('@/pages/admin'), 'AdminShopsPage');
+const AdminUserPage = page(() => import('@/pages/admin'), 'AdminUserPage');
+const AdminUsersPage = page(() => import('@/pages/admin'), 'AdminUsersPage');
+const AdminRefundsPage = page(
+  () => import('@/pages/admin-money'),
+  'AdminRefundsPage',
+);
+const AdminReturnsPage = page(
+  () => import('@/pages/admin-money'),
+  'AdminReturnsPage',
+);
+const AdminLedgerPage = page(
+  () => import('@/pages/admin-ledger'),
+  'AdminLedgerPage',
+);
+const AdminVouchersPage = page(
+  () => import('@/pages/vouchers'),
+  'AdminVouchersPage',
+);
+const SellerVouchersPage = page(
+  () => import('@/pages/vouchers'),
+  'SellerVouchersPage',
+);
+const SellerFlashSalesPage = page(
+  () => import('@/pages/flash-sales'),
+  'SellerFlashSalesPage',
+);
+const SellerItemPage = page(
+  () => import('@/pages/seller/items'),
+  'SellerItemPage',
+);
+const SellerItemsPage = page(
+  () => import('@/pages/seller/items'),
+  'SellerItemsPage',
+);
+const AccountShopPage = page(
+  () => import('@/pages/seller/layout'),
+  'AccountShopPage',
+);
+const SellerDashboardPage = page(
+  () => import('@/pages/seller/layout'),
+  'SellerDashboardPage',
+);
+const SellerLayout = page(
+  () => import('@/pages/seller/layout'),
+  'SellerLayout',
+);
+const SellerShopPage = page(
+  () => import('@/pages/seller/layout'),
+  'SellerShopPage',
+);
+const SellerWalletPage = page(
+  () => import('@/pages/seller/layout'),
+  'SellerWalletPage',
+);
+const SellerOrderPage = page(
+  () => import('@/pages/seller/other'),
+  'SellerOrderPage',
+);
+const SellerOrdersPage = page(
+  () => import('@/pages/seller/other'),
+  'SellerOrdersPage',
+);
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
