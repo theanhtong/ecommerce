@@ -57,6 +57,7 @@ import {
   dateTime,
   money,
   PAYMENT_METHOD,
+  PAYMENT_STATE,
   priceRange,
   SHOP_STATUS,
 } from '@/lib/format';
@@ -846,7 +847,12 @@ function AdminOrdersTable({
                   <TableCell className="text-right tabular-nums">
                     {money(o.total)}
                   </TableCell>
-                  <TableCell>{PAYMENT_METHOD[o.paymentMethod]}</TableCell>
+                  <TableCell>
+                    <p>{PAYMENT_METHOD[o.paymentMethod]}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {PAYMENT_STATE[o.paymentState]}
+                    </p>
+                  </TableCell>
                   <TableCell>
                     <OrderStatusBadge status={o.status} />
                   </TableCell>
