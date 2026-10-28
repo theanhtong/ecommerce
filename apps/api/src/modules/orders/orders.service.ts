@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -120,6 +121,8 @@ const shipmentView = (s: {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
@@ -295,8 +298,7 @@ export class OrdersService {
       status: ShipmentStatus.awaiting_pickup,
       createdAt: { lte: new Date(now.getTime() - times.pickup) },
     })) {
-      await this.advanceShipment(s.id, ShipmentStatus.picked_up, now);
-      moved++;
+      moved += await this.report(s.id, ShipmentStatus.picked_up, now);
     }
     for (const s of await due({
       status: ShipmentStatus.picked_up,
@@ -308,10 +310,22 @@ export class OrdersService {
           ? times.province
           : times.country;
       if (s.pickedUpAt!.getTime() + transit > now.getTime()) continue;
-      await this.advanceShipment(s.id, ShipmentStatus.delivered, now);
-      moved++;
+      moved += await this.report(s.id, ShipmentStatus.delivered, now);
     }
     return moved;
+  }
+
+  // One shipment that cannot move must not stop the rest of the sweep.
+  private async report(id: string, status: ShipmentStep, at: Date) {
+    try {
+      await this.advanceShipment(id, status, at);
+      return 1;
+    } catch (error) {
+      this.logger.warn(
+        `Shipment ${id} not moved to ${status}: ${(error as Error).message}`,
+      );
+      return 0;
+    }
   }
 
   // Repeats are no-ops, so a carrier reporting twice is safe; skipped steps are refused.
