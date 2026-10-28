@@ -53,8 +53,9 @@ const OPEN_RETURN = { in: [ReturnStatus.requested, ReturnStatus.disputed] };
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Assumption: a seller has 3 days from when an order becomes payable to arrange shipment.
 const SHIP_DEADLINE_MS = 3 * DAY_MS;
-// A delivered order completes on its own 3 days later if the buyer does not confirm it first.
-const AUTO_COMPLETE_AFTER_MS = 3 * DAY_MS;
+// Assumption: many buyers never confirm receipt, so a delivered order completes on its own 24 hours
+// later; an open return holds it, and the buyer can still ask for a return within the return window.
+const AUTO_COMPLETE_AFTER_MS = DAY_MS;
 const SWEEP_BATCH = 100;
 
 type SweptOrder = Prisma.OrderGetPayload<{

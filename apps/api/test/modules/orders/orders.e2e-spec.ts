@@ -14,6 +14,7 @@ import {
 type Account = Awaited<ReturnType<typeof signUp>>;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
 const HANOI_WARD = '00004';
 const HCM_WARD = '26740';
 
@@ -575,7 +576,12 @@ describe('Orders (e2e)', () => {
         (await as(b).get(`/orders/${order.id}`).expect(200)).body.status,
       ).toBe('delivered');
 
-      await orders.completeDelivered(new Date(Date.now() + 4 * DAY_MS));
+      await orders.completeDelivered(new Date(Date.now() + 23 * HOUR_MS));
+      expect(
+        (await as(b).get(`/orders/${order.id}`).expect(200)).body.status,
+      ).toBe('delivered');
+
+      await orders.completeDelivered(new Date(Date.now() + 25 * HOUR_MS));
       expect(
         (await as(b).get(`/orders/${order.id}`).expect(200)).body.status,
       ).toBe('completed');
