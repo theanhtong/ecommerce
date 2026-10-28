@@ -63,6 +63,15 @@ export class ReviewsController {
     return this.reviews.listForItem(id, query);
   }
 
+  @Get('items/:id/reviews/mine')
+  @MemberOnly()
+  mineForItem(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.reviews.mineForItem(user.sub, id);
+  }
+
   @Get('shops/me/reviews')
   @MemberOnly()
   listForShop(

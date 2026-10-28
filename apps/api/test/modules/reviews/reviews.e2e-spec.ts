@@ -116,12 +116,21 @@ describe('Reviews (e2e)', () => {
       as(b).post(`/order-items/${lineId}/review`, body);
 
     await review({ rating: 5 }).expect(409);
+    const mine = () => as(b).get(`/items/${itemId}/reviews/mine`);
+    await mine().expect(200, []);
     await as(b).post(`/orders/${orderId}/receive`).expect(200);
+    expect((await mine().expect(200)).body).toMatchObject([
+      { id: lineId, orderId, review: null },
+    ]);
+    await as(stranger).get(`/items/${itemId}/reviews/mine`).expect(200, []);
     await review({ rating: 6 }).expect(400);
     await as(stranger)
       .post(`/order-items/${lineId}/review`, { rating: 5 })
       .expect(404);
     const created = await review({ rating: 4, comment: 'Đẹp' }).expect(201);
+    expect((await mine().expect(200)).body).toMatchObject([
+      { id: lineId, review: { rating: 4, comment: 'Đẹp' } },
+    ]);
     await review({ rating: 5 }).expect(409);
 
     const second = await delivered(s, modelId, b);
@@ -178,7 +187,7 @@ describe('Reviews (e2e)', () => {
   });
 
   it('closes reviews 30 days after the order completes', async () => {
-    const { s, modelId } = await shopWithItem();
+    const { s, itemId, modelId } = await shopWithItem();
     const { b, orderId, lineId } = await delivered(s, modelId);
     await as(b).post(`/orders/${orderId}/receive`).expect(200);
     await prisma.orderStatusHistory.updateMany({
@@ -188,5 +197,6 @@ describe('Reviews (e2e)', () => {
     await as(b)
       .post(`/order-items/${lineId}/review`, { rating: 5 })
       .expect(409);
+    await as(b).get(`/items/${itemId}/reviews/mine`).expect(200, []);
   });
 });

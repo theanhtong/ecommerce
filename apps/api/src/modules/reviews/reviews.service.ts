@@ -98,6 +98,41 @@ export class ReviewsService {
     return reviewView(review);
   }
 
+  // The buyer's lines of this item: reviewed ones, and ones that can still be reviewed.
+  async mineForItem(buyerId: string, itemId: string, now = new Date()) {
+    const lines = await this.prisma.orderItem.findMany({
+      where: {
+        model: { itemId },
+        order: { buyerId },
+        OR: [
+          { review: { isNot: null } },
+          {
+            order: {
+              status: OrderStatus.completed,
+              history: {
+                some: {
+                  toStatus: OrderStatus.completed,
+                  createdAt: {
+                    gte: new Date(now.getTime() - REVIEW_WINDOW_MS),
+                  },
+                },
+              },
+            },
+          },
+        ],
+      },
+      include: { review: true },
+      orderBy: { id: 'desc' },
+    });
+    return lines.map((l) => ({
+      id: l.id,
+      orderId: l.orderId,
+      itemName: l.itemName,
+      modelName: l.modelName,
+      review: l.review && reviewView(l.review),
+    }));
+  }
+
   async edit(
     buyerId: string,
     id: string,
