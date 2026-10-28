@@ -10,7 +10,6 @@ import {
   PackageCheck,
   Store,
   TicketPercent,
-  Truck,
 } from 'lucide-react';
 import { Fragment, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
@@ -847,17 +846,6 @@ function ReturnDialog({
   );
 }
 
-// The seller reports these steps while no carrier integration does.
-export const SHIPMENT_STEP: Partial<
-  Record<
-    NonNullable<Order['shipment']>['status'],
-    { status: 'picked_up' | 'delivered'; label: string }
-  >
-> = {
-  awaiting_pickup: { status: 'picked_up', label: 'Đã bàn giao vận chuyển' },
-  picked_up: { status: 'delivered', label: 'Đã giao hàng' },
-};
-
 // What the shop will be paid for this order, mirroring the settlement: commission on the items after
 // the shop's own voucher, and the Freeship fee fixed at checkout.
 function PrepareOrderDialog({
@@ -964,7 +952,7 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
       body,
     }: {
       id: string;
-      path: 'ship' | 'receive' | 'shipment';
+      path: 'ship' | 'receive';
       body?: object;
     }) => api<Order>(`/orders/${id}/${path}`, { method: 'POST', body }),
     onSuccess: (data) => {
@@ -1010,10 +998,6 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
               </TableHeader>
               <TableBody>
                 {page.items.map((o) => {
-                  const step =
-                    party === 'seller' && o.shipment
-                      ? SHIPMENT_STEP[o.shipment.status]
-                      : undefined;
                   const cancellable =
                     party === 'buyer' &&
                     (o.status === 'unpaid' ||
@@ -1085,22 +1069,6 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
                                 Chuẩn bị hàng
                               </Button>
                             )}
-                          {step && (
-                            <Button
-                              size="sm"
-                              disabled={act.isPending}
-                              onClick={() =>
-                                act.mutate({
-                                  id: o.id,
-                                  path: 'shipment',
-                                  body: { status: step.status },
-                                })
-                              }
-                            >
-                              <Truck />
-                              {step.label}
-                            </Button>
-                          )}
                           {party === 'buyer' &&
                             o.status === 'delivered' &&
                             !openReturn(o) && (

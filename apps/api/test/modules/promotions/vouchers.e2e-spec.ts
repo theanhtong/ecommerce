@@ -8,6 +8,7 @@ import {
   createTestApp,
   SHOP_ADDRESS,
   signUp,
+  carrier,
 } from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
@@ -365,9 +366,7 @@ describe('Vouchers (e2e)', () => {
     );
 
     await as(s1).post(`/orders/${order.id}/ship`).expect(200);
-    for (const status of ['picked_up', 'delivered']) {
-      await as(s1).post(`/orders/${order.id}/shipment`, { status }).expect(200);
-    }
+    await carrier(app, order.id, 'delivered');
     await as(b).post(`/orders/${order.id}/receive`).expect(200);
     const entry = await prisma.ledgerEntry.findUniqueOrThrow({
       where: { idempotencyKey: `order:${order.id}:settlement` },

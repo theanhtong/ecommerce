@@ -9,6 +9,7 @@ import {
   createTestApp,
   SHOP_ADDRESS,
   signUp,
+  carrier,
 } from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
@@ -123,9 +124,6 @@ describe('Orders (e2e)', () => {
       where: { modelId },
       select: { onHand: true, reserved: true },
     });
-
-  const shipment = (s: Account, orderId: string, status: string) =>
-    as(s).post(`/orders/${orderId}/shipment`, { status });
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -389,8 +387,8 @@ describe('Orders (e2e)', () => {
         .expect(409);
       await as(s).post(`/orders/${order.id}/cancel`).expect(409);
 
-      await shipment(s, order.id, 'delivered').expect(409);
-      const picked = await shipment(s, order.id, 'picked_up').expect(200);
+      await carrier(app, order.id, 'picked_up');
+      const picked = await as(b).get(`/orders/${order.id}`).expect(200);
       expect(picked.body).toMatchObject({
         status: 'shipping',
         shipment: { status: 'picked_up', pickedUpAt: expect.any(String) },
@@ -398,7 +396,7 @@ describe('Orders (e2e)', () => {
       expect(await stock(modelId)).toEqual({ onHand: 3, reserved: 0 });
       await as(b).post(`/orders/${order.id}/receive`).expect(409);
 
-      await shipment(s, order.id, 'delivered').expect(200);
+      await carrier(app, order.id, 'delivered');
       await as(s).post(`/orders/${order.id}/receive`).expect(403);
       const done = await as(b).post(`/orders/${order.id}/receive`).expect(200);
       expect(done.body).toMatchObject({
@@ -422,27 +420,48 @@ describe('Orders (e2e)', () => {
       ]);
     });
 
-    it('lets the seller report pickup and delivery in order', async () => {
+    it('has the simulated carrier pick up and deliver on schedule', async () => {
       const { s, b, modelId, order } = await placed();
-      const update = (account: Account, status: string) =>
-        as(account).post(`/orders/${order.id}/shipment`, { status });
+      const orders = app.get(OrdersService);
+      const view = async () =>
+        (await as(b).get(`/orders/${order.id}`).expect(200)).body;
+      const at = (ms: number) => new Date(Date.now() + ms);
 
-      await update(s, 'picked_up').expect(409);
+      await orders.advanceShipments(at(10 * DAY_MS), order.id);
+      expect((await view()).status).toBe('to_ship');
       await as(s).post(`/orders/${order.id}/ship`).expect(200);
-      await update(b, 'picked_up').expect(403);
-      await update(s, 'shipped').expect(400);
-      await update(s, 'delivered').expect(409);
 
-      const picked = await update(s, 'picked_up').expect(200);
-      expect(picked.body).toMatchObject({
+      // Picked up 4 hours after the seller prepares the parcel.
+      await orders.advanceShipments(at(3 * HOUR_MS), order.id);
+      expect((await view()).shipment.status).toBe('awaiting_pickup');
+      await orders.advanceShipments(at(5 * HOUR_MS), order.id);
+      expect(await view()).toMatchObject({
         status: 'shipping',
         shipment: { status: 'picked_up', pickedUpAt: expect.any(String) },
       });
       expect(await stock(modelId)).toEqual({ onHand: 3, reserved: 0 });
-      await update(s, 'picked_up').expect(200);
 
-      const delivered = await update(s, 'delivered').expect(200);
-      expect(delivered.body).toMatchObject({
+      // Delivered 1 day after pickup within a province, 3 days across provinces.
+      const route = await prisma.order.findUniqueOrThrow({
+        where: { id: order.id },
+        select: { pickupAddress: true, shippingAddress: true },
+      });
+      const province = (a: unknown) =>
+        (a as { province: { code: string } }).province.code;
+      const transit =
+        province(route.pickupAddress) === province(route.shippingAddress)
+          ? DAY_MS
+          : 3 * DAY_MS;
+      await orders.advanceShipments(
+        at(5 * HOUR_MS + transit - HOUR_MS),
+        order.id,
+      );
+      expect((await view()).status).toBe('shipping');
+      await orders.advanceShipments(
+        at(5 * HOUR_MS + transit + HOUR_MS),
+        order.id,
+      );
+      expect(await view()).toMatchObject({
         status: 'delivered',
         shipment: { status: 'delivered', deliveredAt: expect.any(String) },
       });
@@ -452,18 +471,22 @@ describe('Orders (e2e)', () => {
           toStatus: { in: ['shipping', 'delivered'] },
         },
       });
-      expect(history.map((h) => h.actorId)).toEqual([s.id, s.id]);
+      expect(history.map((h) => h.actorId)).toEqual([null, null]);
     });
 
     it('applies a repeated shipment update once', async () => {
       const { s, modelId, order } = await placed();
       await as(s).post(`/orders/${order.id}/ship`).expect(200);
 
-      const results = await Promise.all(
-        Array.from({ length: 5 }, () => shipment(s, order.id, 'picked_up')),
+      // The carrier may report the same pickup more than once, even at the same time.
+      const later = new Date(Date.now() + 5 * HOUR_MS);
+      const orders = app.get(OrdersService);
+      await Promise.all(
+        Array.from({ length: 5 }, () =>
+          orders.advanceShipments(later, order.id),
+        ),
       );
-      expect(results.map((r) => r.status)).toEqual([200, 200, 200, 200, 200]);
-      await shipment(s, order.id, 'picked_up').expect(200);
+      await orders.advanceShipments(later, order.id);
       expect(await stock(modelId)).toEqual({ onHand: 3, reserved: 0 });
       expect(
         await prisma.inventoryMovement.count({
@@ -568,8 +591,8 @@ describe('Orders (e2e)', () => {
       const orders = app.get(OrdersService);
       const { s, b, order } = await placed();
       await as(s).post(`/orders/${order.id}/ship`).expect(200);
-      await shipment(s, order.id, 'picked_up').expect(200);
-      await shipment(s, order.id, 'delivered').expect(200);
+      await carrier(app, order.id, 'picked_up');
+      await carrier(app, order.id, 'delivered');
 
       await orders.completeDelivered();
       expect(
@@ -608,7 +631,7 @@ describe('Orders (e2e)', () => {
       expect(after.body.items).toEqual(order.items);
       expect(after.body.total).toBe(order.total);
       await as(s).post(`/orders/${order.id}/ship`).expect(200);
-      await shipment(s, order.id, 'picked_up').expect(200);
+      await carrier(app, order.id, 'picked_up');
       expect(await stock(modelId)).toEqual({ onHand: 3, reserved: 0 });
     });
 

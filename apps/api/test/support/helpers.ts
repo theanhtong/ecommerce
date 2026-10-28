@@ -6,6 +6,7 @@ import request from 'supertest';
 import { App } from 'supertest/types.js';
 import { AppModule } from '../../src/app.module.js';
 import { configureApp } from '../../src/app.setup.js';
+import { OrdersService } from '../../src/modules/orders/orders.service.js';
 import { PrismaService } from '../../src/prisma/prisma.service.js';
 
 const noThrottleStorage = {
@@ -82,4 +83,32 @@ export async function signUp(
     token: login.body.accessToken as string,
     cookie: refreshCookie(login),
   };
+}
+
+// Plays the carrier: backdates the shipment so the simulated carrier reports `status` right now.
+export async function carrier(
+  app: INestApplication,
+  orderId: string,
+  status: 'picked_up' | 'delivered',
+) {
+  const prisma = app.get(PrismaService);
+  const orders = app.get(OrdersService);
+  const longAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+  const { status: now } = await prisma.shipment.findUniqueOrThrow({
+    where: { orderId },
+  });
+  if (now === 'awaiting_pickup') {
+    await prisma.shipment.update({
+      where: { orderId },
+      data: { createdAt: longAgo },
+    });
+    await orders.advanceShipments(new Date(), orderId);
+  }
+  if (status === 'delivered' && now !== 'delivered') {
+    await prisma.shipment.update({
+      where: { orderId },
+      data: { pickedUpAt: longAgo },
+    });
+    await orders.advanceShipments(new Date(), orderId);
+  }
 }

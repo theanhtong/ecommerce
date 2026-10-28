@@ -58,6 +58,17 @@ const SHIP_DEADLINE_MS = 3 * DAY_MS;
 // later; an open return holds it, and the buyer can still ask for a return within the return window.
 const AUTO_COMPLETE_AFTER_MS = DAY_MS;
 const SWEEP_BATCH = 100;
+// Assumption: no carrier is integrated yet, so a simulated one picks a parcel up 4 hours after the
+// seller prepares it and delivers it 1 day later within a province, 3 days across provinces.
+// CARRIER_TIME_SCALE speeds it up for demos: 60 makes an hour pass in a minute.
+const CARRIER_SCALE = Number(process.env.CARRIER_TIME_SCALE) || 1;
+const PICKUP_AFTER_MS = (4 * 60 * 60 * 1000) / CARRIER_SCALE;
+const TRANSIT_MS = {
+  province: DAY_MS / CARRIER_SCALE,
+  country: (3 * DAY_MS) / CARRIER_SCALE,
+};
+const provinceOf = (address: Prisma.JsonValue) =>
+  (address as { province: { code: string } }).province.code;
 
 type SweptOrder = Prisma.OrderGetPayload<{
   include: { items: true; checkout: { select: { paymentMethod: true } } };
@@ -264,11 +275,46 @@ export class OrdersService {
     return true;
   }
 
-  // Repeats are no-ops so a double submit is safe; skipped steps are refused.
+  // The simulated carrier: reports pickups and deliveries that are due by `now`, stamped `now`.
+  // shortcut: replace with the carrier's webhook once one is integrated; it would call advanceShipment.
+  async advanceShipments(now = new Date(), orderId?: string) {
+    let moved = 0;
+    const due = (where: Prisma.ShipmentWhereInput) =>
+      this.prisma.shipment.findMany({
+        where: { ...where, ...(orderId && { orderId }) },
+        include: {
+          order: { select: { pickupAddress: true, shippingAddress: true } },
+        },
+        orderBy: { id: 'asc' },
+      });
+    for (const s of await due({
+      status: ShipmentStatus.awaiting_pickup,
+      createdAt: { lte: new Date(now.getTime() - PICKUP_AFTER_MS) },
+    })) {
+      await this.advanceShipment(s.id, ShipmentStatus.picked_up, now);
+      moved++;
+    }
+    for (const s of await due({
+      status: ShipmentStatus.picked_up,
+      pickedUpAt: { lte: new Date(now.getTime() - TRANSIT_MS.province) },
+    })) {
+      const transit =
+        provinceOf(s.order.pickupAddress) ===
+        provinceOf(s.order.shippingAddress)
+          ? TRANSIT_MS.province
+          : TRANSIT_MS.country;
+      if (s.pickedUpAt!.getTime() + transit > now.getTime()) continue;
+      await this.advanceShipment(s.id, ShipmentStatus.delivered, now);
+      moved++;
+    }
+    return moved;
+  }
+
+  // Repeats are no-ops, so a carrier reporting twice is safe; skipped steps are refused.
   private async advanceShipment(
     shipmentId: string,
     status: ShipmentStep,
-    actorId: string | null = null,
+    at: Date,
   ) {
     const shipment = await this.prisma.shipment.findUnique({
       where: { id: shipmentId },
@@ -281,7 +327,7 @@ export class OrdersService {
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.shipment.updateMany({
         where: { id: shipmentId, status: step.shipmentFrom },
-        data: { status, [step.stamp]: new Date() },
+        data: { status, [step.stamp]: at },
       });
       if (count === 0) {
         const current = await tx.shipment.findUniqueOrThrow({
@@ -293,7 +339,7 @@ export class OrdersService {
         );
       }
       await this.move(tx, shipment.order, step.orderFrom, step.orderTo, {
-        actorId,
+        actorId: null,
         stock: step.stock,
       });
     });
@@ -417,17 +463,6 @@ export class OrdersService {
       }
       if (orders.length < SWEEP_BATCH) return moved;
     }
-  }
-
-  // shortcut: the seller reports pickup and delivery until a carrier integration can.
-  async updateShipment(userId: string, id: string, status: ShipmentStep) {
-    const { party, order } = await this.involved(userId, id);
-    if (party !== 'seller') {
-      throw new ForbiddenException('Only the seller can do this');
-    }
-    if (!order.shipment) throw new ConflictException('Shipment not arranged');
-    await this.advanceShipment(order.shipment.id, status, userId);
-    return this.get(userId, id);
   }
 
   private async list(where: Prisma.OrderWhereInput, query: ListOrdersQuery) {

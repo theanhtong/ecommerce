@@ -1112,9 +1112,10 @@ async function main() {
       }
       if (outcome === 'to_ship') continue;
       await orders.ship(seller, orderId);
-      await orders.updateShipment(seller, orderId, 'picked_up');
+      // The simulated carrier, run ahead in time; moveOrder then sets the real timestamps.
+      await orders.advanceShipments(new Date(Date.now() + 5 * HOUR), orderId);
       if (outcome === 'shipping') continue;
-      await orders.updateShipment(seller, orderId, 'delivered');
+      await orders.advanceShipments(new Date(Date.now() + 4 * DAY), orderId);
       if (outcome === 'delivered') continue;
       if (outcome === 'returned') {
         await returns.request(buyerId, orderId, {

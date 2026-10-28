@@ -37,7 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { OrderDetail, OrderTable, SHIPMENT_STEP } from '@/pages/buyer';
+import { OrderDetail, OrderTable } from '@/pages/buyer';
 import { api, download } from '@/lib/api';
 import { dateTime, money, PAYOUT_STATUS } from '@/lib/format';
 import { useCursorPage } from '@/lib/queries';
@@ -200,16 +200,7 @@ export function SellerOrderPage() {
             { label: 'Hủy đơn', path: 'cancel', variant: 'outline' },
           ];
         }
-        const step = o.shipment && SHIPMENT_STEP[o.shipment.status];
-        return step
-          ? [
-              {
-                label: step.label,
-                path: 'shipment',
-                body: { status: step.status },
-              },
-            ]
-          : [];
+        return [];
       }}
     />
   );

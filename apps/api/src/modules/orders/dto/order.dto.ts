@@ -5,7 +5,6 @@ import {
   ArrayUnique,
   IsArray,
   IsEnum,
-  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -93,9 +92,4 @@ export class CancelOrderDto {
   @IsString()
   @MaxLength(500)
   note?: string;
-}
-
-export class ShipmentStatusDto {
-  @IsIn(['picked_up', 'delivered'])
-  status: 'picked_up' | 'delivered';
 }
