@@ -183,7 +183,7 @@ describe('Returns (e2e)', () => {
     expect(await status(first.order.id)).toBe('returned');
     expect(await wallet(first.s)).toBe(0);
     const report = await as(first.s)
-      .get('/shops/me/report?range=30d')
+      .get('/shops/me/report?period=month')
       .expect(200);
     expect(report.body.totals).toMatchObject({
       earnings: 0,

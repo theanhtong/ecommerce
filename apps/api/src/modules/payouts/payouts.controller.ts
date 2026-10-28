@@ -30,15 +30,3 @@ export class PayoutsController {
     return this.payouts.listForShop(user.sub, query);
   }
 }
-
-@Controller('admin/payouts')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.admin)
-export class AdminPayoutsController {
-  constructor(private readonly payouts: PayoutsService) {}
-
-  @Get()
-  list(@Query() query: ListPayoutsQuery) {
-    return this.payouts.listForAdmin(query);
-  }
-}

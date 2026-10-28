@@ -59,19 +59,6 @@ export class PayoutsService {
     return { ...page, items: page.items.map(payoutView) };
   }
 
-  async listForAdmin(query: ListPayoutsQuery) {
-    const rows = await this.prisma.payout.findMany({
-      where: { status: query.status },
-      include: { shop: { select: { id: true, name: true } } },
-      ...cursorArgs(query, 'desc'),
-    });
-    const page = toPage(rows, query.limit);
-    return {
-      ...page,
-      items: page.items.map((p) => ({ ...payoutView(p), shop: p.shop })),
-    };
-  }
-
   private async ownShop(ownerId: string) {
     const shop = await this.prisma.shop.findUnique({ where: { ownerId } });
     if (!shop) throw new NotFoundException('You do not have a shop');
