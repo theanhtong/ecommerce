@@ -10,3 +10,5 @@ process.env.SEPAY_BANK = 'MB';
 process.env.SEPAY_ACCOUNT = '0000000000';
 // Uploaded test files land in their own bucket.
 process.env.MINIO_BUCKET = process.env.TEST_MINIO_BUCKET;
+// Tests time the simulated carrier in real hours, whatever the demo speed-up.
+process.env.CARRIER_TIME_SCALE = '1';
