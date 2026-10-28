@@ -61,11 +61,14 @@ const SWEEP_BATCH = 100;
 // Assumption: no carrier is integrated yet, so a simulated one picks a parcel up 4 hours after the
 // seller prepares it and delivers it 1 day later within a province, 3 days across provinces.
 // CARRIER_TIME_SCALE speeds it up for demos: 60 makes an hour pass in a minute.
-const CARRIER_SCALE = Number(process.env.CARRIER_TIME_SCALE) || 1;
-const PICKUP_AFTER_MS = (4 * 60 * 60 * 1000) / CARRIER_SCALE;
-const TRANSIT_MS = {
-  province: DAY_MS / CARRIER_SCALE,
-  country: (3 * DAY_MS) / CARRIER_SCALE,
+// Read on each run: the entrypoints load .env after their imports are evaluated.
+const carrierTimes = () => {
+  const scale = Number(process.env.CARRIER_TIME_SCALE) || 1;
+  return {
+    pickup: (4 * 60 * 60 * 1000) / scale,
+    province: DAY_MS / scale,
+    country: (3 * DAY_MS) / scale,
+  };
 };
 const provinceOf = (address: Prisma.JsonValue) =>
   (address as { province: { code: string } }).province.code;
@@ -278,6 +281,7 @@ export class OrdersService {
   // The simulated carrier: reports pickups and deliveries that are due by `now`, stamped `now`.
   // shortcut: replace with the carrier's webhook once one is integrated; it would call advanceShipment.
   async advanceShipments(now = new Date(), orderId?: string) {
+    const times = carrierTimes();
     let moved = 0;
     const due = (where: Prisma.ShipmentWhereInput) =>
       this.prisma.shipment.findMany({
@@ -289,20 +293,20 @@ export class OrdersService {
       });
     for (const s of await due({
       status: ShipmentStatus.awaiting_pickup,
-      createdAt: { lte: new Date(now.getTime() - PICKUP_AFTER_MS) },
+      createdAt: { lte: new Date(now.getTime() - times.pickup) },
     })) {
       await this.advanceShipment(s.id, ShipmentStatus.picked_up, now);
       moved++;
     }
     for (const s of await due({
       status: ShipmentStatus.picked_up,
-      pickedUpAt: { lte: new Date(now.getTime() - TRANSIT_MS.province) },
+      pickedUpAt: { lte: new Date(now.getTime() - times.province) },
     })) {
       const transit =
         provinceOf(s.order.pickupAddress) ===
         provinceOf(s.order.shippingAddress)
-          ? TRANSIT_MS.province
-          : TRANSIT_MS.country;
+          ? times.province
+          : times.country;
       if (s.pickedUpAt!.getTime() + transit > now.getTime()) continue;
       await this.advanceShipment(s.id, ShipmentStatus.delivered, now);
       moved++;
