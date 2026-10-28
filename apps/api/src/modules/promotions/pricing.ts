@@ -101,7 +101,14 @@ function requireSpend(v: VoucherTerms, base: number) {
 // Shop vouchers apply first, the platform voucher to what is left, and the shipping
 // voucher only to shipping fees. Assumption: each minimum spend is checked against the
 // amount its voucher applies to.
-export function priceCart(shops: ShopCart[], vouchers: CartVouchers) {
+// Assumption: with `commissionBps`, the platform never funds more on one checkout than it earns on it
+// (commission plus Freeship fees); the platform voucher is served first, the shipping voucher gets
+// what is left.
+export function priceCart(
+  shops: ShopCart[],
+  vouchers: CartVouchers,
+  commissionBps?: number,
+) {
   const priced = shops.map((s) => {
     const itemsTotal = s.lines.reduce((n, l) => n + l.amount, 0);
     const voucher = vouchers.shop.get(s.shopId);
@@ -117,7 +124,18 @@ export function priceCart(shops: ShopCart[], vouchers: CartVouchers) {
   const afterShop = priced.map((s) => s.itemsTotal - s.sellerDiscount);
   const platformBase = afterShop.reduce((a, b) => a + b, 0);
   if (vouchers.platform) requireSpend(vouchers.platform, platformBase);
-  const platformByShop = allocate(
+  let budget =
+    commissionBps === undefined
+      ? Infinity
+      : priced.reduce(
+          (n, s, i) =>
+            n +
+            Math.round((afterShop[i] * commissionBps) / 10_000) +
+            (s.freeship ? freeshipFee(afterShop[i]) : 0),
+          0,
+        );
+  const platformTotal = Math.min(
+    budget,
     vouchers.platform ? discountFor(vouchers.platform, platformBase) : 0,
     afterShop,
   );
@@ -125,6 +143,8 @@ export function priceCart(shops: ShopCart[], vouchers: CartVouchers) {
   // Shipping vouchers only cover shops in the Freeship program, which fund them through its fee.
   const fees = priced.map((s) => (s.freeship ? s.shippingFee : 0));
   const shippingBase = sum(fees);
+  budget -= platformTotal;
+  const platformByShop = allocate(platformTotal, afterShop);
   if (vouchers.shipping) {
     if (!shippingBase) {
       throw new BadRequestException(
@@ -134,7 +154,10 @@ export function priceCart(shops: ShopCart[], vouchers: CartVouchers) {
     requireSpend(vouchers.shipping, platformBase - sum(platformByShop));
   }
   const shippingByShop = allocate(
-    vouchers.shipping ? discountFor(vouchers.shipping, shippingBase) : 0,
+    Math.min(
+      budget,
+      vouchers.shipping ? discountFor(vouchers.shipping, shippingBase) : 0,
+    ),
     fees,
   );
 
