@@ -429,7 +429,18 @@ describe('Orders (e2e)', () => {
 
       await orders.advanceShipments(at(10 * DAY_MS), order.id);
       expect((await view()).status).toBe('to_ship');
+      const waiting = async (prepared: boolean) =>
+        (
+          await as(s)
+            .get(`/shops/me/orders?status=to_ship&prepared=${prepared}`)
+            .expect(200)
+        ).body.items.map((o: { id: string }) => o.id);
+      expect(await waiting(false)).toContain(order.id);
+      expect(await waiting(true)).not.toContain(order.id);
       await as(s).post(`/orders/${order.id}/ship`).expect(200);
+      expect(await waiting(false)).not.toContain(order.id);
+      expect(await waiting(true)).toContain(order.id);
+      await as(s).get('/shops/me/orders?prepared=maybe').expect(400);
 
       // Picked up 4 hours after the seller prepares the parcel.
       await orders.advanceShipments(at(3 * HOUR_MS), order.id);

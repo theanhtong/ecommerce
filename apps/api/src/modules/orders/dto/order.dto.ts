@@ -5,6 +5,7 @@ import {
   ArrayUnique,
   IsArray,
   IsEnum,
+  IsIn,
   IsInt,
   IsOptional,
   IsString,
@@ -70,6 +71,11 @@ export class ListOrdersQuery extends CursorQuery {
   @IsOptional()
   @IsEnum(OrderStatus)
   status?: OrderStatus;
+
+  // Whether the seller has prepared the parcel, which splits orders waiting for pickup.
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  prepared?: 'true' | 'false';
 }
 
 export class AdminListOrdersQuery extends ListOrdersQuery {
