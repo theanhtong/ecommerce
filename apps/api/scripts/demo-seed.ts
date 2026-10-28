@@ -1002,10 +1002,10 @@ async function main() {
     {
       type: 'platform_voucher',
       code: 'SALE10',
-      name: 'Giảm 10% tối đa 30.000đ cho đơn từ 200.000đ',
+      name: 'Giảm 10% tối đa 10.000đ cho đơn từ 200.000đ',
       discountKind: 'percent',
       discountValue: 10,
-      maxDiscount: 30_000,
+      maxDiscount: 10_000,
       minSpend: 200_000,
       usageLimit: 1000,
       startsAt: yearAgo,
@@ -1014,10 +1014,10 @@ async function main() {
     {
       type: 'shipping_voucher',
       code: 'FREESHIP15',
-      name: 'Giảm 15.000đ phí vận chuyển cho đơn từ 99.000đ',
+      name: 'Giảm 15.000đ phí vận chuyển cho đơn từ 150.000đ',
       discountKind: 'fixed',
       discountValue: 15_000,
-      minSpend: 99_000,
+      minSpend: 150_000,
       usageLimit: 2000,
       startsAt: yearAgo,
       endsAt: new Date(now + 90 * DAY),
@@ -1025,10 +1025,10 @@ async function main() {
     {
       type: 'platform_voucher',
       code: 'TET2026',
-      name: 'Giảm 50.000đ dịp Tết cho đơn từ 500.000đ',
+      name: 'Giảm 50.000đ dịp Tết cho đơn từ 1.000.000đ',
       discountKind: 'fixed',
       discountValue: 50_000,
-      minSpend: 500_000,
+      minSpend: 1_000_000,
       usageLimit: 300,
       startsAt: yearAgo,
       endsAt: new Date(now - 200 * DAY),
@@ -1175,7 +1175,7 @@ async function main() {
     }
     tryCode('SALE10', 200_000, total);
     if (from.some((seller) => seller.freeship)) {
-      tryCode('FREESHIP15', 99_000, total);
+      tryCode('FREESHIP15', 150_000, total);
     }
     const body = {
       cartItemIds: lines.map((l) => l.id),

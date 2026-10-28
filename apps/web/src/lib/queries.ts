@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { api, ApiError } from './api';
-import type { Cart, MyShop, Page } from './types';
+import type { Cart, Fees, MyShop, Page } from './types';
 
 export const myShopQuery = {
   queryKey: ['my-shop'],
@@ -17,6 +17,13 @@ export const myShopQuery = {
 
 export const useMyShop = (enabled = true) =>
   useQuery({ ...myShopQuery, enabled });
+
+export const useFees = () =>
+  useQuery({
+    queryKey: ['voucher-fees'],
+    queryFn: () => api<Fees>('/vouchers/fees'),
+    staleTime: Infinity,
+  });
 
 export const useCart = (enabled = true) =>
   useQuery({

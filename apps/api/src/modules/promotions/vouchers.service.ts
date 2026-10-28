@@ -10,7 +10,14 @@ import type {
   CreatePlatformVoucherDto,
   CreateVoucherDto,
 } from './dto/voucher.dto.js';
-import { discountFor, type CartVouchers } from './pricing.js';
+import { commissionRateBps } from '../ledger/ledger.service.js';
+import {
+  discountFor,
+  FREESHIP_FEE_BPS,
+  FREESHIP_FEE_CAP,
+  platformVoucherExcess,
+  type CartVouchers,
+} from './pricing.js';
 
 const voucherInclude = { promotion: true } satisfies Prisma.VoucherInclude;
 type VoucherRow = Prisma.VoucherGetPayload<{ include: typeof voucherInclude }>;
@@ -38,7 +45,17 @@ const live = (now: Date) =>
 
 @Injectable()
 export class VouchersService {
+  private readonly commissionBps = commissionRateBps();
+
   constructor(private readonly prisma: PrismaService) {}
+
+  fees() {
+    return {
+      commissionBps: this.commissionBps,
+      freeshipFeeBps: FREESHIP_FEE_BPS,
+      freeshipFeeCap: FREESHIP_FEE_CAP,
+    };
+  }
 
   // Turns the codes a buyer entered into the vouchers the cart may use: at most one shop
   // voucher per shop, one platform voucher and one shipping voucher.
@@ -191,6 +208,16 @@ export class VouchersService {
   }
 
   createForPlatform({ type, ...dto }: CreatePlatformVoucherDto) {
+    const limit = platformVoucherExcess(
+      type,
+      { ...dto, maxDiscount: dto.maxDiscount ?? null },
+      this.commissionBps,
+    );
+    if (limit !== null) {
+      throw new BadRequestException(
+        `At this minimum spend the discount must be capped at ${limit}`,
+      );
+    }
     return this.create(type, null, dto);
   }
 

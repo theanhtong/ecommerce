@@ -21,6 +21,42 @@ export interface ShopCart {
 export const FREESHIP_FEE_BPS = 600;
 export const FREESHIP_FEE_CAP = 50_000;
 
+export const freeshipFee = (revenue: number) =>
+  Math.min(FREESHIP_FEE_CAP, Math.round((revenue * FREESHIP_FEE_BPS) / 10_000));
+
+// Assumption: a platform-funded voucher may not cost more than the platform earns on an order
+// that just meets its minimum spend: commission, plus the Freeship fee for shipping vouchers.
+export function platformVoucherLimit(
+  type: 'platform_voucher' | 'shipping_voucher',
+  minSpend: number,
+  commissionBps: number,
+) {
+  return (
+    Math.round((minSpend * commissionBps) / 10_000) +
+    (type === 'shipping_voucher' ? freeshipFee(minSpend) : 0)
+  );
+}
+
+// Null when the voucher fits the limit; otherwise the limit it breaks.
+export function platformVoucherExcess(
+  type: 'platform_voucher' | 'shipping_voucher',
+  v: Omit<VoucherTerms, 'code'>,
+  commissionBps: number,
+) {
+  // A percent off the order never outruns a commission of at least that percent.
+  if (
+    type === 'platform_voucher' &&
+    v.discountKind === 'percent' &&
+    v.discountValue * 100 <= commissionBps
+  ) {
+    return null;
+  }
+  const limit = platformVoucherLimit(type, v.minSpend, commissionBps);
+  const most =
+    v.discountKind === 'fixed' ? v.discountValue : (v.maxDiscount ?? Infinity);
+  return most > limit ? limit : null;
+}
+
 export interface CartVouchers {
   shop: Map<string, VoucherTerms>;
   platform?: VoucherTerms;
@@ -117,12 +153,7 @@ export function priceCart(shops: ShopCart[], vouchers: CartVouchers) {
       shippingFee: s.shippingFee,
       shippingDiscount,
       freeshipFee: s.freeship
-        ? Math.min(
-            FREESHIP_FEE_CAP,
-            Math.round(
-              ((s.itemsTotal - s.sellerDiscount) * FREESHIP_FEE_BPS) / 10_000,
-            ),
-          )
+        ? freeshipFee(s.itemsTotal - s.sellerDiscount)
         : 0,
       total:
         s.itemsTotal -
