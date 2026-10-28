@@ -333,3 +333,9 @@ export interface FlashSalePage extends FlashSaleModel {
   endsAt: string;
   status: 'upcoming' | 'running' | 'sold_out' | 'ended';
 }
+
+export interface Fees {
+  commissionBps: number;
+  freeshipFeeBps: number;
+  freeshipFeeCap: number;
+}

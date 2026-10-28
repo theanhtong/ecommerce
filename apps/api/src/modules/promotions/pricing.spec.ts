@@ -1,4 +1,9 @@
-import { allocate, priceCart, type VoucherTerms } from './pricing.js';
+import {
+  allocate,
+  platformVoucherExcess,
+  priceCart,
+  type VoucherTerms,
+} from './pricing.js';
 
 const voucher = (v: Partial<VoucherTerms>): VoucherTerms => ({
   code: 'V',
@@ -102,5 +107,54 @@ describe('priceCart', () => {
         platform: voucher({ code: 'BIG', minSpend: 500000 }),
       }),
     ).toThrow('Voucher BIG needs a minimum spend of 500000');
+  });
+});
+
+describe('platformVoucherExcess', () => {
+  // 5% commission.
+  const at = (
+    type: 'platform_voucher' | 'shipping_voucher',
+    v: Partial<VoucherTerms>,
+  ) => platformVoucherExcess(type, voucher(v), 500);
+
+  it('caps a platform voucher at the commission on its minimum spend', () => {
+    expect(
+      at('platform_voucher', { discountValue: 10_000, minSpend: 200_000 }),
+    ).toBeNull();
+    expect(
+      at('platform_voucher', { discountValue: 10_001, minSpend: 200_000 }),
+    ).toBe(10_000);
+    expect(at('platform_voucher', { discountValue: 1, minSpend: 0 })).toBe(0);
+    expect(
+      at('platform_voucher', { discountKind: 'percent', discountValue: 5 }),
+    ).toBeNull();
+    expect(
+      at('platform_voucher', { discountKind: 'percent', discountValue: 10 }),
+    ).toBe(0);
+    expect(
+      at('platform_voucher', {
+        discountKind: 'percent',
+        discountValue: 10,
+        maxDiscount: 10_000,
+        minSpend: 200_000,
+      }),
+    ).toBeNull();
+  });
+
+  it('adds the Freeship fee for shipping vouchers and needs a cap on percent ones', () => {
+    // 5% + 6% of 150,000.
+    expect(
+      at('shipping_voucher', { discountValue: 16_500, minSpend: 150_000 }),
+    ).toBeNull();
+    expect(
+      at('shipping_voucher', { discountValue: 16_501, minSpend: 150_000 }),
+    ).toBe(16_500);
+    expect(
+      at('shipping_voucher', {
+        discountKind: 'percent',
+        discountValue: 1,
+        minSpend: 150_000,
+      }),
+    ).toBe(16_500);
   });
 });

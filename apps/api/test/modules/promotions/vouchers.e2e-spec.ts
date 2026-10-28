@@ -177,8 +177,25 @@ describe('Vouchers (e2e)', () => {
     await as(admin)
       .post('/admin/vouchers', { ...terms(), type: 'shop_voucher' })
       .expect(400);
+    // A platform-funded voucher may not cost more than the platform earns at its minimum spend.
     await as(admin)
       .post('/admin/vouchers', { ...terms(), type: 'shipping_voucher' })
+      .expect(400);
+    await as(admin)
+      .post('/admin/vouchers', {
+        ...terms({
+          discountKind: 'percent',
+          discountValue: 50,
+          minSpend: 100000,
+        }),
+        type: 'shipping_voucher',
+      })
+      .expect(400);
+    await as(admin)
+      .post('/admin/vouchers', {
+        ...terms({ discountValue: 6000, minSpend: 100000 }),
+        type: 'shipping_voucher',
+      })
       .expect(201);
 
     const mine = await as(s).get('/shops/me/vouchers').expect(200);
@@ -204,7 +221,8 @@ describe('Vouchers (e2e)', () => {
           ...terms({
             discountKind: 'percent',
             discountValue: 10,
-            maxDiscount: 9000,
+            maxDiscount: 6000,
+            minSpend: 120000,
           }),
           type: 'platform_voucher',
         })
@@ -213,7 +231,7 @@ describe('Vouchers (e2e)', () => {
     const shippingCode = (
       await as(admin)
         .post('/admin/vouchers', {
-          ...terms({ discountValue: 15000 }),
+          ...terms({ discountValue: 13000, minSpend: 120000 }),
           type: 'shipping_voucher',
         })
         .expect(201)
@@ -291,13 +309,13 @@ describe('Vouchers (e2e)', () => {
       (x: { shop: { id: string } }) => x.shop.id === s1.shopId,
     );
     expect(one).toMatchObject({ itemsTotal: 100000, sellerDiscount: 20000 });
-    // 10% of (80000 + 50000) is 13000, capped at 9000.
+    // 10% of (80000 + 50000) is 13000, capped at 6000.
     expect(
       preview.body.shops.reduce(
         (n: number, x: { platformDiscount: number }) => n + x.platformDiscount,
         0,
       ),
-    ).toBe(9000);
+    ).toBe(6000);
 
     const placed = await checkout(b, lines, codes).expect(201);
     expect(placed.body.orders.map((o: { total: number }) => o.total)).toEqual(
@@ -388,7 +406,7 @@ describe('Vouchers (e2e)', () => {
       (
         await as(admin)
           .post('/admin/vouchers', {
-            ...terms(extra),
+            ...terms({ discountValue: 5000, minSpend: 100000, ...extra }),
             type: 'platform_voucher',
           })
           .expect(201)
@@ -445,7 +463,10 @@ describe('Vouchers (e2e)', () => {
     ).body.code;
     const platformCode = (
       await as(admin)
-        .post('/admin/vouchers', { ...terms(), type: 'platform_voucher' })
+        .post('/admin/vouchers', {
+          ...terms({ discountValue: 4000, minSpend: 80000 }),
+          type: 'platform_voucher',
+        })
         .expect(201)
     ).body.code;
     const placed = await checkout(b, await cart(b, [s]), [

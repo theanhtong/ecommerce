@@ -21,7 +21,7 @@ interface Posting {
 }
 
 // Assumption: one flat commission rate on item value.
-function commissionRateBps() {
+export function commissionRateBps() {
   const value = Number(process.env.COMMISSION_RATE_BPS);
   if (!Number.isInteger(value) || value < 0 || value > 10_000) {
     throw new Error('COMMISSION_RATE_BPS must be an integer from 0 to 10000');
