@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { MapPin, Pencil, Plus, Store, Trash2, User } from 'lucide-react';
-import { useState, type SubmitEvent } from 'react';
+import { Suspense, type SubmitEvent, useState } from 'react';
 import { Navigate, NavLink, Outlet } from 'react-router';
 import { toast } from 'sonner';
 import {
@@ -81,7 +81,9 @@ export function AccountLayout() {
         ))}
       </nav>
       <div>
-        <Outlet />
+        <Suspense fallback={<Loading />}>
+          <Outlet />
+        </Suspense>
       </div>
     </div>
   );
