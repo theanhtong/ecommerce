@@ -321,25 +321,56 @@ export class LedgerService {
 
   // The carrier hands over COD cash it collected. Assumption: carriers remit in batches that the admin
   // records from their statement; shortcut: entered by hand, import the statement once a carrier API exists.
+  // Assumption: the carrier keeps the shipping fees the platform owes it out of each batch, so that debt
+  // is settled first and only the rest reaches the bank.
   async remitCod(amount: number, key: string) {
     return this.prisma.$transaction(async (tx) => {
       const receivable = await this.account(tx, LedgerAccountType.receivable);
-      await tx.$queryRaw`SELECT id FROM ledger_accounts WHERE id = ${receivable}::uuid FOR UPDATE`;
-      const owed = await tx.ledgerLine.aggregate({
-        where: { accountId: receivable },
-        _sum: { amount: true },
-      });
+      const shipping = await this.account(tx, LedgerAccountType.shipping);
+      await tx.$queryRaw`SELECT id FROM ledger_accounts WHERE id IN (${receivable}::uuid, ${shipping}::uuid) ORDER BY id FOR UPDATE`;
+      const sum = async (accountId: string) =>
+        (
+          await tx.ledgerLine.aggregate({
+            where: { accountId },
+            _sum: { amount: true },
+          })
+        )._sum.amount ?? 0;
+      const idempotencyKey = `cod:${key}`;
       const replay = await tx.ledgerEntry.findUnique({
-        where: { idempotencyKey: `cod:${key}` },
+        where: { idempotencyKey },
       });
-      if (!replay && amount > (owed._sum.amount ?? 0)) {
-        throw new ConflictException('Amount exceeds the COD the carrier holds');
+      if (!replay) {
+        if (amount > (await sum(receivable))) {
+          throw new ConflictException(
+            'Amount exceeds the COD the carrier holds',
+          );
+        }
+        const fee = Math.max(0, Math.min(amount, -(await sum(shipping))));
+        await this.post(tx, {
+          idempotencyKey,
+          refType: 'cod',
+          refId: randomUUID(),
+          lines: [
+            {
+              account: await this.account(tx, LedgerAccountType.bank),
+              amount: amount - fee,
+            },
+            { account: shipping, amount: fee },
+            { account: receivable, amount: -amount },
+          ],
+        });
       }
-      await this.pair(tx, `cod:${key}`, 'cod', randomUUID(), {
-        debit: await this.account(tx, LedgerAccountType.bank),
-        credit: receivable,
-        amount,
+      const entry = await tx.ledgerEntry.findUniqueOrThrow({
+        where: { idempotencyKey },
+        include: { lines: true },
       });
+      const line = (account: string) =>
+        entry.lines.find((l) => l.accountId === account)?.amount ?? 0;
+      return {
+        amount: -line(receivable),
+        shippingFee: line(shipping),
+        received: -line(receivable) - line(shipping),
+      };
     });
   }
 

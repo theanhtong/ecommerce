@@ -165,11 +165,21 @@ describe('Ledger (e2e)', () => {
       .post('/admin/ledger/cod-remittances', { amount: 1 })
       .set('Idempotency-Key', 'x')
       .expect(403);
-    await remit(116_500).expect(204);
-    await remit(116_500).expect(204);
+    // The carrier keeps the shipping fee it is owed out of the COD it hands over.
+    const remitted = {
+      amount: 116_500,
+      shippingFee: 16_500,
+      received: 100_000,
+    };
+    expect((await remit(116_500).expect(200)).body).toEqual(remitted);
+    expect((await remit(116_500).expect(200)).body).toEqual(remitted);
     const cash = (await as(admin).get('/admin/ledger/accounts').expect(200))
       .body;
-    expect(cash.byType).toMatchObject({ receivable: 0, bank: 116_500 });
+    expect(cash.byType).toMatchObject({
+      receivable: 0,
+      shipping: 0,
+      bank: 100_000,
+    });
     expect(cash.total).toBe(0);
 
     const shopId = placed.shop.id as string;

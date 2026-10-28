@@ -154,7 +154,7 @@ export class LedgerController {
   @Post('admin/ledger/cod-remittances')
   @UseGuards(RolesGuard)
   @Roles(Role.admin)
-  @HttpCode(HttpStatus.NO_CONTENT)
+  @HttpCode(HttpStatus.OK)
   remitCod(
     @Body() dto: CodRemittanceDto,
     @Headers('idempotency-key') idempotencyKey?: string,
