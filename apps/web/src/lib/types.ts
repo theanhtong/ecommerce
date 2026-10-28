@@ -22,6 +22,8 @@ export interface Shop {
   status: ShopStatus;
   rating?: number | null;
   ratingCount?: number;
+  freeship?: boolean;
+  freeshipRequestedAt?: string | null;
   createdAt: string;
   owner?: { id: string; email: string; username: string };
 }
@@ -52,10 +54,8 @@ export interface Model {
 }
 
 export interface ModelFlashSale {
+  id: string;
   price: number;
-  quota: number;
-  sold: number;
-  purchaseLimit: number;
   endsAt: string;
 }
 
@@ -82,8 +82,6 @@ export interface CartLine {
   itemName: string;
   image: string | null;
   variation: string | null;
-  originalPrice: number | null;
-  flashSale: ModelFlashSale | null;
   addedPrice: number;
   price: number;
   priceChange: number;
@@ -156,6 +154,17 @@ export interface Order {
   shippingFee: number;
   shippingDiscount: number;
   total: number;
+  freeshipFee: number;
+  vouchers: (Pick<
+    Voucher,
+    | 'type'
+    | 'name'
+    | 'code'
+    | 'discountKind'
+    | 'discountValue'
+    | 'maxDiscount'
+    | 'minSpend'
+  > & { amount: number })[];
   shippingAddress: Location & {
     recipientName: string;
     phone: string;
@@ -316,4 +325,11 @@ export interface FlashSale {
   startsAt: string;
   endsAt: string;
   models: FlashSaleModel[];
+}
+
+export interface FlashSalePage extends FlashSaleModel {
+  shop: { id: string; name: string };
+  startsAt: string;
+  endsAt: string;
+  status: 'upcoming' | 'running' | 'sold_out' | 'ended';
 }

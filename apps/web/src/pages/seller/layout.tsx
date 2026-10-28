@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   AlignLeft,
+  ChartColumn,
   Clock,
   Package,
   Pencil,
@@ -8,10 +9,12 @@ import {
   Store,
   Star,
   TicketPercent,
+  Truck,
+  Wallet,
   Zap,
 } from 'lucide-react';
 import { useState } from 'react';
-import { Navigate, NavLink, Outlet, useLocation } from 'react-router';
+import { Navigate, NavLink, Outlet } from 'react-router';
 import { toast } from 'sonner';
 import {
   AddressBlock,
@@ -35,7 +38,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Field } from '@/pages/account';
 import { api } from '@/lib/api';
-import { phone, SHOP_STATUS } from '@/lib/format';
+import { dateTime, phone, SHOP_STATUS } from '@/lib/format';
 import { useMyShop } from '@/lib/queries';
 import { ShopReportSection, ShopWallet } from '@/pages/seller/other';
 import type { MyShop, Shop, ShopAddress } from '@/lib/types';
@@ -135,45 +138,45 @@ function OpenShop() {
 }
 
 const TABS = [
-  ['/account/seller', 'Cửa hàng', Store],
-  ['/account/seller/items', 'Sản phẩm', Package],
-  ['/account/seller/orders', 'Đơn hàng', ReceiptText],
-  ['/account/seller/vouchers', 'Khuyến mãi', TicketPercent],
-  ['/account/seller/flash-sales', 'Flash Sale', Zap],
-  ['/account/seller/reviews', 'Đánh giá', Star],
+  ['/seller', 'Tổng quan', ChartColumn],
+  ['/seller/wallet', 'Ví', Wallet],
+  ['/seller/profile', 'Cửa hàng', Store],
+  ['/seller/items', 'Sản phẩm', Package],
+  ['/seller/orders', 'Đơn hàng', ReceiptText],
+  ['/seller/vouchers', 'Khuyến mãi', TicketPercent],
+  ['/seller/flash-sales', 'Flash Sale', Zap],
+  ['/seller/reviews', 'Đánh giá', Star],
 ] as const;
 
 export function SellerLayout() {
   const shop = useMyShop();
-  const { pathname } = useLocation();
   if (shop.isPending) return <Loading />;
   if (shop.error) return <ErrorMessage error={shop.error} />;
-  if (!shop.data) return <OpenShop />;
-  if (shop.data.status !== 'active') {
-    return pathname === '/account/seller' ? (
-      <Outlet />
-    ) : (
-      <Navigate to="/account/seller" replace />
-    );
+  // Until the admin approves the shop, it is opened and followed from the account pages.
+  if (shop.data?.status !== 'active') {
+    return <Navigate to="/account/shop" replace />;
   }
   return (
-    <>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+    <div className="grid gap-5 md:grid-cols-[13rem_1fr]">
+      <nav className="flex flex-wrap gap-2 md:sticky md:top-20 md:flex-col md:self-start">
         {TABS.map(([to, label, Icon]) => (
-          <Button asChild key={to} variant="outline" size="sm">
-            <NavLink
-              to={to}
-              end={to === '/account/seller'}
-              className="aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
-            >
+          <Button
+            asChild
+            key={to}
+            variant="outline"
+            className="justify-start aria-[current=page]:border-primary aria-[current=page]:text-primary"
+          >
+            <NavLink to={to} end={to === '/seller'}>
               <Icon />
               {label}
             </NavLink>
           </Button>
         ))}
+      </nav>
+      <div className="min-w-0">
+        <Outlet />
       </div>
-      <Outlet />
-    </>
+    </div>
   );
 }
 
@@ -405,14 +408,93 @@ export function SellerShopPage() {
         </Alert>
       )}
       <div className="grid gap-4">
-        {s.status === 'active' && (
-          <>
-            <ShopWallet />
-            <ShopReportSection />
-          </>
-        )}
         <ShopProfile shop={s} />
+        {s.status === 'active' && <FreeshipProgram shop={s} />}
       </div>
     </>
   );
+}
+
+// Assumption: mirrors FREESHIP_FEE_BPS and FREESHIP_FEE_CAP in the API's pricing.
+const FREESHIP_TERMS = 'Phí 6% doanh thu mỗi đơn, tối đa 50.000₫/đơn';
+
+function FreeshipProgram({ shop }: { shop: MyShop }) {
+  const queryClient = useQueryClient();
+  const toggle = useMutation({
+    mutationFn: (enabled: boolean) =>
+      api<MyShop>('/shops/me/freeship', { method: 'PUT', body: { enabled } }),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['my-shop'], data);
+      toast.success(
+        data.freeshipRequestedAt
+          ? 'Đã gửi yêu cầu tham gia'
+          : shop.freeshipRequestedAt
+            ? 'Đã hủy yêu cầu'
+            : 'Đã rời chương trình',
+      );
+    },
+  });
+  const [badge, action, next] = shop.freeship
+    ? (['Đang tham gia', 'Rời chương trình', false] as const)
+    : shop.freeshipRequestedAt
+      ? (['Chờ duyệt', 'Hủy yêu cầu', false] as const)
+      : ([null, 'Gửi yêu cầu tham gia', true] as const);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Truck className="size-4 text-primary" />
+          Chương trình Freeship
+          {badge && (
+            <Badge variant={shop.freeship ? 'default' : 'secondary'}>
+              {badge}
+            </Badge>
+          )}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <span className="text-muted-foreground">
+          {FREESHIP_TERMS}
+          {shop.freeshipRequestedAt &&
+            ` · Gửi lúc ${dateTime(shop.freeshipRequestedAt)}`}
+        </span>
+        <Button
+          variant={next ? 'default' : 'outline'}
+          disabled={toggle.isPending}
+          onClick={() => toggle.mutate(next)}
+        >
+          {action}
+        </Button>
+      </CardContent>
+      {toggle.error && (
+        <CardContent>
+          <ErrorMessage error={toggle.error} />
+        </CardContent>
+      )}
+    </Card>
+  );
+}
+
+export const SellerDashboardPage = () => (
+  <>
+    <PageHeader title="Tổng quan" />
+    <ShopReportSection />
+  </>
+);
+
+export const SellerWalletPage = () => (
+  <>
+    <PageHeader title="Ví" />
+    <ShopWallet />
+  </>
+);
+
+// The shop as seen from the account pages: open one, or follow it until it is approved.
+export function AccountShopPage() {
+  const shop = useMyShop();
+  if (shop.isPending) return <Loading />;
+  if (shop.error) return <ErrorMessage error={shop.error} />;
+  if (!shop.data) return <OpenShop />;
+  if (shop.data.status === 'active') return <Navigate to="/seller" replace />;
+  return <SellerShopPage />;
 }

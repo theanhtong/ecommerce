@@ -14,6 +14,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [ready, setReady] = useState(false);
+  const [signedOut, setSignedOut] = useState(false);
 
   const reload = useCallback(async () => {
     setUser(await api<User>('/users/me'));
@@ -35,6 +36,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setAccessToken(accessToken);
       queryClient.clear();
       await reload();
+      setSignedOut(false);
     },
     [queryClient, reload],
   );
@@ -43,17 +45,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       user,
       ready,
+      signedOut,
       reload,
       login: (email, password) => start('/auth/login', { email, password }),
       register: (input) => start('/auth/register', input),
       logout: async () => {
         await api('/auth/logout', { method: 'POST' });
         setAccessToken(null);
+        setSignedOut(true);
         setUser(null);
         queryClient.clear();
       },
     }),
-    [user, ready, reload, start, queryClient],
+    [user, ready, signedOut, reload, start, queryClient],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

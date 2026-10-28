@@ -18,7 +18,7 @@ import { cn } from '@/lib/utils';
 const orderPath = (n: Notification) =>
   n.audience === 'buyer'
     ? `/orders/${n.orderId}`
-    : `/account/seller/orders/${n.orderId}`;
+    : `/seller/orders/${n.orderId}`;
 
 export function NotificationBell() {
   const queryClient = useQueryClient();

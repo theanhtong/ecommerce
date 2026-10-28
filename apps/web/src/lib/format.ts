@@ -93,6 +93,12 @@ export const REFUND_STATUS = {
   paid: 'Đã hoàn',
 } as const;
 
+export const PAYOUT_STATUS = {
+  pending: 'Chờ xử lý',
+  paid: 'Đã chuyển',
+  rejected: 'Bị từ chối',
+} as const;
+
 export const VOUCHER_TYPE = {
   shop_voucher: 'Voucher của shop',
   platform_voucher: 'Voucher sàn',

@@ -11,9 +11,8 @@ import {
   Store,
   TicketPercent,
   Truck,
-  UserRound,
 } from 'lucide-react';
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router';
 import { toast } from 'sonner';
 import {
@@ -21,7 +20,7 @@ import {
   Empty,
   ErrorMessage,
   ItemImage,
-  LoadMore,
+  Pager,
   Loading,
   OrderStatusBadge,
   PageHeader,
@@ -31,6 +30,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { SalePrice } from '@/components/flash-sale';
 import { LineReview } from '@/components/reviews';
+import { VoucherPicker } from '@/components/voucher-picker';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -51,16 +51,17 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import {
   CANCEL_REASON,
   dateTime,
@@ -71,6 +72,7 @@ import {
   RETURN_REASON,
   RETURN_STATUS,
   place,
+  VOUCHER_TYPE,
   voucherTerms,
 } from '@/lib/format';
 import { useCart, usePaged } from '@/lib/queries';
@@ -78,6 +80,8 @@ import type {
   Address,
   CancelReason,
   Cart,
+  CartLine,
+  FlashSalePage,
   Order,
   OrderStatus,
   ReturnReason,
@@ -130,7 +134,7 @@ export function CartPage() {
       <PageHeader title="Giỏ hàng" />
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-4">
-          <Card size="sm" className="hidden md:flex">
+          <Card className="hidden py-3 md:flex">
             <CardContent
               className={`${CART_COLS} text-sm text-muted-foreground`}
             >
@@ -178,16 +182,10 @@ export function CartPage() {
                     </div>
                     <div className="text-right">
                       <p>{money(line.price)}</p>
-                      {line.originalPrice !== null ? (
+                      {line.priceChange !== 0 && (
                         <p className="text-xs text-muted-foreground line-through">
-                          {money(line.originalPrice)}
+                          {money(line.addedPrice)}
                         </p>
-                      ) : (
-                        line.priceChange !== 0 && (
-                          <p className="text-xs text-muted-foreground line-through">
-                            {money(line.addedPrice)}
-                          </p>
-                        )
                       )}
                     </div>
                     <div className="grid justify-items-center gap-1 text-xs">
@@ -267,9 +265,14 @@ export function CartPage() {
   );
 }
 
+type CheckoutLine = Pick<
+  CartLine,
+  'id' | 'itemName' | 'image' | 'variation' | 'price' | 'quantity'
+> & { originalPrice: number | null };
+
 interface Preview {
   shops: {
-    shop: { id: string; name: string };
+    shop: { id: string; name: string; freeship: boolean };
     itemsTotal: number;
     sellerDiscount: number;
     platformDiscount: number;
@@ -278,46 +281,7 @@ interface Preview {
     total: number;
   }[];
   total: number;
-}
-
-const NO_VOUCHER = 'none';
-
-function VoucherSelect({
-  label,
-  vouchers,
-  value,
-  onChange,
-}: {
-  label: string;
-  vouchers: Voucher[];
-  value?: string;
-  onChange: (code?: string) => void;
-}) {
-  if (!vouchers.length) return null;
-  return (
-    <div className="grid gap-2">
-      <span className="flex items-center gap-2 text-sm text-muted-foreground">
-        <TicketPercent className="size-4" />
-        {label}
-      </span>
-      <Select
-        value={value ?? NO_VOUCHER}
-        onValueChange={(v) => onChange(v === NO_VOUCHER ? undefined : v)}
-      >
-        <SelectTrigger className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent position="popper">
-          <SelectItem value={NO_VOUCHER}>Không dùng</SelectItem>
-          {vouchers.map((v) => (
-            <SelectItem key={v.code} value={v.code}>
-              {v.name} · {voucherTerms(v)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
-  );
+  shippingVoucher: string | null;
 }
 
 const CHECKOUT_COLS =
@@ -326,8 +290,19 @@ const CHECKOUT_COLS =
 export function CheckoutPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const lineIds =
-    (useLocation().state as { lineIds?: string[] } | null)?.lineIds ?? [];
+  // From the cart: lineIds. From a flash sale page: one flash sale line bought on its own.
+  const state = useLocation().state as {
+    lineIds?: string[];
+    flash?: { id: string; quantity: number };
+  } | null;
+  const lineIds = state?.lineIds ?? [];
+  const flash = state?.flash;
+  const source = flash ? { flashSale: flash } : { cartItemIds: lineIds };
+  const flashSale = useQuery({
+    queryKey: ['flash-sale', flash?.id],
+    queryFn: () => api<FlashSalePage>(`/flash-sales/${flash!.id}`),
+    enabled: !!flash,
+  });
   const [idempotencyKey] = useState(() => crypto.randomUUID());
   const [addressId, setAddressId] = useState<string>();
   const [paymentMethod, setPaymentMethod] = useState<'cod' | 'online'>('cod');
@@ -340,9 +315,13 @@ export function CheckoutPage() {
   });
   const chosenAddress =
     addressId ?? addresses.data?.find((a) => a.isDefault)?.id ?? '';
-  const shopIds = (cart.data?.shops ?? [])
-    .filter((g) => g.items.some((l) => lineIds.includes(l.id)))
-    .map((g) => g.shop.id);
+  const shopIds = flash
+    ? flashSale.data
+      ? [flashSale.data.shop.id]
+      : []
+    : (cart.data?.shops ?? [])
+        .filter((g) => g.items.some((l) => lineIds.includes(l.id)))
+        .map((g) => g.shop.id);
   const vouchers = useQuery({
     queryKey: ['vouchers', shopIds.join()],
     queryFn: () => api<Voucher[]>(`/vouchers?shopIds=${shopIds.join(',')}`),
@@ -350,13 +329,13 @@ export function CheckoutPage() {
   });
   const voucherCodes = Object.values(picked).filter((c): c is string => !!c);
   const preview = useQuery({
-    queryKey: ['checkout-preview', chosenAddress, lineIds, voucherCodes],
+    queryKey: ['checkout-preview', chosenAddress, source, voucherCodes],
     queryFn: () =>
       api<Preview>('/checkout/preview', {
         method: 'POST',
-        body: { cartItemIds: lineIds, addressId: chosenAddress, voucherCodes },
+        body: { ...source, addressId: chosenAddress, voucherCodes },
       }),
-    enabled: !!chosenAddress && lineIds.length > 0,
+    enabled: !!chosenAddress && (!!flash || lineIds.length > 0),
     retry: false,
     placeholderData: keepPreviousData,
   });
@@ -372,16 +351,26 @@ export function CheckoutPage() {
         method: 'POST',
         headers: { 'Idempotency-Key': idempotencyKey },
         body: {
-          cartItemIds: lineIds,
+          ...source,
           addressId: chosenAddress,
           paymentMethod,
           voucherCodes,
+          expectedTotal: preview.data?.total,
         },
       }),
+    onError: (error) => {
+      // The server priced the order differently from what is on screen: show the new prices.
+      if (error instanceof ApiError && error.status === 409) {
+        void queryClient.invalidateQueries({ queryKey: ['cart'] });
+        void queryClient.invalidateQueries({ queryKey: ['checkout-preview'] });
+        void queryClient.invalidateQueries({ queryKey: ['flash-sale'] });
+      }
+    },
     onSuccess: (data) => {
       toast.success('Đặt hàng thành công');
       void queryClient.invalidateQueries({ queryKey: ['cart'] });
       void queryClient.invalidateQueries({ queryKey: ['orders'] });
+      void queryClient.invalidateQueries({ queryKey: ['flash-sale'] });
       navigate(
         data.orders[0]?.status === 'unpaid'
           ? `/checkouts/${data.checkoutId}/payment`
@@ -391,21 +380,49 @@ export function CheckoutPage() {
     },
   });
 
-  if (!lineIds.length) return <Empty>Chưa chọn sản phẩm</Empty>;
-  if (cart.isPending || addresses.isPending) return <Loading />;
+  if (!lineIds.length && !flash) return <Empty>Chưa chọn sản phẩm</Empty>;
+  if (cart.isPending || addresses.isPending || (flash && flashSale.isPending)) {
+    return <Loading />;
+  }
   if (cart.error) return <ErrorMessage error={cart.error} />;
   if (addresses.error) return <ErrorMessage error={addresses.error} />;
-  const groups = cart.data.shops
-    .map((g) => ({
-      ...g,
-      items: g.items.filter((l) => lineIds.includes(l.id)),
-    }))
-    .filter((g) => g.items.length);
+  if (flashSale.error) return <ErrorMessage error={flashSale.error} />;
+  const groups: {
+    shop: { id: string; name: string };
+    items: CheckoutLine[];
+  }[] =
+    flash && flashSale.data
+      ? [
+          {
+            shop: flashSale.data.shop,
+            items: [
+              {
+                id: flashSale.data.id,
+                itemName: flashSale.data.itemName,
+                image: flashSale.data.image,
+                variation: flashSale.data.variation,
+                price: flashSale.data.price,
+                originalPrice: flashSale.data.originalPrice,
+                quantity: flash.quantity,
+              },
+            ],
+          },
+        ]
+      : cart.data.shops
+          .map((g) => ({
+            shop: g.shop,
+            items: g.items
+              .filter((l) => lineIds.includes(l.id))
+              .map((l) => ({ ...l, originalPrice: null })),
+          }))
+          .filter((g) => g.items.length);
   const itemsTotal = groups
     .flatMap((g) => g.items)
     .reduce((sum, l) => sum + l.price * l.quantity, 0);
   const sum = (key: keyof Omit<Preview['shops'][number], 'shop'>) =>
     preview.data?.shops.reduce((n, x) => n + x[key], 0) ?? 0;
+  // Minimum spends follow the server: platform after shop vouchers, shipping after both.
+  const platformBase = itemsTotal - sum('sellerDiscount');
   const summary: [string, number, boolean][] = [
     ['Tiền hàng', preview.data ? sum('itemsTotal') : itemsTotal, false],
     ['Voucher của shop', sum('sellerDiscount'), true],
@@ -463,7 +480,7 @@ export function CheckoutPage() {
             </CardContent>
           </Card>
 
-          <Card size="sm" className="hidden md:flex">
+          <Card className="hidden py-3 md:flex">
             <CardContent
               className={`${CHECKOUT_COLS} text-sm text-muted-foreground`}
             >
@@ -480,6 +497,10 @@ export function CheckoutPage() {
                 <CardTitle className="flex items-center gap-2">
                   <Store className="size-4 text-muted-foreground" />
                   {group.shop.name}
+                  {preview.data?.shops.find((x) => x.shop.id === group.shop.id)
+                    ?.shop.freeship && (
+                    <Badge variant="outline">Freeship</Badge>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent className="divide-y">
@@ -512,9 +533,18 @@ export function CheckoutPage() {
               </CardContent>
               <CardFooter className="flex-wrap justify-end gap-x-2 gap-y-3 text-sm">
                 <div className="w-full sm:max-w-sm sm:flex-1">
-                  <VoucherSelect
+                  <VoucherPicker
                     label="Voucher của shop"
                     vouchers={ofType('shop_voucher', group.shop.id)}
+                    base={group.items.reduce(
+                      (n, l) => n + l.price * l.quantity,
+                      0,
+                    )}
+                    discount={
+                      preview.data?.shops.find(
+                        (x) => x.shop.id === group.shop.id,
+                      )?.sellerDiscount ?? 0
+                    }
                     value={picked[`shop:${group.shop.id}`]}
                     onChange={pick(`shop:${group.shop.id}`)}
                   />
@@ -552,17 +582,28 @@ export function CheckoutPage() {
                 </Label>
               ))}
             </RadioGroup>
-            <VoucherSelect
+            <VoucherPicker
               label="Voucher sàn"
               vouchers={ofType('platform_voucher')}
+              base={platformBase}
+              discount={sum('platformDiscount')}
               value={picked.platform}
               onChange={pick('platform')}
             />
-            <VoucherSelect
+            {/* Free shipping is applied by the server for shops in the Freeship program. */}
+            <VoucherPicker
               label="Mã miễn phí vận chuyển"
-              vouchers={ofType('shipping_voucher')}
-              value={picked.shipping}
-              onChange={pick('shipping')}
+              vouchers={[]}
+              base={0}
+              discount={0}
+              onChange={() => {}}
+              locked={
+                !preview.data?.shops.some((x) => x.shop.freeship)
+                  ? 'Shop chưa tham gia Freeship'
+                  : preview.data.shippingVoucher
+                    ? `${preview.data.shippingVoucher} · -${money(sum('shippingDiscount'))}`
+                    : 'Không có mã phù hợp'
+              }
             />
             <Separator />
             <div className="grid gap-2">
@@ -586,13 +627,21 @@ export function CheckoutPage() {
               </div>
             )}
             {preview.error && <ErrorMessage error={preview.error} />}
-            {place_.error && <ErrorMessage error={place_.error} />}
+            {place_.error &&
+              (place_.error.message.startsWith('Prices changed') ? (
+                <p className="text-sm text-destructive">
+                  Giá đã thay đổi, vui lòng kiểm tra lại đơn hàng
+                </p>
+              ) : (
+                <ErrorMessage error={place_.error} />
+              ))}
           </CardContent>
           <CardFooter>
             <Button
               className="w-full"
               disabled={
                 !chosenAddress ||
+                !preview.data ||
                 !!preview.error ||
                 preview.isFetching ||
                 place_.isPending
@@ -809,13 +858,10 @@ export const SHIPMENT_STEP: Partial<
   picked_up: { status: 'delivered', label: 'Đã giao hàng' },
 };
 
-const ORDER_COLS =
-  'flex flex-wrap items-start gap-4 md:grid md:grid-cols-[1fr_8rem_8rem_10rem]';
-
 export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
   const queryClient = useQueryClient();
   const basePath = party === 'buyer' ? '/orders' : '/shops/me/orders';
-  const linkPrefix = party === 'buyer' ? '/orders' : '/account/seller/orders';
+  const linkPrefix = party === 'buyer' ? '/orders' : '/seller/orders';
   const [status, setStatus] = useState<OrderStatus | 'all'>('all');
   const [cancelId, setCancelId] = useState<string | null>(null);
   const path = status === 'all' ? basePath : `${basePath}?status=${status}`;
@@ -857,150 +903,155 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
       ) : !page.items.length ? (
         <Empty>Chưa có đơn hàng</Empty>
       ) : (
-        <div className="space-y-3">
-          <Card size="sm" className="hidden md:flex">
-            <CardContent
-              className={`${ORDER_COLS} text-sm text-muted-foreground`}
-            >
-              <span>Sản phẩm</span>
-              <span className="text-right">Tổng tiền</span>
-              <span>Trạng thái</span>
-              <span className="text-right">Thao tác</span>
-            </CardContent>
-          </Card>
-          {page.items.map((o) => {
-            const step =
-              party === 'seller' && o.shipment
-                ? SHIPMENT_STEP[o.shipment.status]
-                : undefined;
-            const cancellable =
-              party === 'buyer' &&
-              (o.status === 'unpaid' ||
-                (o.status === 'to_ship' && !o.shipment));
-            return (
-              <Card key={o.id} className="gap-0 py-0">
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b bg-muted/40 px-(--card-spacing) py-2.5 text-sm">
-                  {party === 'buyer' ? (
-                    <span className="flex items-center gap-2 font-medium">
-                      <Store className="size-4 text-muted-foreground" />
-                      {o.shop.name}
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-2">
-                      <UserRound className="size-4 text-muted-foreground" />
-                      <span className="font-medium">
-                        {o.shippingAddress.recipientName}
-                      </span>
-                      <span className="text-muted-foreground">
-                        · {o.shippingAddress.province.name}
-                      </span>
-                    </span>
-                  )}
-                  <span className="text-muted-foreground">
-                    Mã đơn{' '}
-                    <span className="font-mono text-foreground">
-                      {o.id.slice(-8).toUpperCase()}
-                    </span>{' '}
-                    · {dateTime(o.createdAt)}
-                  </span>
-                </div>
-                <CardContent className={`${ORDER_COLS} py-4`}>
-                  <div className="grid min-w-56 flex-1 gap-3">
-                    {o.items.map((i) => (
-                      <div key={i.modelId} className="flex items-center gap-3">
-                        <ItemImage src={i.image} className="size-14" />
-                        <div className="min-w-0 flex-1">
-                          <p className="line-clamp-1">{i.itemName}</p>
-                          {i.modelName && (
-                            <p className="text-sm text-muted-foreground">
-                              {i.modelName}
-                            </p>
-                          )}
+        <Card>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Mã đơn</TableHead>
+                  <TableHead>Sản phẩm</TableHead>
+                  <TableHead className="text-center">Số lượng</TableHead>
+                  <TableHead className="text-right">Tổng tiền</TableHead>
+                  <TableHead>Thanh toán</TableHead>
+                  <TableHead>Trạng thái</TableHead>
+                  <TableHead className="text-right">Thao tác</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {page.items.map((o) => {
+                  const step =
+                    party === 'seller' && o.shipment
+                      ? SHIPMENT_STEP[o.shipment.status]
+                      : undefined;
+                  const cancellable =
+                    party === 'buyer' &&
+                    (o.status === 'unpaid' ||
+                      (o.status === 'to_ship' && !o.shipment));
+                  return (
+                    <TableRow key={o.id} className="align-top">
+                      <TableCell>
+                        <p className="font-mono font-medium">
+                          {o.id.slice(-8).toUpperCase()}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {dateTime(o.createdAt)}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {party === 'buyer'
+                            ? o.shop.name
+                            : `${o.shippingAddress.recipientName} · ${o.shippingAddress.province.name}`}
+                        </p>
+                      </TableCell>
+                      <TableCell className="min-w-64">
+                        <div className="grid gap-2">
+                          {o.items.map((i) => (
+                            <div
+                              key={i.id}
+                              className="flex h-12 items-center gap-3"
+                            >
+                              <ItemImage src={i.image} className="size-12" />
+                              <div className="min-w-0">
+                                <p className="line-clamp-1">{i.itemName}</p>
+                                {i.modelName && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {i.modelName}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          ))}
                         </div>
-                        <span className="text-sm text-muted-foreground">
-                          × {i.quantity}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium text-primary tabular-nums">
-                      {money(o.total)}
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      {PAYMENT_METHOD[o.paymentMethod]}
-                    </p>
-                  </div>
-                  <div>
-                    <OrderStatusBadge status={o.status} />
-                  </div>
-                  <div className="flex flex-col items-end gap-2">
-                    {party === 'seller' &&
-                      o.status === 'to_ship' &&
-                      !o.shipment && (
-                        <Button
-                          size="sm"
-                          disabled={act.isPending}
-                          onClick={() => act.mutate({ id: o.id, path: 'ship' })}
-                        >
-                          <PackageCheck />
-                          Chuẩn bị hàng
-                        </Button>
-                      )}
-                    {step && (
-                      <Button
-                        size="sm"
-                        disabled={act.isPending}
-                        onClick={() =>
-                          act.mutate({
-                            id: o.id,
-                            path: 'shipment',
-                            body: { status: step.status },
-                          })
-                        }
-                      >
-                        <Truck />
-                        {step.label}
-                      </Button>
-                    )}
-                    {party === 'buyer' &&
-                      o.status === 'delivered' &&
-                      !openReturn(o) && (
-                        <Button
-                          size="sm"
-                          disabled={act.isPending}
-                          onClick={() =>
-                            act.mutate({ id: o.id, path: 'receive' })
-                          }
-                        >
-                          <PackageCheck />
-                          Đã nhận được hàng
-                        </Button>
-                      )}
-                    {cancellable && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setCancelId(o.id)}
-                      >
-                        Hủy đơn
-                      </Button>
-                    )}
-                    <Button asChild variant="outline" size="sm">
-                      <Link to={`${linkPrefix}/${o.id}`}>Xem chi tiết</Link>
-                    </Button>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
-        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="grid gap-2">
+                          {o.items.map((i) => (
+                            <span
+                              key={i.id}
+                              className="flex h-12 items-center justify-center tabular-nums"
+                            >
+                              {i.quantity}
+                            </span>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-medium text-primary tabular-nums">
+                        {money(o.total)}
+                      </TableCell>
+                      <TableCell>{PAYMENT_METHOD[o.paymentMethod]}</TableCell>
+                      <TableCell>
+                        <OrderStatusBadge status={o.status} />
+                      </TableCell>
+                      <TableCell>
+                        <div className="ml-auto grid w-44 gap-2 *:w-full">
+                          {party === 'seller' &&
+                            o.status === 'to_ship' &&
+                            !o.shipment && (
+                              <Button
+                                size="sm"
+                                disabled={act.isPending}
+                                onClick={() =>
+                                  act.mutate({ id: o.id, path: 'ship' })
+                                }
+                              >
+                                <PackageCheck />
+                                Chuẩn bị hàng
+                              </Button>
+                            )}
+                          {step && (
+                            <Button
+                              size="sm"
+                              disabled={act.isPending}
+                              onClick={() =>
+                                act.mutate({
+                                  id: o.id,
+                                  path: 'shipment',
+                                  body: { status: step.status },
+                                })
+                              }
+                            >
+                              <Truck />
+                              {step.label}
+                            </Button>
+                          )}
+                          {party === 'buyer' &&
+                            o.status === 'delivered' &&
+                            !openReturn(o) && (
+                              <Button
+                                size="sm"
+                                disabled={act.isPending}
+                                onClick={() =>
+                                  act.mutate({ id: o.id, path: 'receive' })
+                                }
+                              >
+                                <PackageCheck />
+                                Đã nhận được hàng
+                              </Button>
+                            )}
+                          {cancellable && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setCancelId(o.id)}
+                            >
+                              Hủy đơn
+                            </Button>
+                          )}
+                          <Button asChild variant="outline" size="sm">
+                            <Link to={`${linkPrefix}/${o.id}`}>
+                              Xem chi tiết
+                            </Link>
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       )}
-      <LoadMore
-        hasMore={page.hasNextPage}
-        loading={page.isFetchingNextPage}
-        onClick={() => void page.fetchNextPage()}
-      />
+      <Pager page={page.page} prev={page.prev} next={page.next} />
       {cancelId && (
         <CancelOrderDialog
           orderId={cancelId}
@@ -1106,16 +1157,6 @@ export function OrderDetail({
       )}
       <div className="grid items-start gap-5 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-4">
-          <Card size="sm" className="hidden md:flex">
-            <CardContent
-              className={`${CHECKOUT_COLS} text-sm text-muted-foreground`}
-            >
-              <span>Sản phẩm</span>
-              <span className="text-right">Đơn giá</span>
-              <span className="text-center">Số lượng</span>
-              <span className="text-right">Thành tiền</span>
-            </CardContent>
-          </Card>
           <Card>
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
@@ -1126,32 +1167,60 @@ export function OrderDetail({
                 <OrderStatusBadge status={o.status} />
               </CardAction>
             </CardHeader>
-            <CardContent className="divide-y">
-              {o.items.map((i) => (
-                <div key={i.modelId} className={`${CHECKOUT_COLS} py-3`}>
-                  <div className="flex min-w-48 flex-1 items-center gap-3">
-                    <ItemImage src={i.image} className="size-16" />
-                    <div className="min-w-0">
-                      <p className="line-clamp-2 font-medium">{i.itemName}</p>
-                      {i.modelName && (
-                        <p className="text-sm text-muted-foreground">
-                          {i.modelName}
-                        </p>
+            <CardContent>
+              <Table fit={false}>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Sản phẩm</TableHead>
+                    <TableHead className="text-right">Đơn giá</TableHead>
+                    <TableHead className="text-center">Số lượng</TableHead>
+                    <TableHead className="text-right">Thành tiền</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {o.items.map((i) => (
+                    <Fragment key={i.id}>
+                      <TableRow>
+                        <TableCell className="min-w-64">
+                          <div className="flex items-center gap-3">
+                            <ItemImage src={i.image} className="size-14" />
+                            <div className="min-w-0">
+                              <p className="line-clamp-2 font-medium">
+                                {i.itemName}
+                              </p>
+                              {i.modelName && (
+                                <p className="text-xs text-muted-foreground">
+                                  {i.modelName}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <SalePrice
+                            price={i.price}
+                            originalPrice={i.originalPrice}
+                          />
+                        </TableCell>
+                        <TableCell className="text-center tabular-nums">
+                          {i.quantity}
+                        </TableCell>
+                        <TableCell className="text-right font-medium tabular-nums">
+                          {money(i.price * i.quantity)}
+                        </TableCell>
+                      </TableRow>
+                      {(i.review ||
+                        (viewer === 'buyer' && o.status === 'completed')) && (
+                        <TableRow className="hover:bg-transparent">
+                          <TableCell colSpan={4} className="whitespace-normal">
+                            <LineReview order={o} line={i} viewer={viewer} />
+                          </TableCell>
+                        </TableRow>
                       )}
-                    </div>
-                  </div>
-                  <SalePrice
-                    className="text-right"
-                    price={i.price}
-                    originalPrice={i.originalPrice}
-                  />
-                  <p className="text-center">{i.quantity}</p>
-                  <p className="text-right font-medium">
-                    {money(i.price * i.quantity)}
-                  </p>
-                  <LineReview order={o} line={i} viewer={viewer} />
-                </div>
-              ))}
+                    </Fragment>
+                  ))}
+                </TableBody>
+              </Table>
             </CardContent>
           </Card>
           <Card>
@@ -1200,6 +1269,27 @@ export function OrderDetail({
                     </span>
                   </div>
                 ))}
+              {o.vouchers.length > 0 && (
+                <div className="grid gap-2 rounded-md border border-dashed p-3">
+                  {o.vouchers.map((v) => (
+                    <div key={v.code} className="flex justify-between gap-3">
+                      <span className="grid min-w-0">
+                        <span className="flex items-center gap-1.5">
+                          <TicketPercent className="size-3.5 text-primary" />
+                          <span className="font-mono">{v.code}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {VOUCHER_TYPE[v.type]}
+                          </span>
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {v.name} · {voucherTerms(v)}
+                        </span>
+                      </span>
+                      <span className="tabular-nums">-{money(v.amount)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <Separator />
               <div className="flex items-baseline justify-between">
                 <span>Tổng cộng</span>

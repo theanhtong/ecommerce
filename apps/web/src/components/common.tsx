@@ -1,4 +1,13 @@
-import { ImageIcon, MapPin, Minus, Phone, Plus, UserRound } from 'lucide-react';
+import {
+  ChevronLeft,
+  ChevronRight,
+  ImageIcon,
+  MapPin,
+  Minus,
+  Phone,
+  Plus,
+  UserRound,
+} from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -52,20 +61,26 @@ export function Empty({ children }: { children: ReactNode }) {
   );
 }
 
-export function LoadMore({
-  hasMore,
-  loading,
-  onClick,
+export function Pager({
+  page,
+  prev,
+  next,
 }: {
-  hasMore: boolean;
-  loading: boolean;
-  onClick: () => void;
+  page: number;
+  prev?: () => void;
+  next?: () => void;
 }) {
-  if (!hasMore) return null;
+  if (!prev && !next) return null;
   return (
-    <div className="mt-4 flex justify-center">
-      <Button variant="outline" disabled={loading} onClick={onClick}>
-        Xem thêm
+    <div className="mt-4 flex items-center justify-center gap-3">
+      <Button variant="outline" size="sm" disabled={!prev} onClick={prev}>
+        <ChevronLeft />
+        Trước
+      </Button>
+      <span className="text-sm tabular-nums">Trang {page}</span>
+      <Button variant="outline" size="sm" disabled={!next} onClick={next}>
+        Sau
+        <ChevronRight />
       </Button>
     </div>
   );

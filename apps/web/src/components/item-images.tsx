@@ -194,7 +194,6 @@ export function ItemGallery({
                   ? 'rounded-md ring-2 ring-primary'
                   : 'rounded-md opacity-70 hover:opacity-100'
               }
-              onMouseEnter={() => onPick(i)}
               onClick={() => onPick(i)}
             >
               <ItemImage src={image.url} />

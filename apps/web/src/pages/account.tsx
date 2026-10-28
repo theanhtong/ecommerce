@@ -33,6 +33,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { useMyShop } from '@/lib/queries';
 import { phone } from '@/lib/format';
 import type { Address } from '@/lib/types';
 
@@ -51,30 +52,33 @@ export function Field({
 const TABS = [
   ['/account', 'Hồ sơ', User],
   ['/account/addresses', 'Địa chỉ', MapPin],
-  ['/account/seller', 'Cửa hàng', Store],
+  ['/account/shop', 'Cửa hàng', Store],
 ] as const;
 
 export function AccountLayout() {
   const { user } = useAuth();
+  const shop = useMyShop(user?.role === 'user');
   if (user?.role === 'admin') return <Navigate to="/admin/account" replace />;
+  // An approved shop is reached from the header instead.
+  const tabs = TABS.filter(
+    ([to]) => to !== '/account/shop' || shop.data?.status !== 'active',
+  );
   return (
     <div className="grid gap-5 md:grid-cols-[12rem_1fr]">
       <nav className="flex gap-2 md:flex-col">
-        {TABS.filter(([to]) => user?.role !== 'admin' || to === '/account').map(
-          ([to, label, Icon]) => (
-            <Button
-              asChild
-              key={to}
-              variant="ghost"
-              className="justify-start aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
-            >
-              <NavLink to={to} end={to === '/account'}>
-                <Icon />
-                {label}
-              </NavLink>
-            </Button>
-          ),
-        )}
+        {tabs.map(([to, label, Icon]) => (
+          <Button
+            asChild
+            key={to}
+            variant="ghost"
+            className="justify-start aria-[current=page]:bg-primary aria-[current=page]:text-primary-foreground"
+          >
+            <NavLink to={to} end={to === '/account'}>
+              <Icon />
+              {label}
+            </NavLink>
+          </Button>
+        ))}
       </nav>
       <div>
         <Outlet />
@@ -106,7 +110,7 @@ export function AccountPage() {
   return (
     <>
       <PageHeader title="Hồ sơ" />
-      <div className="grid max-w-3xl gap-5">
+      <div className="grid items-start gap-5 lg:grid-cols-2">
         <Card>
           <form
             className="contents"
