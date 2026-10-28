@@ -56,6 +56,8 @@ const { PayoutsService } =
   await import('../dist/modules/payouts/payouts.service.js');
 const { CreatePayoutDto } =
   await import('../dist/modules/payouts/dto/payout.dto.js');
+const { RefundsService } =
+  await import('../dist/modules/payments/refunds.service.js');
 
 const PASSWORD = 'demo password 123';
 const DAY = 24 * 60 * 60 * 1000;
@@ -797,7 +799,11 @@ async function moveOrder(orderId: string, at: Date) {
          WHEN 'return' THEN interval '6 days' ELSE interval '0' END
        WHERE ref_type = 'order' AND ref_id = $1::uuid::text RETURNING 1),
      u AS (UPDATE voucher_usages SET created_at = $2 WHERE checkout_id = (SELECT checkout_id FROM o) RETURNING 1),
-     f AS (UPDATE refunds SET created_at = $2::timestamptz + interval '5 hours' WHERE order_id = $1::uuid RETURNING 1)
+     f AS (
+       UPDATE refunds SET created_at = $2::timestamptz + CASE
+         WHEN (SELECT status FROM orders WHERE id = $1::uuid) = 'returned' THEN interval '6 days'
+         ELSE interval '5 hours' END
+       WHERE order_id = $1::uuid RETURNING 1)
      UPDATE ledger_entries SET created_at = $2::timestamptz + CASE ref_type
        WHEN 'order' THEN CASE WHEN (SELECT status FROM orders WHERE id = $1::uuid) = 'returned'
          THEN interval '6 days' ELSE interval '4 days' END
@@ -858,15 +864,15 @@ async function main() {
     logger: ['error', 'warn'],
   });
   const prisma = app.get(PrismaService);
+  const { id: adminId } = await prisma.user.findUniqueOrThrow({
+    where: { email: adminEmail },
+  });
   const auth = app.get(AuthService);
   const shops = app.get(ShopsService);
   const items = app.get(ItemsService);
   const images = app.get(ItemImagesService);
   const addresses = app.get(AddressesService);
   const carts = app.get(CartService);
-  const { id: adminId } = await prisma.user.findUniqueOrThrow({
-    where: { email: adminEmail },
-  });
   const checkouts = app.get(CheckoutService);
   const orders = app.get(OrdersService);
   const returns = app.get(ReturnsService);
@@ -876,6 +882,7 @@ async function main() {
   const reviews = app.get(ReviewsService);
   const payouts = app.get(PayoutsService);
   const ledger = app.get(LedgerService);
+  const refunds = app.get(RefundsService);
 
   const register = async (email: string, username: string) => {
     await auth.register(
@@ -1220,6 +1227,25 @@ async function main() {
     return orderIds as string[];
   };
 
+  // The admin sends buyers their money back a few days after a paid order is cancelled or returned;
+  // the last few days' refunds are left waiting.
+  const payRefunds = async (orderId: string) => {
+    const { rows } = await db.query<{ id: string; at: Date }>(
+      `SELECT id, created_at + interval '3 days' AS at FROM refunds
+       WHERE order_id = $1::uuid AND status = 'pending'`,
+      [orderId],
+    );
+    for (const { id, at } of rows) {
+      if (at.getTime() > now) continue;
+      await refunds.pay(id);
+      await db.query('UPDATE refunds SET paid_at = $2 WHERE id = $1', [id, at]);
+      await db.query(
+        'UPDATE ledger_entries SET created_at = $2 WHERE idempotency_key = $1',
+        [`refund:${id}:paid`, at],
+      );
+    }
+  };
+
   // Carriers hand over most of the COD they hold, then shops withdraw.
   const payOut = async (at: Date) => {
     const cod = await prisma.ledgerLine.aggregate({
@@ -1274,6 +1300,7 @@ async function main() {
       roll < 0.82 ? 'completed' : roll < 0.94 ? 'cancelled' : 'returned';
     for (const orderId of await place(buyer, outcome, chance(0.4))) {
       await moveOrder(orderId, at);
+      await payRefunds(orderId);
     }
     if ((i + 1) % 50 === 0) console.log(`  ${i + 1}/${CHECKOUTS}`);
   }
