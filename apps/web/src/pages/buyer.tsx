@@ -67,6 +67,7 @@ import {
   money,
   ORDER_STATUS,
   PAYMENT_METHOD,
+  PAYMENT_STATE,
   phone,
   RETURN_REASON,
   RETURN_STATUS,
@@ -1052,7 +1053,12 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
                       <TableCell className="text-right font-medium text-primary tabular-nums">
                         {money(o.total)}
                       </TableCell>
-                      <TableCell>{PAYMENT_METHOD[o.paymentMethod]}</TableCell>
+                      <TableCell>
+                        <p>{PAYMENT_METHOD[o.paymentMethod]}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {PAYMENT_STATE[o.paymentState]}
+                        </p>
+                      </TableCell>
                       <TableCell>
                         <OrderStatusBadge status={o.status} />
                       </TableCell>
@@ -1339,6 +1345,10 @@ export function OrderDetail({
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Phương thức</span>
                 <span>{PAYMENT_METHOD[o.paymentMethod]}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-muted-foreground">Trạng thái</span>
+                <span>{PAYMENT_STATE[o.paymentState]}</span>
               </div>
               {(
                 [

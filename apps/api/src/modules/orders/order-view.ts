@@ -3,7 +3,10 @@ import { reviewView } from '../reviews/review-view.js';
 import { mediaUrl } from '../storage/storage.service.js';
 
 export const orderInclude = {
-  checkout: { select: { paymentMethod: true } },
+  checkout: {
+    select: { paymentMethod: true, payment: { select: { status: true } } },
+  },
+  refund: { select: { status: true } },
   shop: { select: { id: true, name: true } },
   items: { orderBy: { id: 'asc' }, include: { review: true } },
   history: { orderBy: { id: 'asc' } },
@@ -15,12 +18,27 @@ type OrderWithDetails = Prisma.OrderGetPayload<{
   include: typeof orderInclude;
 }>;
 
+// Where the buyer's money stands, derived from the payment, the delivery and any refund.
+export function paymentState(
+  order: Pick<OrderWithDetails, 'checkout' | 'refund' | 'shipment' | 'status'>,
+) {
+  if (order.refund) {
+    return order.refund.status === 'paid' ? 'refunded' : 'refund_pending';
+  }
+  if (order.checkout.paymentMethod === 'online') {
+    return order.checkout.payment?.status ?? 'pending';
+  }
+  if (order.shipment?.deliveredAt) return 'cod_collected';
+  return order.status === 'cancelled' ? 'none' : 'cod_due';
+}
+
 export const orderView = ({
   items,
   history,
   checkout,
   shipment,
   returnRequest,
+  refund,
   ...order
 }: OrderWithDetails) => ({
   id: order.id,
@@ -28,6 +46,12 @@ export const orderView = ({
   shop: order.shop,
   status: order.status,
   paymentMethod: checkout.paymentMethod,
+  paymentState: paymentState({
+    checkout,
+    refund,
+    shipment,
+    status: order.status,
+  }),
   itemsTotal: order.itemsTotal,
   sellerDiscount: order.sellerDiscount,
   platformDiscount: order.platformDiscount,

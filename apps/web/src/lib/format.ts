@@ -88,6 +88,17 @@ export const PAYMENT_METHOD = {
   online: 'Thanh toán online',
 } as const;
 
+export const PAYMENT_STATE = {
+  pending: 'Chờ thanh toán',
+  paid: 'Đã thanh toán',
+  expired: 'Hết hạn thanh toán',
+  cod_due: 'Thu khi nhận hàng',
+  cod_collected: 'Đã thu COD',
+  refund_pending: 'Chờ hoàn tiền',
+  refunded: 'Đã hoàn tiền',
+  none: 'Không phát sinh',
+} as const;
+
 export const REFUND_STATUS = {
   pending: 'Chờ hoàn',
   paid: 'Đã hoàn',

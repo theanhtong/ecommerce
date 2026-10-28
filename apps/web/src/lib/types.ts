@@ -1,3 +1,4 @@
+import type { PAYMENT_STATE } from './format';
 export interface Page<T> {
   items: T[];
   nextCursor: string | null;
@@ -148,6 +149,7 @@ export interface Order {
   shop: { id: string; name: string };
   status: OrderStatus;
   paymentMethod: 'cod' | 'online';
+  paymentState: keyof typeof PAYMENT_STATE;
   itemsTotal: number;
   sellerDiscount: number;
   platformDiscount: number;
