@@ -100,6 +100,25 @@ describe('priceCart', () => {
     expect(big.freeshipFee).toBe(50_000);
   });
 
+  it('never lets the platform fund more than it earns on the checkout', () => {
+    // A small Freeship order next to a large one: 5% commission on 210000 is 10500, plus a 600
+    // Freeship fee on the 10000 order.
+    const carts = [
+      { ...cart[0], lines: [{ id: 'a1', amount: 10000 }] },
+      { ...cart[1], lines: [{ id: 'b1', amount: 200000 }], freeship: false },
+    ];
+    const vouchers = {
+      shop: new Map(),
+      platform: voucher({ discountValue: 8000 }),
+      shipping: voucher({ discountValue: 15000 }),
+    };
+    const [a, b] = priceCart(carts, vouchers, 500);
+    expect(a.platformDiscount + b.platformDiscount).toBe(8000);
+    expect(a.shippingDiscount).toBe(10500 + 600 - 8000);
+    const [free] = priceCart(carts, vouchers);
+    expect(free.shippingDiscount).toBe(15000);
+  });
+
   it('refuses a voucher whose minimum spend is not met', () => {
     expect(() =>
       priceCart(cart, {

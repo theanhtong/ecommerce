@@ -152,7 +152,8 @@ export class CheckoutService {
     }));
     // Shops in the Freeship program get the best free-shipping voucher applied for the buyer.
     if (!vouchers.cart.shipping && carts.some((c) => c.freeship)) {
-      const draft = priceCart(carts, vouchers.cart);
+    const commissionBps = this.vouchers.fees().commissionBps;
+      const draft = priceCart(carts, vouchers.cart, commissionBps);
       const auto = await this.vouchers.bestShipping(
         tx,
         buyerId,
@@ -165,12 +166,20 @@ export class CheckoutService {
           0,
         ),
       );
-      if (auto) {
+      // Kept only if the platform can still fund some of it on this checkout.
+      if (
+        auto &&
+        priceCart(
+          carts,
+          { ...vouchers.cart, shipping: auto },
+          commissionBps,
+        ).some((s) => s.shippingDiscount > 0)
+      ) {
         vouchers.cart.shipping = auto;
         vouchers.rows.push(auto);
       }
     }
-    const priced = priceCart(carts, vouchers.cart);
+    const priced = priceCart(carts, vouchers.cart, commissionBps);
     return {
       address,
       lines,
