@@ -18,6 +18,7 @@ import {
   platformVoucherExcess,
   type CartVouchers,
 } from './pricing.js';
+import { coded } from '../../common/http-error.js';
 
 const voucherInclude = { promotion: true } satisfies Prisma.VoucherInclude;
 type VoucherRow = Prisma.VoucherGetPayload<{ include: typeof voucherInclude }>;
@@ -73,7 +74,11 @@ export class VouchersService {
     });
     const missing = wanted.find((c) => !rows.some((r) => r.code === c));
     if (missing) {
-      throw new ConflictException(`Voucher ${missing} is not available`);
+      throw new ConflictException(
+        coded('voucher_unavailable', `Voucher ${missing} is not available`, {
+          voucher: missing,
+        }),
+      );
     }
 
     const cart: CartVouchers = { shop: new Map() };
@@ -82,7 +87,11 @@ export class VouchersService {
       if (type === PromotionType.shop_voucher) {
         if (!shopIds.includes(shopId!)) {
           throw new BadRequestException(
-            `Voucher ${row.code} is for a shop not in this order`,
+            coded(
+              'voucher_wrong_shop',
+              `Voucher ${row.code} is for a shop not in this order`,
+              { voucher: row.code },
+            ),
           );
         }
         if (cart.shop.has(shopId!)) {
@@ -93,7 +102,9 @@ export class VouchersService {
         const slot =
           type === PromotionType.platform_voucher ? 'platform' : 'shipping';
         if (cart[slot]) {
-          throw new BadRequestException(`Only one ${type.replace('_', ' ')}`);
+          throw new BadRequestException(
+            coded('voucher_one_per_type', `Only one ${type.replace('_', ' ')}`),
+          );
         }
         cart[slot] = row;
       }
@@ -104,7 +115,11 @@ export class VouchersService {
       include: { voucher: true },
     });
     if (used) {
-      throw new ConflictException(`Voucher ${used.voucher.code} already used`);
+      throw new ConflictException(
+        coded('voucher_used', `Voucher ${used.voucher.code} already used`, {
+          voucher: used.voucher.code,
+        }),
+      );
     }
     return { cart, rows };
   }
@@ -120,13 +135,22 @@ export class VouchersService {
       const taken = await tx.$executeRaw`
         UPDATE vouchers SET used_count = used_count + 1
         WHERE promotion_id = ${row.promotionId}::uuid AND used_count < usage_limit`;
-      if (!taken) throw new ConflictException(`Voucher ${row.code} is used up`);
+      if (!taken)
+        throw new ConflictException(
+          coded('voucher_used_up', `Voucher ${row.code} is used up`, {
+            voucher: row.code,
+          }),
+        );
       const { count } = await tx.voucherUsage.createMany({
         data: { voucherId: row.promotionId, userId: buyerId, checkoutId },
         skipDuplicates: true,
       });
       if (!count) {
-        throw new ConflictException(`Voucher ${row.code} already used`);
+        throw new ConflictException(
+          coded('voucher_used', `Voucher ${row.code} already used`, {
+            voucher: row.code,
+          }),
+        );
       }
     }
   }
@@ -215,7 +239,11 @@ export class VouchersService {
     );
     if (limit !== null) {
       throw new BadRequestException(
-        `At this minimum spend the discount must be capped at ${limit}`,
+        coded(
+          'voucher_over_limit',
+          `At this minimum spend the discount must be capped at ${limit}`,
+          { limit },
+        ),
       );
     }
     return this.create(type, null, dto);

@@ -11,6 +11,7 @@ import {
   LABELS,
 } from './build-items.js';
 import { parseCsv, toCsv } from './csv.js';
+import { coded } from '../../../common/http-error.js';
 
 export const MAX_IMPORT_ROWS = 1000;
 
@@ -171,13 +172,17 @@ export class ItemsImportService {
       table = parseCsv(csv);
     } catch (error) {
       throw new BadRequestException(
-        `Malformed CSV: ${(error as Error).message}`,
+        coded('csv_malformed', `Malformed CSV: ${(error as Error).message}`),
       );
     }
     if (table.length < 2)
       throw new BadRequestException('The file has no product rows');
     if (table.length - 1 > MAX_IMPORT_ROWS) {
-      throw new BadRequestException(`At most ${MAX_IMPORT_ROWS} rows per file`);
+      throw new BadRequestException(
+        coded('csv_rows_max', `At most ${MAX_IMPORT_ROWS} rows per file`, {
+          max: MAX_IMPORT_ROWS,
+        }),
+      );
     }
     let groups;
     try {

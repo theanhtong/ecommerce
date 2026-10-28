@@ -11,6 +11,7 @@ import {
 } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
+import { coded } from '../../common/http-error.js';
 
 const refundInclude = {
   order: {
@@ -69,7 +70,9 @@ export class RefundsService {
       const refund = await tx.refund.findUnique({ where: { id } });
       if (!refund) throw new NotFoundException('Refund not found');
       if (count === 0) {
-        throw new ConflictException(`Refund is ${refund.status}`);
+        throw new ConflictException(
+          coded('refund_state', `Refund is ${refund.status}`),
+        );
       }
       await this.ledger.payRefund(tx, refund);
     });

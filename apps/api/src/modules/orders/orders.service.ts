@@ -23,6 +23,7 @@ import { releaseFlashSales } from '../promotions/flash-sales.js';
 import { VouchersService } from '../promotions/vouchers.service.js';
 import type { AdminListOrdersQuery, ListOrdersQuery } from './dto/order.dto.js';
 import { orderInclude, orderView } from './order-view.js';
+import { coded } from '../../common/http-error.js';
 
 type Party = 'buyer' | 'seller';
 type StockEffect = {
@@ -151,7 +152,7 @@ export class OrdersService {
     await this.prisma.$transaction(async (tx) => {
       const status = await this.lockOrder(tx, id);
       if (status !== OrderStatus.to_ship) {
-        throw new ConflictException(`Order is ${status}`);
+        throw new ConflictException(coded('order_state', `Order is ${status}`));
       }
       const { count } = await tx.shipment.createMany({
         data: { orderId: id },
@@ -228,7 +229,7 @@ export class OrdersService {
   ) {
     const status = await this.lockOrder(tx, id);
     if (status !== OrderStatus.delivered && status !== OrderStatus.completed) {
-      throw new ConflictException(`Order is ${status}`);
+      throw new ConflictException(coded('order_state', `Order is ${status}`));
     }
     const order = await tx.order.findUniqueOrThrow({
       where: { id },
@@ -287,7 +288,9 @@ export class OrdersService {
           where: { id: shipmentId },
         });
         if (current.status === status) return;
-        throw new ConflictException(`Shipment is ${current.status}`);
+        throw new ConflictException(
+          coded('shipment_state', `Shipment is ${current.status}`),
+        );
       }
       await this.move(tx, shipment.order, step.orderFrom, step.orderTo, {
         actorId,
@@ -480,10 +483,13 @@ export class OrdersService {
   ) {
     const { party, order } = await this.involved(userId, id);
     const allowed = rule.from[order.status];
-    if (!allowed) throw new ConflictException(`Order is ${order.status}`);
+    if (!allowed)
+      throw new ConflictException(
+        coded('order_state', `Order is ${order.status}`),
+      );
     if (!allowed.includes(party)) {
       throw new ForbiddenException(
-        `Only the ${allowed.join(' or ')} can do this`,
+        coded('order_party', `Only the ${allowed.join(' or ')} can do this`),
       );
     }
     rule.check?.(party);

@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { coded } from '../../common/http-error.js';
 
 export interface VoucherTerms {
   code: string;
@@ -93,7 +94,11 @@ export function allocate(total: number, weights: number[]) {
 function requireSpend(v: VoucherTerms, base: number) {
   if (base < v.minSpend) {
     throw new BadRequestException(
-      `Voucher ${v.code} needs a minimum spend of ${v.minSpend}`,
+      coded(
+        'voucher_min_spend',
+        `Voucher ${v.code} needs a minimum spend of ${v.minSpend}`,
+        { voucher: v.code, minSpend: v.minSpend },
+      ),
     );
   }
 }
@@ -137,18 +142,21 @@ export function priceCart(
   const platformTotal = Math.min(
     budget,
     vouchers.platform ? discountFor(vouchers.platform, platformBase) : 0,
-    afterShop,
   );
+  budget -= platformTotal;
+  const platformByShop = allocate(platformTotal, afterShop);
 
   // Shipping vouchers only cover shops in the Freeship program, which fund them through its fee.
   const fees = priced.map((s) => (s.freeship ? s.shippingFee : 0));
   const shippingBase = sum(fees);
-  budget -= platformTotal;
-  const platformByShop = allocate(platformTotal, afterShop);
   if (vouchers.shipping) {
     if (!shippingBase) {
       throw new BadRequestException(
-        `Voucher ${vouchers.shipping.code} only covers shops in the Freeship program`,
+        coded(
+          'voucher_freeship_only',
+          `Voucher ${vouchers.shipping.code} only covers shops in the Freeship program`,
+          { voucher: vouchers.shipping.code },
+        ),
       );
     }
     requireSpend(vouchers.shipping, platformBase - sum(platformByShop));

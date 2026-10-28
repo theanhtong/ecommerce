@@ -1,5 +1,6 @@
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import cookieParser from 'cookie-parser';
+import { HttpErrorFilter } from './common/http-error.js';
 import { requestLog } from './common/request-log.js';
 
 export function configureApp(app: INestApplication) {
@@ -16,5 +17,6 @@ export function configureApp(app: INestApplication) {
       transform: true,
     }),
   );
+  app.useGlobalFilters(new HttpErrorFilter());
   app.enableShutdownHooks();
 }

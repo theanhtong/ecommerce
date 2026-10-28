@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { coded } from '../../common/http-error.js';
 
 export interface TierInput {
   name: string;
@@ -17,21 +18,37 @@ const hasDuplicates = (values: string[]) =>
 // Assumption: every option combination must have exactly one model.
 export function validateVariations(tiers: TierInput[], models: ModelInput[]) {
   if (tiers.length > MAX_TIERS) {
-    throw new BadRequestException(`At most ${MAX_TIERS} tier variations`);
+    throw new BadRequestException(
+      coded('tiers_max', `At most ${MAX_TIERS} tier variations`, {
+        max: MAX_TIERS,
+      }),
+    );
   }
   if (hasDuplicates(tiers.map((t) => t.name))) {
     throw new BadRequestException('Tier variation names must be unique');
   }
   for (const tier of tiers) {
     if (hasDuplicates(tier.options)) {
-      throw new BadRequestException(`Options of "${tier.name}" must be unique`);
+      throw new BadRequestException(
+        coded(
+          'tier_options_unique',
+          `Options of "${tier.name}" must be unique`,
+          {
+            tier: tier.name,
+          },
+        ),
+      );
     }
   }
 
   const combinations = tiers.reduce((n, t) => n * t.options.length, 1);
   if (models.length !== combinations) {
     throw new BadRequestException(
-      `Expected ${combinations} models, one per option combination`,
+      coded(
+        'models_per_combination',
+        `Expected ${combinations} models, one per option combination`,
+        { count: combinations },
+      ),
     );
   }
 
@@ -44,12 +61,17 @@ export function validateVariations(tiers: TierInput[], models: ModelInput[]) {
       );
     if (!valid) {
       throw new BadRequestException(
-        `Invalid tierIndex [${tierIndex.join(', ')}]`,
+        coded(
+          'tier_index_invalid',
+          `Invalid tierIndex [${tierIndex.join(', ')}]`,
+        ),
       );
     }
     const key = tierIndex.join(',');
     if (seen.has(key)) {
-      throw new BadRequestException(`Duplicate tierIndex [${key}]`);
+      throw new BadRequestException(
+        coded('tier_index_duplicate', `Duplicate tierIndex [${key}]`),
+      );
     }
     seen.add(key);
   }
