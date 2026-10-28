@@ -9,6 +9,7 @@ import {
   createTestApp,
   SHOP_ADDRESS,
   signUp,
+  carrier,
 } from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
@@ -29,8 +30,6 @@ describe('Ledger (e2e)', () => {
     put: (url: string, body: object) =>
       http().put(url).set(bearer(account.token)).send(body),
   });
-  const shipment = (s: Account, orderId: string, status: string) =>
-    as(s).post(`/orders/${orderId}/shipment`, { status });
 
   async function seller() {
     const account = await signUp(app, emails);
@@ -80,8 +79,8 @@ describe('Ledger (e2e)', () => {
 
   async function complete(s: Account, b: Account, orderId: string) {
     await as(s).post(`/orders/${orderId}/ship`).expect(200);
-    await shipment(s, orderId, 'picked_up').expect(200);
-    await shipment(s, orderId, 'delivered').expect(200);
+    await carrier(app, orderId, 'picked_up');
+    await carrier(app, orderId, 'delivered');
     return as(b).post(`/orders/${orderId}/receive`).expect(200);
   }
 
@@ -284,7 +283,7 @@ describe('Ledger (e2e)', () => {
     });
     const inTransit = await order(s);
     await as(s).post(`/orders/${inTransit.order.id}/ship`).expect(200);
-    await shipment(s, inTransit.order.id, 'picked_up').expect(200);
+    await carrier(app, inTransit.order.id, 'picked_up');
 
     expect(
       await prisma.ledgerEntry.count({

@@ -8,6 +8,7 @@ import {
   createTestApp,
   SHOP_ADDRESS,
   signUp,
+  carrier,
 } from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
@@ -89,9 +90,7 @@ describe('Payouts and refunds (e2e)', () => {
   async function completed(s: Awaited<ReturnType<typeof seller>>) {
     const { buyer, order: o } = await order(s);
     await as(s).post(`/orders/${o.id}/ship`).expect(200);
-    for (const status of ['picked_up', 'delivered']) {
-      await as(s).post(`/orders/${o.id}/shipment`, { status }).expect(200);
-    }
+    await carrier(app, o.id, 'delivered');
     await as(buyer).post(`/orders/${o.id}/receive`).expect(200);
     return o;
   }

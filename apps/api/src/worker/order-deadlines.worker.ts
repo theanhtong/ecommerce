@@ -47,14 +47,15 @@ export class OrderDeadlinesWorker
   }
 
   private async sweep() {
+    const shipped = await this.orders.advanceShipments();
     const cancelled =
       (await this.orders.expireUnpaid()) +
       (await this.orders.cancelUnshipped());
     const returned = await this.returns.acceptUnanswered();
     const completed = await this.orders.completeDelivered();
-    if (cancelled || returned || completed) {
+    if (shipped || cancelled || returned || completed) {
       this.logger.log(
-        `Cancelled ${cancelled}, returned ${returned}, completed ${completed} orders`,
+        `Shipments moved ${shipped}; cancelled ${cancelled}, returned ${returned}, completed ${completed} orders`,
       );
     }
   }

@@ -10,6 +10,7 @@ import {
   createTestApp,
   SHOP_ADDRESS,
   signUp,
+  carrier,
 } from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
@@ -74,9 +75,7 @@ describe('Returns (e2e)', () => {
       .expect(201);
     const order = placed.body.orders[0] as { id: string; total: number };
     await as(s).post(`/orders/${order.id}/ship`).expect(200);
-    for (const status of ['picked_up', 'delivered']) {
-      await as(s).post(`/orders/${order.id}/shipment`, { status }).expect(200);
-    }
+    await carrier(app, order.id, 'delivered');
     return { s, b, order, modelId };
   }
 
