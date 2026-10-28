@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PayoutStatus, Prisma } from '@ecommerce/db';
+import { coded } from '../../common/http-error.js';
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
@@ -31,8 +32,15 @@ export class PayoutsService {
     const shop = await this.ownShop(ownerId);
     const payout = await this.prisma.$transaction(async (tx) => {
       const balance = await this.ledger.lockWalletBalance(tx, shop.id);
-      if (dto.amount > balance) {
-        throw new ConflictException('Amount exceeds the wallet balance');
+      const held = await this.ledger.heldBalance(tx, shop.id);
+      if (dto.amount > balance - held) {
+        throw new ConflictException(
+          coded(
+            'payout_over_available',
+            'Amount exceeds what can be withdrawn now',
+            { available: Math.max(0, balance - held) },
+          ),
+        );
       }
       // shortcut: marked paid at once to simulate automatic disbursement; send it through a payout API before going live.
       const created = await tx.payout.create({

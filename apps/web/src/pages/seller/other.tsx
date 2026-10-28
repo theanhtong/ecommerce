@@ -231,6 +231,8 @@ interface WalletLine {
 
 interface WalletPage {
   balance: number;
+  // Money from orders still inside the return window, not yet withdrawable.
+  held: number;
   items: WalletLine[];
   nextCursor: string | null;
 }
@@ -638,6 +640,7 @@ export function ShopWallet() {
   if (wallet.error) return <ErrorMessage error={wallet.error} />;
   const lines = wallet.data.items;
   const balance = wallet.data.balance;
+  const available = Math.max(0, balance - wallet.data.held);
 
   return (
     <Card>
@@ -649,11 +652,15 @@ export function ShopWallet() {
         <CardAction className="flex items-center gap-6">
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Số dư</p>
+            <p className="text-xl font-medium tabular-nums">{money(balance)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Có thể rút</p>
             <p className="text-xl font-medium text-primary tabular-nums">
-              {money(balance)}
+              {money(available)}
             </p>
           </div>
-          <PayoutDialog balance={balance} last={last.data?.items[0]} />
+          <PayoutDialog balance={available} last={last.data?.items[0]} />
         </CardAction>
       </CardHeader>
       <CardContent>
