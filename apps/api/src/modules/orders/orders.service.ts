@@ -471,7 +471,13 @@ export class OrdersService {
 
   private async list(where: Prisma.OrderWhereInput, query: ListOrdersQuery) {
     const orders = await this.prisma.order.findMany({
-      where: { ...where, status: query.status },
+      where: {
+        ...where,
+        status: query.status,
+        ...(query.prepared && {
+          shipment: query.prepared === 'true' ? { isNot: null } : { is: null },
+        }),
+      },
       include: orderInclude,
       ...cursorArgs(query, 'desc'),
     });

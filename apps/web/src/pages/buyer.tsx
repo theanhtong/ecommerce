@@ -77,6 +77,7 @@ import {
 } from '@/lib/format';
 import { useCart, useFees, usePaged } from '@/lib/queries';
 import { useParam } from '@/lib/use-param';
+import { SELECTED } from '@/components/report';
 import type {
   Address,
   CancelReason,
@@ -923,10 +924,21 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
     'all',
     ORDER_TABS,
   );
+  // Orders waiting for pickup split into those the shop still has to prepare and those prepared.
+  const [prepared, setPrepared] = useParam('prepared', 'all', [
+    'all',
+    'false',
+    'true',
+  ]);
+  const split = party === 'seller' && status === 'to_ship';
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [prepareId, setPrepareId] = useState<string | null>(null);
-  const path = status === 'all' ? basePath : `${basePath}?status=${status}`;
-  const page = usePaged<Order>(['orders', basePath, status], path);
+  const params = new URLSearchParams({
+    ...(status !== 'all' && { status }),
+    ...(split && prepared !== 'all' && { prepared }),
+  }).toString();
+  const path = params ? `${basePath}?${params}` : basePath;
+  const page = usePaged<Order>(['orders', basePath, params], path);
   const act = useMutation({
     mutationFn: ({
       id,
@@ -957,6 +969,27 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
           </Button>
         ))}
       </div>
+      {split && (
+        <div className="mb-4 flex flex-wrap gap-2">
+          {(
+            [
+              ['all', 'Tất cả'],
+              ['false', 'Chưa xử lý'],
+              ['true', 'Đã xử lý'],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              size="sm"
+              variant="outline"
+              className={prepared === value ? SELECTED : undefined}
+              onClick={() => setPrepared(value)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+      )}
       {page.isPending ? (
         <Loading />
       ) : page.error ? (
