@@ -10,6 +10,7 @@ import { PrismaService } from '../../prisma/prisma.service.js';
 import { variationName } from '../catalog/items.service.js';
 import { mediaUrl } from '../storage/storage.service.js';
 import type { CreateFlashSaleDto } from './dto/flash-sale.dto.js';
+import { flashAllowance } from './flash-sales.js';
 
 // Assumption: a shop flash sale runs for at most a day.
 const MAX_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -197,6 +198,49 @@ export class FlashSalesService {
         ...saleModelView(r),
         endsAt: promotion.endsAt,
       }));
+  }
+
+  // One flash sale line for its own page, including ended or sold-out ones.
+  async getPublic(id: string, now = new Date()) {
+    const row = await this.prisma.flashSaleModel.findFirst({
+      where: {
+        id,
+        promotion: { shop: { status: ShopStatus.active } },
+        model: { deletedAt: null, item: { status: ItemStatus.active } },
+      },
+      include: {
+        ...modelInclude,
+        promotion: {
+          select: {
+            startsAt: true,
+            endsAt: true,
+            shop: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+    if (!row) throw new NotFoundException('Flash sale not found');
+    const { promotion, ...rest } = row;
+    return {
+      ...saleModelView(rest),
+      shop: promotion.shop,
+      startsAt: promotion.startsAt,
+      endsAt: promotion.endsAt,
+      status:
+        promotion.endsAt <= now
+          ? 'ended'
+          : promotion.startsAt > now
+            ? 'upcoming'
+            : rest.sold >= rest.quota
+              ? 'sold_out'
+              : 'running',
+    };
+  }
+
+  async allowance(buyerId: string, id: string) {
+    const row = await this.prisma.flashSaleModel.findUnique({ where: { id } });
+    if (!row) throw new NotFoundException('Flash sale not found');
+    return { allowance: await flashAllowance(this.prisma, buyerId, row) };
   }
 
   private async get(id: string) {

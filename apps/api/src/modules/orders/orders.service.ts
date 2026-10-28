@@ -430,7 +430,7 @@ export class OrdersService {
     const orders = await this.prisma.order.findMany({
       where: { ...where, status: query.status },
       include: orderInclude,
-      ...cursorArgs(query),
+      ...cursorArgs(query, 'desc'),
     });
     const page = toPage(orders, query.limit);
     return { ...page, items: page.items.map(orderView) };

@@ -34,6 +34,8 @@ export const orderView = ({
   shippingFee: order.shippingFee,
   shippingDiscount: order.shippingDiscount,
   total: order.total,
+  freeshipFee: order.freeshipFee,
+  vouchers: order.vouchers,
   shippingAddress: order.shippingAddress,
   pickupAddress: order.pickupAddress,
   cancelReason: order.cancelReason,

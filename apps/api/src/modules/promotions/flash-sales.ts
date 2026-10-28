@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@ecommerce/db';
 
 type Db = Pick<Prisma.TransactionClient, 'flashSaleModel'>;
@@ -12,7 +12,23 @@ export interface ActiveFlashSale {
   endsAt: Date;
 }
 
-// A flash sale applies while it runs and until its quota sells out; models never sit in two at once.
+const toActive = (r: {
+  id: string;
+  price: number;
+  quota: number;
+  sold: number;
+  purchaseLimit: number;
+  promotion: { endsAt: Date };
+}): ActiveFlashSale => ({
+  id: r.id,
+  price: r.price,
+  quota: r.quota,
+  sold: r.sold,
+  purchaseLimit: r.purchaseLimit,
+  endsAt: r.promotion.endsAt,
+});
+
+// Running and not sold out; a model is never in two flash sales at once.
 export async function activeFlashSales(
   db: Db,
   modelIds: string[],
@@ -25,52 +41,70 @@ export async function activeFlashSales(
     },
     include: { promotion: { select: { endsAt: true } } },
   });
-  return new Map<string, ActiveFlashSale>(
-    rows
-      .filter((r) => r.sold < r.quota)
-      .map((r) => [
-        r.modelId,
-        {
-          id: r.id,
-          price: r.price,
-          quota: r.quota,
-          sold: r.sold,
-          purchaseLimit: r.purchaseLimit,
-          endsAt: r.promotion.endsAt,
-        },
-      ]),
+  return new Map(
+    rows.filter((r) => r.sold < r.quota).map((r) => [r.modelId, toActive(r)]),
   );
 }
 
+// What a product page needs to point at its flash sale page.
 export const flashSaleView = (sale: ActiveFlashSale) => ({
+  id: sale.id,
   price: sale.price,
-  quota: sale.quota,
-  sold: sale.sold,
-  purchaseLimit: sale.purchaseLimit,
   endsAt: sale.endsAt,
 });
 
 // Assumption: cancelled orders give their units back to the buyer's limit; returned ones do not.
-export async function assertWithinLimit(
-  tx: Prisma.TransactionClient,
+async function boughtAtFlashPrice(
+  db: Pick<Prisma.TransactionClient, '$queryRaw'>,
   buyerId: string,
-  sale: ActiveFlashSale,
-  quantity: number,
+  saleId: string,
 ) {
-  const [{ bought }] = await tx.$queryRaw<{ bought: number }[]>`
+  const [{ bought }] = await db.$queryRaw<{ bought: number }[]>`
     SELECT coalesce(sum(oi.quantity), 0)::int AS bought
     FROM order_items oi JOIN orders o ON o.id = oi.order_id
-    WHERE oi.flash_sale_model_id = ${sale.id}::uuid
+    WHERE oi.flash_sale_model_id = ${saleId}::uuid
       AND o.buyer_id = ${buyerId}::uuid
       AND o.status <> 'cancelled'`;
-  if (bought + quantity > sale.purchaseLimit) {
-    throw new ConflictException(
-      `A buyer can get at most ${sale.purchaseLimit} at the flash sale price`,
-    );
-  }
+  return bought;
 }
 
-// Takes units from the quota; the row lock it holds until commit serializes buyers of the same model.
+// How many more units this buyer can still get at the flash sale price.
+export async function flashAllowance(
+  db: Pick<Prisma.TransactionClient, '$queryRaw'>,
+  buyerId: string,
+  sale: Pick<ActiveFlashSale, 'id' | 'quota' | 'sold' | 'purchaseLimit'>,
+) {
+  return Math.max(
+    0,
+    Math.min(
+      sale.quota - sale.sold,
+      sale.purchaseLimit - (await boughtAtFlashPrice(db, buyerId, sale.id)),
+    ),
+  );
+}
+
+// With lock, holds the row so the quota and the buyer's limit are read and taken by one checkout at a time.
+export async function runningFlashSale(
+  tx: Prisma.TransactionClient,
+  id: string,
+  lock: boolean,
+  now = new Date(),
+) {
+  if (lock) {
+    await tx.$queryRaw`SELECT id FROM flash_sale_models WHERE id = ${id}::uuid FOR UPDATE`;
+  }
+  const row = await tx.flashSaleModel.findUnique({
+    where: { id },
+    include: { promotion: { select: { startsAt: true, endsAt: true } } },
+  });
+  if (!row) throw new NotFoundException('Flash sale not found');
+  if (row.promotion.startsAt > now || row.promotion.endsAt <= now) {
+    throw new ConflictException('Flash sale is not running');
+  }
+  if (row.sold >= row.quota) throw new ConflictException('Flash sale sold out');
+  return { modelId: row.modelId, sale: toActive(row) };
+}
+
 export async function claimFlashSale(
   tx: Prisma.TransactionClient,
   sale: ActiveFlashSale,
@@ -79,9 +113,7 @@ export async function claimFlashSale(
   const claimed = await tx.$executeRaw`
     UPDATE flash_sale_models SET sold = sold + ${quantity}
     WHERE id = ${sale.id}::uuid AND sold + ${quantity} <= quota`;
-  if (!claimed) {
-    throw new ConflictException('Flash sale sold out, reload the cart');
-  }
+  if (!claimed) throw new ConflictException('Flash sale sold out');
 }
 
 export function releaseFlashSales(
