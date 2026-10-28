@@ -27,11 +27,11 @@ describe('Shops (e2e)', () => {
       .send({ ...SHOP_ADDRESS, name: `Cửa Hàng ${unique()}`, ...fields });
   const updateShop = (token: string, fields: Record<string, unknown>) =>
     http().patch('/shops/me').set(bearer(token)).send(fields);
-  const setStatus = (id: string, status: string) =>
+  const setStatus = (id: string, status: string, reason?: string) =>
     http()
       .patch(`/admin/shops/${id}/status`)
       .set(bearer(admin.token))
-      .send({ status });
+      .send({ status, reason });
 
   beforeAll(async () => {
     app = await createTestApp();
@@ -125,8 +125,12 @@ describe('Shops (e2e)', () => {
     const owner = await user();
     const shop = (await openShop(owner.token).expect(201)).body;
 
-    await setStatus(shop.id, 'rejected').expect(200);
+    const mine = () =>
+      http().get('/shops/me').set(bearer(owner.token)).expect(200);
+    await setStatus(shop.id, 'rejected').expect(400);
+    await setStatus(shop.id, 'rejected', 'Thiếu ảnh').expect(200);
     await setStatus(shop.id, 'active').expect(409);
+    expect((await mine()).body.statusReason).toBe('Thiếu ảnh');
 
     const edited = await updateShop(owner.token, {
       description: 'Hàng thủ công',
@@ -137,11 +141,20 @@ describe('Shops (e2e)', () => {
     });
 
     await setStatus(shop.id, 'active').expect(200);
-    await setStatus(shop.id, 'banned').expect(200);
+    expect((await mine()).body.statusReason).toBeNull();
+    await setStatus(shop.id, 'banned', 'Hàng giả').expect(200);
+    expect((await mine()).body.statusReason).toBe('Hàng giả');
     await http().get(`/shops/${shop.id}`).expect(404);
     await updateShop(owner.token, { description: 'x' }).expect(403);
 
     await setStatus(shop.id, 'active').expect(200);
+    const detail = await http()
+      .get(`/admin/shops/${shop.id}`)
+      .set(bearer(admin.token))
+      .expect(200);
+    expect(
+      detail.body.moderations.map((m: { status: string }) => m.status),
+    ).toEqual(['active', 'banned', 'active', 'rejected']);
   });
 
   it('keeps one pickup and return address on the shop', async () => {
@@ -180,7 +193,7 @@ describe('Shops (e2e)', () => {
     await setAddress({ ...warehouse, isPickup: true }).expect(400);
 
     await setStatus(shop.id, 'active').expect(200);
-    await setStatus(shop.id, 'banned').expect(200);
+    await setStatus(shop.id, 'banned', 'Vi phạm').expect(200);
     await setAddress(warehouse).expect(403);
     await http().put('/shops/me/address').send(warehouse).expect(401);
   });
@@ -248,7 +261,7 @@ describe('Shops (e2e)', () => {
       .set(bearer(token))
       .send({ status: 'active' })
       .expect(403);
-    await setStatus(shop.id, 'banned').expect(409);
+    await setStatus(shop.id, 'banned', 'Vi phạm').expect(409);
     await setStatus(shop.id, 'nope').expect(400);
     await setStatus(randomUUID(), 'active').expect(404);
 

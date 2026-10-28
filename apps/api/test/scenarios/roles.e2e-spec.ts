@@ -74,10 +74,16 @@ describe('Roles: admin, buyer and seller (e2e)', () => {
       await as(buyer).get('/admin/users').expect(403);
       await as(buyer).get('/admin/shops').expect(403);
       await as(buyer)
-        .patch(`/admin/shops/${shopId}/status`, { status: 'banned' })
+        .patch(`/admin/shops/${shopId}/status`, {
+          status: 'banned',
+          reason: 'Vi phạm',
+        })
         .expect(403);
       await as(buyer)
-        .patch(`/admin/users/${seller.id}/status`, { status: 'banned' })
+        .patch(`/admin/users/${seller.id}/status`, {
+          status: 'banned',
+          reason: 'Vi phạm',
+        })
         .expect(403);
     });
   });
@@ -99,7 +105,10 @@ describe('Roles: admin, buyer and seller (e2e)', () => {
         .expect(409);
       await as(seller).get('/admin/shops').expect(403);
       await as(seller)
-        .patch(`/admin/shops/${shopId}/status`, { status: 'banned' })
+        .patch(`/admin/shops/${shopId}/status`, {
+          status: 'banned',
+          reason: 'Vi phạm',
+        })
         .expect(403);
     });
   });
@@ -150,7 +159,10 @@ describe('Roles: admin, buyer and seller (e2e)', () => {
 
     it("bans the seller's shop, hiding it and freezing edits, then restores it", async () => {
       await as(admin)
-        .patch(`/admin/shops/${shopId}/status`, { status: 'banned' })
+        .patch(`/admin/shops/${shopId}/status`, {
+          status: 'banned',
+          reason: 'Vi phạm',
+        })
         .expect(200);
       await http().get(`/shops/${shopId}`).expect(404);
       await as(seller).patch('/shops/me', { description: 'x' }).expect(403);
@@ -163,7 +175,10 @@ describe('Roles: admin, buyer and seller (e2e)', () => {
 
     it('bans the buyer, ending their sessions, then restores the account', async () => {
       await as(admin)
-        .patch(`/admin/users/${buyer.id}/status`, { status: 'banned' })
+        .patch(`/admin/users/${buyer.id}/status`, {
+          status: 'banned',
+          reason: 'Vi phạm',
+        })
         .expect(200);
       await http()
         .post('/auth/refresh')
@@ -173,7 +188,7 @@ describe('Roles: admin, buyer and seller (e2e)', () => {
       await http()
         .post('/auth/login')
         .send({ email: buyer.email, password: TEST_PASSWORD })
-        .expect(401);
+        .expect(403);
 
       await as(admin)
         .patch(`/admin/users/${buyer.id}/status`, { status: 'active' })

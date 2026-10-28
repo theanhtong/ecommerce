@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   UnauthorizedException,
@@ -8,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Prisma, Role, UserStatus } from '@ecommerce/db';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
+import { latestReason } from '../../common/moderation.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AUTH_CONFIG, type AuthConfig } from './auth.config.js';
 import type { LoginDto } from './dto/login.dto.js';
@@ -75,8 +77,20 @@ export class AuthService {
       user?.passwordHash ?? (await this.dummyHash),
       dto.password,
     );
-    if (!user || !valid || user.status !== UserStatus.active) {
+    if (!user || !valid) {
       throw new UnauthorizedException('Invalid email or password');
+    }
+    // Only someone who knows the password learns the account is banned, and why.
+    if (user.status !== UserStatus.active) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        message: 'Account is banned',
+        reason: await latestReason(
+          this.prisma,
+          { userId: user.id },
+          user.status,
+        ),
+      });
     }
     return this.startSession(user, meta);
   }

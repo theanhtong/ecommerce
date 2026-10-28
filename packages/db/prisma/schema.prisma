@@ -22,15 +22,15 @@ enum UserStatus {
 }
 
 model User {
-  id                String         @id @default(uuid(7)) @db.Uuid
-  email             String         @unique
-  passwordHash      String         @map("password_hash")
-  username          String         @unique
-  usernameChangedAt DateTime?      @map("username_changed_at") @db.Timestamptz(3)
-  role              Role           @default(user)
-  status            UserStatus     @default(active)
-  createdAt         DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt         DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id                String             @id @default(uuid(7)) @db.Uuid
+  email             String             @unique
+  passwordHash      String             @map("password_hash")
+  username          String             @unique
+  usernameChangedAt DateTime?          @map("username_changed_at") @db.Timestamptz(3)
+  role              Role               @default(user)
+  status            UserStatus         @default(active)
+  createdAt         DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
   sessions          Session[]
   shop              Shop?
   cartItems         CartItem[]
@@ -40,8 +40,29 @@ model User {
   reviews           Review[]
   voucherUsages     VoucherUsage[]
   notifications     Notification[]
+  moderations       ModerationAction[] @relation("ModerationTarget")
+  moderationsTaken  ModerationAction[] @relation("ModerationActor")
 
   @@map("users")
+}
+
+// Each status change an admin makes on a user or a shop; the latest reason is shown to the owner.
+model ModerationAction {
+  id        String   @id @default(uuid(7)) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  shopId    String?  @map("shop_id") @db.Uuid
+  actorId   String?  @map("actor_id") @db.Uuid
+  // The status set: a user_status or shop_status value.
+  status    String
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      User?    @relation("ModerationTarget", fields: [userId], references: [id], onDelete: Cascade)
+  shop      Shop?    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  actor     User?    @relation("ModerationActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([shopId, createdAt])
+  @@map("moderation_actions")
 }
 
 model Session {
@@ -71,34 +92,35 @@ enum ShopStatus {
 }
 
 model Shop {
-  id                  String         @id @default(uuid(7)) @db.Uuid
-  ownerId             String         @unique @map("owner_id") @db.Uuid
-  name                String         @unique
-  nameChangedAt       DateTime?      @map("name_changed_at") @db.Timestamptz(3)
+  id                  String             @id @default(uuid(7)) @db.Uuid
+  ownerId             String             @unique @map("owner_id") @db.Uuid
+  name                String             @unique
+  nameChangedAt       DateTime?          @map("name_changed_at") @db.Timestamptz(3)
   description         String?
-  status              ShopStatus     @default(pending)
+  status              ShopStatus         @default(pending)
   // Pickup and return address: one per shop.
-  contactName         String         @map("contact_name")
+  contactName         String             @map("contact_name")
   phone               String
-  wardCode            String         @map("ward_code")
+  wardCode            String             @map("ward_code")
   street              String
-  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
-  owner               User           @relation(fields: [ownerId], references: [id])
-  ward                Ward           @relation(fields: [wardCode], references: [code])
+  createdAt           DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  owner               User               @relation(fields: [ownerId], references: [id])
+  ward                Ward               @relation(fields: [wardCode], references: [code])
   items               Item[]
   orders              Order[]
   ledgerAccount       LedgerAccount?
   payouts             Payout[]
   promotions          Promotion[]
   reviews             Review[]
+  moderations         ModerationAction[]
   // Running totals kept in the same transaction as each review; average = ratingSum / ratingCount.
-  ratingCount         Int            @default(0) @map("rating_count")
-  ratingSum           Int            @default(0) @map("rating_sum")
+  ratingCount         Int                @default(0) @map("rating_count")
+  ratingSum           Int                @default(0) @map("rating_sum")
   // In the shop-funded Freeship program: shipping vouchers apply to its orders, for a fee.
-  freeship            Boolean        @default(false)
+  freeship            Boolean            @default(false)
   // Set while a request to join waits for the admin.
-  freeshipRequestedAt DateTime?      @map("freeship_requested_at") @db.Timestamptz(3)
+  freeshipRequestedAt DateTime?          @map("freeship_requested_at") @db.Timestamptz(3)
 
   @@index([status])
   @@map("shops")

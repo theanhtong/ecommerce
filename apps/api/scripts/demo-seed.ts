@@ -732,7 +732,7 @@ async function reset() {
     throw new Error('No admin; run pnpm admin:create first');
   await db.query('BEGIN');
   await db.query(
-    'TRUNCATE ledger_lines, ledger_entries, ledger_accounts, refunds, bank_transfers, outbox_events, notifications',
+    'TRUNCATE ledger_lines, ledger_entries, ledger_accounts, refunds, bank_transfers, outbox_events, notifications, moderation_actions',
   );
   await db.query('DELETE FROM orders');
   await db.query('DELETE FROM checkouts');
@@ -864,6 +864,9 @@ async function main() {
   const images = app.get(ItemImagesService);
   const addresses = app.get(AddressesService);
   const carts = app.get(CartService);
+  const { id: adminId } = await prisma.user.findUniqueOrThrow({
+    where: { email: adminEmail },
+  });
   const checkouts = app.get(CheckoutService);
   const orders = app.get(OrdersService);
   const returns = app.get(ReturnsService);
@@ -910,7 +913,7 @@ async function main() {
         street: spec.street,
       }),
     );
-    await shops.updateStatus(shop.id, 'active');
+    await shops.updateStatus(adminId, shop.id, 'active');
     // Half the shops pay into the Freeship program, so free-shipping codes work on their orders.
     const freeship = sellers.length % 2 === 0;
     if (freeship) {

@@ -10,6 +10,8 @@ import {
 } from '@nestjs/common';
 import { Role } from '@ecommerce/db';
 import { IsBoolean } from 'class-validator';
+import type { AccessTokenPayload } from '../auth/auth.service.js';
+import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { Roles } from '../auth/decorators/roles.decorator.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { RolesGuard } from '../auth/guards/roles.guard.js';
@@ -48,9 +50,10 @@ export class AdminShopsController {
 
   @Patch(':id/status')
   updateStatus(
+    @CurrentUser() admin: AccessTokenPayload,
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateShopStatusDto,
   ) {
-    return this.shops.updateStatus(id, dto.status);
+    return this.shops.updateStatus(admin.sub, id, dto.status, dto.reason);
   }
 }

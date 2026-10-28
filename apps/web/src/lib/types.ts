@@ -112,7 +112,7 @@ export interface ShopAddress extends Location {
   street: string;
 }
 
-export type MyShop = Shop & ShopAddress;
+export type MyShop = Shop & ShopAddress & { statusReason?: string | null };
 
 export type CancelReason =
   | 'change_address'
