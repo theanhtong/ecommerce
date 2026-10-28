@@ -181,6 +181,24 @@ export class CheckoutService {
       }
     }
     const priced = priceCart(carts, vouchers.cart, commissionBps);
+    // A voucher the platform's budget cut to nothing is not used up.
+    const applied = (row: (typeof vouchers.rows)[number]) =>
+      priced.reduce(
+        (n, p, i) =>
+          n +
+          (row.promotion.type === PromotionType.shop_voucher
+            ? carts[i].shopId === row.promotion.shopId
+              ? p.sellerDiscount
+              : 0
+            : row.promotion.type === PromotionType.platform_voucher
+              ? p.platformDiscount
+              : p.shippingDiscount),
+        0,
+      );
+    vouchers.rows = vouchers.rows.filter((row) => applied(row) > 0);
+    if (!vouchers.rows.some((r) => r.code === vouchers.cart.shipping?.code)) {
+      vouchers.cart.shipping = undefined;
+    }
     return {
       address,
       lines,
