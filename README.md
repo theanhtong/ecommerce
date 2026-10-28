@@ -28,13 +28,13 @@ pnpm dev          # API: http://localhost:3000, web: http://localhost:5173
 pnpm dev:worker   # background jobs
 ```
 
-Sample data (optional, deletes existing dev data):
+Sample data (optional, deletes existing dev data; needs `pnpm admin:create` first):
 
 ```bash
-pnpm demo:flow
+pnpm demo:seed
 ```
 
-Demo accounts, password `demo password 123`: `buyer@demo.vn`, `buyer2@demo.vn`, `seller@demo.vn`, `seller2@demo.vn`. The admin account is `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PASSWORD` in `.env`, created by `pnpm admin:create`.
+Demo accounts, password `demo password 123`: buyers `buyer@demo.vn`, `buyer2@demo.vn`; sellers `seller@demo.vn`, `seller2@demo.vn` and the other `@demo.vn` shops the script prints. The admin account is `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PASSWORD` in `.env`, created by `pnpm admin:create`.
 
 ## Run with Docker
 
