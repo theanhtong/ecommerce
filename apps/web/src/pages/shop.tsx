@@ -27,7 +27,7 @@ import {
 } from '@/components/flash-sale';
 import { ItemGallery } from '@/components/item-images';
 import { ItemReviews, RatingSummary } from '@/components/reviews';
-import { Filter } from '@/components/report';
+import { Filter } from '@/components/filter';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';

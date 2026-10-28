@@ -21,6 +21,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/lib/auth-context';
 import { useCart, useMyShop } from '@/lib/queries';
+import { Suspense } from 'react';
+import { Loading } from '@/components/common';
 
 const nav = (to: string, label: string, Icon: LucideIcon) => (
   <Button asChild variant="ghost" size="sm" key={to}>
@@ -140,7 +142,9 @@ export function Layout() {
         </div>
       </header>
       <main className="mx-auto max-w-screen-2xl px-4 py-5">
-        <Outlet />
+        <Suspense fallback={<Loading />}>
+          <Outlet />
+        </Suspense>
       </main>
     </div>
   );

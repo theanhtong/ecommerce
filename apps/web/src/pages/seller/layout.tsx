@@ -13,7 +13,7 @@ import {
   Wallet,
   Zap,
 } from 'lucide-react';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { Navigate, NavLink, Outlet } from 'react-router';
 import { toast } from 'sonner';
 import {
@@ -174,7 +174,9 @@ export function SellerLayout() {
         ))}
       </nav>
       <div className="min-w-0">
-        <Outlet />
+        <Suspense fallback={<Loading />}>
+          <Outlet />
+        </Suspense>
       </div>
     </div>
   );

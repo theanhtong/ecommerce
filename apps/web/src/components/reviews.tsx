@@ -3,7 +3,7 @@ import { Star } from 'lucide-react';
 import { useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { Empty, ErrorMessage, Loading, Pager } from '@/components/common';
-import { Filter } from '@/components/report';
+import { Filter } from '@/components/filter';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
