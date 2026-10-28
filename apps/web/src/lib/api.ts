@@ -1,9 +1,12 @@
 export class ApiError extends Error {
   readonly status: number;
+  // Why an account or shop was banned, when the API says.
+  readonly reason?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, reason?: string) {
     super(message);
     this.status = status;
+    this.reason = reason;
   }
 }
 
@@ -65,11 +68,14 @@ export async function api<T>(
   const text = await res.text();
   const data: unknown = text ? JSON.parse(text) : undefined;
   if (!res.ok) {
-    const message = (data as { message?: string | string[] } | undefined)
-      ?.message;
+    const { message, reason } =
+      (data as
+        { message?: string | string[]; reason?: string | null } | undefined) ??
+      {};
     throw new ApiError(
       res.status,
       Array.isArray(message) ? message.join(', ') : (message ?? res.statusText),
+      reason ?? undefined,
     );
   }
   return data as T;

@@ -162,7 +162,7 @@ describe('Auth (e2e)', () => {
       .post('/auth/refresh')
       .set('Cookie', refreshCookie(login))
       .expect(401);
-    await http().post('/auth/login').send({ email, password }).expect(401);
+    await http().post('/auth/login').send({ email, password }).expect(403);
     await prisma.user.update({ where: { email }, data: { status: 'active' } });
   });
 });

@@ -33,6 +33,16 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import {
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { SELECTED } from '@/components/report';
 import {
   Table,
@@ -137,6 +147,131 @@ const shopBadge = (status: ShopStatus) => (
   </Badge>
 );
 
+interface Moderation {
+  id: string;
+  status: string;
+  reason: string | null;
+  createdAt: string;
+  actor: { id: string; username: string } | null;
+}
+
+type StatusChange<S> = { status: S; reason?: string };
+
+// Banning or rejecting asks for the reason the owner will see; other changes apply at once.
+function StatusAction({
+  label,
+  title,
+  needsReason,
+  pending,
+  onConfirm,
+  size,
+}: {
+  label: string;
+  title: string;
+  needsReason: boolean;
+  pending: boolean;
+  onConfirm: (reason?: string) => void;
+  size?: 'sm';
+}) {
+  const [open, setOpen] = useState(false);
+  if (!needsReason) {
+    return (
+      <Button
+        size={size}
+        variant="outline"
+        disabled={pending}
+        onClick={() => onConfirm()}
+      >
+        {label}
+      </Button>
+    );
+  }
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button size={size} variant="outline" onClick={() => setOpen(true)}>
+        {label}
+      </Button>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <form
+          className="grid gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const reason = new FormData(e.currentTarget).get('reason');
+            onConfirm(String(reason).trim());
+            setOpen(false);
+          }}
+        >
+          <div className="grid gap-2">
+            <Label htmlFor="reason">Lý do</Label>
+            <Textarea id="reason" name="reason" required maxLength={500} />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Hủy
+              </Button>
+            </DialogClose>
+            <Button type="submit" disabled={pending}>
+              {label}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ModerationHistory({
+  items,
+  labels,
+}: {
+  items: Moderation[];
+  labels: Record<string, string>;
+}) {
+  if (!items.length) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Lịch sử xử lý</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Thời gian</TableHead>
+              <TableHead>Trạng thái</TableHead>
+              <TableHead>Lý do</TableHead>
+              <TableHead>Người xử lý</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((m) => (
+              <TableRow key={m.id}>
+                <TableCell className="text-muted-foreground">
+                  {dateTime(m.createdAt)}
+                </TableCell>
+                <TableCell>{labels[m.status] ?? m.status}</TableCell>
+                <TableCell className="whitespace-pre-line">
+                  {m.reason ?? '—'}
+                </TableCell>
+                <TableCell>{m.actor?.username ?? '—'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+const USER_STATUS: Record<User['status'], string> = {
+  active: 'Hoạt động',
+  banned: 'Bị khóa',
+};
+
 const SHOP_ACTIONS: Record<ShopStatus, [ShopStatus, string][]> = {
   pending: [
     ['active', 'Duyệt'],
@@ -169,11 +304,8 @@ export function AdminShopsPage() {
     },
   });
   const update = useMutation({
-    mutationFn: ({ id, next }: { id: string; next: ShopStatus }) =>
-      api(`/admin/shops/${id}/status`, {
-        method: 'PATCH',
-        body: { status: next },
-      }),
+    mutationFn: ({ id, ...body }: StatusChange<ShopStatus> & { id: string }) =>
+      api(`/admin/shops/${id}/status`, { method: 'PATCH', body }),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: ['admin-shops'] }),
   });
@@ -270,15 +402,17 @@ export function AdminShopsPage() {
                         ))}
                       {status !== 'freeship' &&
                         SHOP_ACTIONS[s.status].map(([next, label]) => (
-                          <Button
+                          <StatusAction
                             key={next}
                             size="sm"
-                            variant="outline"
-                            disabled={update.isPending}
-                            onClick={() => update.mutate({ id: s.id, next })}
-                          >
-                            {label}
-                          </Button>
+                            label={label}
+                            title={`${label} ${s.name}`}
+                            needsReason={next !== 'active'}
+                            pending={update.isPending}
+                            onConfirm={(reason) =>
+                              update.mutate({ id: s.id, status: next, reason })
+                            }
+                          />
                         ))}
                     </TableCell>
                   </TableRow>
@@ -319,8 +453,11 @@ export function AdminUsersPage() {
     `/admin/users?role=${role}`,
   );
   const update = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: User['status'] }) =>
-      api(`/admin/users/${id}/status`, { method: 'PATCH', body: { status } }),
+    mutationFn: ({
+      id,
+      ...body
+    }: StatusChange<User['status']> & { id: string }) =>
+      api(`/admin/users/${id}/status`, { method: 'PATCH', body }),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: ['admin-users'] }),
   });
@@ -399,21 +536,23 @@ export function AdminUsersPage() {
                         <Link to={`/admin/users/${u.id}`}>Chi tiết</Link>
                       </Button>
                       {u.role !== 'admin' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="ml-2"
-                          disabled={update.isPending}
-                          onClick={() =>
-                            update.mutate({
-                              id: u.id,
-                              status:
-                                u.status === 'active' ? 'banned' : 'active',
-                            })
-                          }
-                        >
-                          {u.status === 'active' ? 'Khóa' : 'Mở khóa'}
-                        </Button>
+                        <span className="ml-2">
+                          <StatusAction
+                            size="sm"
+                            label={u.status === 'active' ? 'Khóa' : 'Mở khóa'}
+                            title={`Khóa ${u.username}`}
+                            needsReason={u.status === 'active'}
+                            pending={update.isPending}
+                            onConfirm={(reason) =>
+                              update.mutate({
+                                id: u.id,
+                                status:
+                                  u.status === 'active' ? 'banned' : 'active',
+                                reason,
+                              })
+                            }
+                          />
+                        </span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -439,7 +578,7 @@ function BackTo({ to }: { to: string }) {
   );
 }
 
-type AdminUserDetail = AdminUser;
+type AdminUserDetail = AdminUser & { moderations: Moderation[] };
 
 export function AdminUserPage() {
   const { id } = useParams();
@@ -449,8 +588,8 @@ export function AdminUserPage() {
     queryFn: () => api<AdminUserDetail>(`/admin/users/${id}`),
   });
   const update = useMutation({
-    mutationFn: (status: User['status']) =>
-      api(`/admin/users/${id}/status`, { method: 'PATCH', body: { status } }),
+    mutationFn: (body: StatusChange<User['status']>) =>
+      api(`/admin/users/${id}/status`, { method: 'PATCH', body }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin-user', id] });
       void queryClient.invalidateQueries({ queryKey: ['admin-users'] });
@@ -473,15 +612,18 @@ export function AdminUserPage() {
               {u.status === 'active' ? 'Hoạt động' : 'Bị khóa'}
             </Badge>
             {u.role !== 'admin' && (
-              <Button
-                variant="outline"
-                disabled={update.isPending}
-                onClick={() =>
-                  update.mutate(u.status === 'active' ? 'banned' : 'active')
+              <StatusAction
+                label={u.status === 'active' ? 'Khóa tài khoản' : 'Mở khóa'}
+                title={`Khóa ${u.username}`}
+                needsReason={u.status === 'active'}
+                pending={update.isPending}
+                onConfirm={(reason) =>
+                  update.mutate({
+                    status: u.status === 'active' ? 'banned' : 'active',
+                    reason,
+                  })
                 }
-              >
-                {u.status === 'active' ? 'Khóa tài khoản' : 'Mở khóa'}
-              </Button>
+              />
             )}
           </>
         }
@@ -505,6 +647,7 @@ export function AdminUserPage() {
         </CardContent>
       </Card>
       <div className="grid gap-4">
+        <ModerationHistory items={u.moderations} labels={USER_STATUS} />
         {u.role !== 'admin' && (
           <AdminOrdersTable filter={`buyerId=${u.id}`} party="buyer" />
         )}
@@ -514,6 +657,7 @@ export function AdminUserPage() {
 }
 
 type AdminShopDetail = MyShop & {
+  moderations: Moderation[];
   owner: { id: string; email: string; username: string };
   itemCount: number;
   orderCount: number;
@@ -527,11 +671,8 @@ function ShopDetail({ id, showOwner }: { id: string; showOwner?: boolean }) {
     queryFn: () => api<AdminShopDetail>(`/admin/shops/${id}`),
   });
   const update = useMutation({
-    mutationFn: (next: ShopStatus) =>
-      api(`/admin/shops/${id}/status`, {
-        method: 'PATCH',
-        body: { status: next },
-      }),
+    mutationFn: (body: StatusChange<ShopStatus>) =>
+      api(`/admin/shops/${id}/status`, { method: 'PATCH', body }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin-shop', id] });
       void queryClient.invalidateQueries({ queryKey: ['admin-shops'] });
@@ -544,73 +685,78 @@ function ShopDetail({ id, showOwner }: { id: string; showOwner?: boolean }) {
   const s = shop.data;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Store className="size-4 text-muted-foreground" />
-          {s.name}
-          {shopBadge(s.status)}
-        </CardTitle>
-        {showOwner && (
-          <CardDescription className="flex items-center gap-2">
-            <UserRound className="size-3.5" />
-            {s.owner.username} · {s.owner.email}
-          </CardDescription>
-        )}
-        {SHOP_ACTIONS[s.status].length > 0 && (
-          <CardAction className="flex gap-2">
-            {SHOP_ACTIONS[s.status].map(([next, label]) => (
-              <Button
-                key={next}
-                size="sm"
-                variant="outline"
-                disabled={update.isPending}
-                onClick={() => update.mutate(next)}
-              >
-                {label}
-              </Button>
-            ))}
-          </CardAction>
-        )}
-      </CardHeader>
-      <CardContent className="grid gap-6 md:grid-cols-2">
-        <div className="grid content-start gap-4 text-sm">
-          <dl className="grid grid-cols-3 gap-4">
-            {(
-              [
-                ['Sản phẩm', s.itemCount],
-                ['Đơn hàng', s.orderCount],
-                ['Số dư ví', money(s.walletBalance)],
-              ] as const
-            ).map(([label, value]) => (
-              <div key={label}>
-                <dt className="text-muted-foreground">{label}</dt>
-                <dd className="mt-1 text-lg font-medium tabular-nums">
-                  {value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          {s.description && (
-            <p className="whitespace-pre-line">{s.description}</p>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Store className="size-4 text-muted-foreground" />
+            {s.name}
+            {shopBadge(s.status)}
+          </CardTitle>
+          {showOwner && (
+            <CardDescription className="flex items-center gap-2">
+              <UserRound className="size-3.5" />
+              {s.owner.username} · {s.owner.email}
+            </CardDescription>
           )}
-          <p className="text-muted-foreground">
-            Mở ngày {dateTime(s.createdAt)}
-          </p>
-        </div>
-        <div className="grid content-start gap-3 md:border-l md:pl-6">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Địa chỉ lấy hàng
-          </h3>
-          <AddressBlock
-            name={s.contactName}
-            phone={s.phone}
-            street={s.street}
-            location={s}
-          />
-        </div>
-      </CardContent>
-    </Card>
+          {SHOP_ACTIONS[s.status].length > 0 && (
+            <CardAction className="flex gap-2">
+              {SHOP_ACTIONS[s.status].map(([next, label]) => (
+                <StatusAction
+                  key={next}
+                  size="sm"
+                  label={label}
+                  title={`${label} ${s.name}`}
+                  needsReason={next !== 'active'}
+                  pending={update.isPending}
+                  onConfirm={(reason) =>
+                    update.mutate({ status: next, reason })
+                  }
+                />
+              ))}
+            </CardAction>
+          )}
+        </CardHeader>
+        <CardContent className="grid gap-6 md:grid-cols-2">
+          <div className="grid content-start gap-4 text-sm">
+            <dl className="grid grid-cols-3 gap-4">
+              {(
+                [
+                  ['Sản phẩm', s.itemCount],
+                  ['Đơn hàng', s.orderCount],
+                  ['Số dư ví', money(s.walletBalance)],
+                ] as const
+              ).map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="mt-1 text-lg font-medium tabular-nums">
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {s.description && (
+              <p className="whitespace-pre-line">{s.description}</p>
+            )}
+            <p className="text-muted-foreground">
+              Mở ngày {dateTime(s.createdAt)}
+            </p>
+          </div>
+          <div className="grid content-start gap-3 md:border-l md:pl-6">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Địa chỉ lấy hàng
+            </h3>
+            <AddressBlock
+              name={s.contactName}
+              phone={s.phone}
+              street={s.street}
+              location={s}
+            />
+          </div>
+        </CardContent>
+      </Card>
+      <ModerationHistory items={s.moderations} labels={SHOP_STATUS} />
+    </>
   );
 }
 

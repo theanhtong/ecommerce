@@ -40,6 +40,6 @@ export class AdminUsersController {
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserStatusDto,
   ) {
-    return this.users.updateStatus(admin.sub, id, dto.status);
+    return this.users.updateStatus(admin.sub, id, dto.status, dto.reason);
   }
 }

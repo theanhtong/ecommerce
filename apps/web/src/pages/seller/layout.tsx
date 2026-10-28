@@ -23,7 +23,7 @@ import {
   PageHeader,
 } from '@/components/common';
 import { LocationFields } from '@/components/location-fields';
-import { Alert, AlertTitle } from '@/components/ui/alert';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -405,6 +405,11 @@ export function SellerShopPage() {
         <Alert className="mb-4">
           <Clock />
           <AlertTitle>{SHOP_NOTICE[s.status]}</AlertTitle>
+          {s.statusReason && (
+            <AlertDescription className="whitespace-pre-line">
+              {s.statusReason}
+            </AlertDescription>
+          )}
         </Alert>
       )}
       <div className="grid gap-4">

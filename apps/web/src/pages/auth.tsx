@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type SubmitEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { myShopQuery } from '@/lib/queries';
 
@@ -84,6 +86,10 @@ export function LoginPage() {
       });
     },
   });
+  const banned =
+    mutation.error instanceof ApiError && mutation.error.status === 403
+      ? mutation.error
+      : null;
   return (
     <AuthCard
       title="Đăng nhập"
@@ -96,6 +102,16 @@ export function LoginPage() {
       ]}
       footer={
         <>
+          {banned && (
+            <Alert variant="destructive">
+              <AlertTitle>Tài khoản đã bị khóa</AlertTitle>
+              {banned.reason && (
+                <AlertDescription className="whitespace-pre-line">
+                  {banned.reason}
+                </AlertDescription>
+              )}
+            </Alert>
+          )}
           <Button asChild variant="outline" className="w-full">
             <Link to="/register">Tạo tài khoản</Link>
           </Button>
