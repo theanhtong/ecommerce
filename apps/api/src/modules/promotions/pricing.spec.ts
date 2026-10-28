@@ -27,8 +27,14 @@ describe('priceCart', () => {
         { id: 'a2', amount: 50000 },
       ],
       shippingFee: 20000,
+      freeship: true,
     },
-    { shopId: 'b', lines: [{ id: 'b1', amount: 50000 }], shippingFee: 30000 },
+    {
+      shopId: 'b',
+      lines: [{ id: 'b1', amount: 50000 }],
+      shippingFee: 30000,
+      freeship: true,
+    },
   ];
 
   it('applies shop, then platform, then shipping vouchers', () => {
@@ -67,6 +73,26 @@ describe('priceCart', () => {
       shippingDiscount: 30000,
       total: 0,
     });
+  });
+
+  it('lets shipping vouchers cover Freeship shops only, for their fee', () => {
+    const [a, b] = priceCart([cart[0], { ...cart[1], freeship: false }], {
+      shop: new Map(),
+      shipping: voucher({ discountValue: 40000 }),
+    });
+    expect(a).toMatchObject({ shippingDiscount: 20000, freeshipFee: 9000 });
+    expect(b).toMatchObject({ shippingDiscount: 0, freeshipFee: 0 });
+    expect(() =>
+      priceCart([{ ...cart[1], freeship: false }], {
+        shop: new Map(),
+        shipping: voucher({ code: 'SHIP' }),
+      }),
+    ).toThrow('Voucher SHIP only covers shops in the Freeship program');
+    const [big] = priceCart(
+      [{ ...cart[1], lines: [{ id: 'x', amount: 2_000_000 }] }],
+      { shop: new Map() },
+    );
+    expect(big.freeshipFee).toBe(50_000);
   });
 
   it('refuses a voucher whose minimum spend is not met', () => {

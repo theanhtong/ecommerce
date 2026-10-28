@@ -33,6 +33,7 @@ const publicSelect = {
   description: true,
   ratingCount: true,
   ratingSum: true,
+  freeship: true,
   createdAt: true,
 } satisfies Prisma.ShopSelect;
 
@@ -90,6 +91,31 @@ export class ShopsService {
     });
     if (!shop) throw new NotFoundException('You do not have a shop');
     return shopView(shop);
+  }
+
+  // Asking to join waits for the admin; turning it off cancels the request or leaves the program.
+  // Leaving applies to orders placed from now on; orders already placed keep their fee.
+  async setFreeship(ownerId: string, enabled: boolean) {
+    const shop = await this.getMine(ownerId);
+    if (shop.status !== ShopStatus.active) {
+      throw new ForbiddenException('Shop is not active');
+    }
+    await this.prisma.shop.update({
+      where: { id: shop.id },
+      data: enabled
+        ? { freeshipRequestedAt: shop.freeship ? null : new Date() }
+        : { freeship: false, freeshipRequestedAt: null },
+    });
+    return this.getMine(ownerId);
+  }
+
+  async decideFreeship(id: string, approve: boolean) {
+    const { count } = await this.prisma.shop.updateMany({
+      where: { id, freeshipRequestedAt: { not: null } },
+      data: { freeship: approve, freeshipRequestedAt: null },
+    });
+    if (!count) throw new ConflictException('No Freeship request to decide');
+    return this.getForAdmin(id);
   }
 
   async updateMine(ownerId: string, dto: UpdateShopDto) {
@@ -185,7 +211,12 @@ export class ShopsService {
 
   async list(query: ListShopsQuery) {
     const shops = await this.prisma.shop.findMany({
-      where: { status: query.status },
+      where: {
+        status: query.status,
+        ...(query.freeship === 'requested' && {
+          freeshipRequestedAt: { not: null },
+        }),
+      },
       include: {
         owner: { select: { id: true, email: true, username: true } },
         ward: { select: { province: { select: { fullName: true } } } },

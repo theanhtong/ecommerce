@@ -6,22 +6,44 @@ import {
   IsArray,
   IsEnum,
   IsIn,
+  IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Max,
   MaxLength,
+  Min,
+  ValidateIf,
+  ValidateNested,
 } from 'class-validator';
-import { Transform } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { CursorQuery } from '../../../common/pagination.js';
 import { trim } from '../../../common/transforms.js';
 
+class FlashSaleLineDto {
+  @IsUUID()
+  id: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  quantity: number;
+}
+
+// Either cart lines at regular prices, or one flash sale bought on its own ("buy now").
 export class PreviewDto {
+  @ValidateIf((o: PreviewDto) => !o.flashSale)
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(100)
   @ArrayUnique()
   @IsUUID('all', { each: true })
-  cartItemIds: string[];
+  cartItemIds?: string[];
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => FlashSaleLineDto)
+  flashSale?: FlashSaleLineDto;
 
   @IsUUID()
   addressId: string;
@@ -37,6 +59,12 @@ export class PreviewDto {
 export class CheckoutDto extends PreviewDto {
   @IsEnum(PaymentMethod)
   paymentMethod: PaymentMethod;
+
+  // The total the buyer saw; checkout is refused if prices moved since.
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expectedTotal?: number;
 }
 
 export class ListOrdersQuery extends CursorQuery {

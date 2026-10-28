@@ -23,6 +23,20 @@ export class FlashSalesController {
     return this.flashSales.listActive();
   }
 
+  @Get('flash-sales/:id')
+  get(@Param('id', ParseUUIDPipe) id: string) {
+    return this.flashSales.getPublic(id);
+  }
+
+  @Get('flash-sales/:id/allowance')
+  @MemberOnly()
+  allowance(
+    @CurrentUser() user: AccessTokenPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+  ) {
+    return this.flashSales.allowance(user.sub, id);
+  }
+
   @Post('shops/me/flash-sales')
   @MemberOnly()
   create(

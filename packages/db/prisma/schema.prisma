@@ -71,30 +71,34 @@ enum ShopStatus {
 }
 
 model Shop {
-  id            String         @id @default(uuid(7)) @db.Uuid
-  ownerId       String         @unique @map("owner_id") @db.Uuid
-  name          String         @unique
-  nameChangedAt DateTime?      @map("name_changed_at") @db.Timestamptz(3)
-  description   String?
-  status        ShopStatus     @default(pending)
+  id                  String         @id @default(uuid(7)) @db.Uuid
+  ownerId             String         @unique @map("owner_id") @db.Uuid
+  name                String         @unique
+  nameChangedAt       DateTime?      @map("name_changed_at") @db.Timestamptz(3)
+  description         String?
+  status              ShopStatus     @default(pending)
   // Pickup and return address: one per shop.
-  contactName   String         @map("contact_name")
-  phone         String
-  wardCode      String         @map("ward_code")
-  street        String
-  createdAt     DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt     DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
-  owner         User           @relation(fields: [ownerId], references: [id])
-  ward          Ward           @relation(fields: [wardCode], references: [code])
-  items         Item[]
-  orders        Order[]
-  ledgerAccount LedgerAccount?
-  payouts       Payout[]
-  promotions    Promotion[]
-  reviews       Review[]
+  contactName         String         @map("contact_name")
+  phone               String
+  wardCode            String         @map("ward_code")
+  street              String
+  createdAt           DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime       @updatedAt @map("updated_at") @db.Timestamptz(3)
+  owner               User           @relation(fields: [ownerId], references: [id])
+  ward                Ward           @relation(fields: [wardCode], references: [code])
+  items               Item[]
+  orders              Order[]
+  ledgerAccount       LedgerAccount?
+  payouts             Payout[]
+  promotions          Promotion[]
+  reviews             Review[]
   // Running totals kept in the same transaction as each review; average = ratingSum / ratingCount.
-  ratingCount   Int            @default(0) @map("rating_count")
-  ratingSum     Int            @default(0) @map("rating_sum")
+  ratingCount         Int            @default(0) @map("rating_count")
+  ratingSum           Int            @default(0) @map("rating_sum")
+  // In the shop-funded Freeship program: shipping vouchers apply to its orders, for a fee.
+  freeship            Boolean        @default(false)
+  // Set while a request to join waits for the admin.
+  freeshipRequestedAt DateTime?      @map("freeship_requested_at") @db.Timestamptz(3)
 
   @@index([status])
   @@map("shops")
@@ -346,6 +350,10 @@ model Order {
   // Platform-funded.
   shippingDiscount Int                  @default(0) @map("shipping_discount")
   total            Int
+  // Freeship program fee the shop pays on this order, fixed at checkout.
+  freeshipFee      Int                  @default(0) @map("freeship_fee")
+  // Snapshot of the vouchers applied to this order and what each took off it.
+  vouchers         Json                 @default("[]")
   shippingAddress  Json                 @map("shipping_address")
   pickupAddress    Json                 @map("pickup_address")
   cancelReason     CancelReason?        @map("cancel_reason")
@@ -451,6 +459,8 @@ enum LedgerAccountType {
   refund_due
   payout_due
   promotion
+  // Fees shops pay for programs such as Freeship.
+  service_fee
 
   @@map("ledger_account_type")
 }

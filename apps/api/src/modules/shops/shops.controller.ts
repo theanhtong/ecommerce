@@ -9,12 +9,18 @@ import {
   Put,
 } from '@nestjs/common';
 import type { AccessTokenPayload } from '../auth/auth.service.js';
+import { IsBoolean } from 'class-validator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';
 import { MemberOnly } from '../auth/decorators/member-only.decorator.js';
 import { CreateShopDto } from './dto/create-shop.dto.js';
 import { ShopAddressDto } from './dto/shop-address.dto.js';
 import { UpdateShopDto } from './dto/update-shop.dto.js';
 import { ShopsService } from './shops.service.js';
+
+class FreeshipDto {
+  @IsBoolean()
+  enabled: boolean;
+}
 
 @Controller('shops')
 export class ShopsController {
@@ -39,6 +45,15 @@ export class ShopsController {
     @Body() dto: UpdateShopDto,
   ) {
     return this.shops.updateMine(user.sub, dto);
+  }
+
+  @Put('me/freeship')
+  @MemberOnly()
+  setFreeship(
+    @CurrentUser() user: AccessTokenPayload,
+    @Body() dto: FreeshipDto,
+  ) {
+    return this.shops.setFreeship(user.sub, dto.enabled);
   }
 
   @Put('me/address')

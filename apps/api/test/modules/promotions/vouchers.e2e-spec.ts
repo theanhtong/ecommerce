@@ -29,6 +29,8 @@ describe('Vouchers (e2e)', () => {
       http().post(url).set(bearer(account.token)).send(body),
     patch: (url: string, body: object) =>
       http().patch(url).set(bearer(account.token)).send(body),
+    put: (url: string, body: object) =>
+      http().put(url).set(bearer(account.token)).send(body),
   });
 
   const code = () =>
@@ -226,6 +228,58 @@ describe('Vouchers (e2e)', () => {
 
     const lines = await cart(b, [s1, s2]);
     const codes = [shopCode, platformCode, shippingCode];
+    // Shipping vouchers cover only shops in the Freeship program; s1 joins, s2 does not.
+    await as(b)
+      .post('/checkout/preview', {
+        cartItemIds: lines,
+        addressId: b.addressId,
+        voucherCodes: [shippingCode],
+      })
+      .expect(400);
+    await as(b).put('/shops/me/freeship', { enabled: true }).expect(404);
+    // Joining is a request the admin decides; s2 asks, then takes it back.
+    const asked = await as(s1)
+      .put('/shops/me/freeship', { enabled: true })
+      .expect(200);
+    expect(asked.body).toMatchObject({
+      freeship: false,
+      freeshipRequestedAt: expect.any(String),
+    });
+    await as(s2).put('/shops/me/freeship', { enabled: true }).expect(200);
+    await as(s2).put('/shops/me/freeship', { enabled: false }).expect(200);
+    await as(admin)
+      .patch(`/admin/shops/${s2.shopId}/freeship`, { approve: true })
+      .expect(409);
+    const waiting = await as(admin)
+      .get('/admin/shops?freeship=requested')
+      .expect(200);
+    expect(waiting.body.items.map((x: { id: string }) => x.id)).toEqual([
+      s1.shopId,
+    ]);
+    await as(s1)
+      .patch(`/admin/shops/${s1.shopId}/freeship`, { approve: true })
+      .expect(403);
+    const joined = await as(admin)
+      .patch(`/admin/shops/${s1.shopId}/freeship`, { approve: true })
+      .expect(200);
+    expect(joined.body).toMatchObject({
+      freeship: true,
+      freeshipRequestedAt: null,
+    });
+    // A Freeship shop in the cart gets a free-shipping voucher without the buyer entering one.
+    const auto = await as(b)
+      .post('/checkout/preview', {
+        cartItemIds: lines,
+        addressId: b.addressId,
+        voucherCodes: [shopCode],
+      })
+      .expect(200);
+    expect(auto.body.shippingVoucher).toEqual(expect.any(String));
+    expect(
+      auto.body.shops.find(
+        (x: { shop: { id: string } }) => x.shop.id === s1.shopId,
+      ).shippingDiscount,
+    ).toBeGreaterThan(0);
     const preview = await as(b)
       .post('/checkout/preview', {
         cartItemIds: lines,
@@ -256,6 +310,32 @@ describe('Vouchers (e2e)', () => {
       sellerDiscount: 20000,
       items: [expect.objectContaining({ sellerDiscount: 20000 })],
     });
+    expect(order.vouchers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'shop_voucher',
+          code: shopCode,
+          discountValue: 20000,
+          amount: 20000,
+        }),
+        expect.objectContaining({
+          type: 'platform_voucher',
+          code: platformCode,
+          amount: order.platformDiscount,
+        }),
+        expect.objectContaining({
+          type: 'shipping_voucher',
+          code: shippingCode,
+          amount: order.shippingDiscount,
+        }),
+      ]),
+    );
+    const other = placed.body.orders.find(
+      (o: { shop: { id: string } }) => o.shop.id === s2.shopId,
+    );
+    expect(other.vouchers.map((v: { type: string }) => v.type)).not.toContain(
+      'shop_voucher',
+    );
     for (const c of codes) expect((await voucher(c)).usedCount).toBe(1);
 
     await as(b)
@@ -283,8 +363,18 @@ describe('Vouchers (e2e)', () => {
     expect(line('promotion')).toBe(
       order.platformDiscount + order.shippingDiscount,
     );
-    expect(line('wallet')).toBe(-(100000 - 20000 - commission));
+    // The Freeship program fee: 6% of the shop's revenue on the order.
+    const fee = Math.round(((100000 - 20000) * 600) / 10_000);
+    expect(order.freeshipFee).toBe(fee);
+    expect(order.shippingDiscount).toBeGreaterThan(0);
+    expect(
+      placed.body.orders.find(
+        (o: { shop: { id: string } }) => o.shop.id === s2.shopId,
+      ),
+    ).toMatchObject({ shippingDiscount: 0, freeshipFee: 0 });
+    expect(line('wallet')).toBe(-(100000 - 20000 - commission - fee));
     expect(line('commission')).toBe(-commission);
+    expect(line('service_fee')).toBe(-fee);
     expect(line('receivable')).toBe(order.total);
   });
 

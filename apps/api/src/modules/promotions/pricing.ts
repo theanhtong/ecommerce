@@ -12,7 +12,14 @@ export interface ShopCart {
   shopId: string;
   lines: { id: string; amount: number }[];
   shippingFee: number;
+  // In the shop-funded Freeship program.
+  freeship: boolean;
 }
+
+// Assumption: the Freeship program fee is 6% of the shop's revenue on the order, at most 50,000₫,
+// as GHN's seller blog reports for TikTok Shop's Freeship Extra; set the platform's own rate later.
+export const FREESHIP_FEE_BPS = 600;
+export const FREESHIP_FEE_CAP = 50_000;
 
 export interface CartVouchers {
   shop: Map<string, VoucherTerms>;
@@ -79,9 +86,15 @@ export function priceCart(shops: ShopCart[], vouchers: CartVouchers) {
     afterShop,
   );
 
-  const fees = priced.map((s) => s.shippingFee);
-  const shippingBase = fees.reduce((a, b) => a + b, 0);
+  // Shipping vouchers only cover shops in the Freeship program, which fund them through its fee.
+  const fees = priced.map((s) => (s.freeship ? s.shippingFee : 0));
+  const shippingBase = sum(fees);
   if (vouchers.shipping) {
+    if (!shippingBase) {
+      throw new BadRequestException(
+        `Voucher ${vouchers.shipping.code} only covers shops in the Freeship program`,
+      );
+    }
     requireSpend(vouchers.shipping, platformBase - sum(platformByShop));
   }
   const shippingByShop = allocate(
@@ -103,6 +116,14 @@ export function priceCart(shops: ShopCart[], vouchers: CartVouchers) {
       platformDiscount,
       shippingFee: s.shippingFee,
       shippingDiscount,
+      freeshipFee: s.freeship
+        ? Math.min(
+            FREESHIP_FEE_CAP,
+            Math.round(
+              ((s.itemsTotal - s.sellerDiscount) * FREESHIP_FEE_BPS) / 10_000,
+            ),
+          )
+        : 0,
       total:
         s.itemsTotal -
         s.sellerDiscount -

@@ -10,7 +10,7 @@ import type {
   CreatePlatformVoucherDto,
   CreateVoucherDto,
 } from './dto/voucher.dto.js';
-import type { CartVouchers } from './pricing.js';
+import { discountFor, type CartVouchers } from './pricing.js';
 
 const voucherInclude = { promotion: true } satisfies Prisma.VoucherInclude;
 type VoucherRow = Prisma.VoucherGetPayload<{ include: typeof voucherInclude }>;
@@ -137,6 +137,34 @@ export class VouchersService {
       where: { promotionId: usage.voucher_id },
       data: { usedCount: { decrement: 1 } },
     });
+  }
+
+  // The free-shipping voucher that takes the most off `fees`, among those the buyer can still use
+  // and whose minimum `base` meets; null when none fits.
+  async bestShipping(
+    tx: Prisma.TransactionClient,
+    buyerId: string,
+    base: number,
+    fees: number,
+    now = new Date(),
+  ) {
+    const rows = await tx.voucher.findMany({
+      where: {
+        ...live(now),
+        promotion: {
+          type: PromotionType.shipping_voucher,
+          ...live(now).promotion,
+        },
+        usedCount: { lt: tx.voucher.fields.usageLimit },
+        usages: { none: { userId: buyerId } },
+        minSpend: { lte: base },
+      },
+      include: voucherInclude,
+    });
+    return (
+      rows.sort((a, b) => discountFor(b, fees) - discountFor(a, fees))[0] ??
+      null
+    );
   }
 
   // Vouchers a buyer could apply to a cart from these shops right now.
