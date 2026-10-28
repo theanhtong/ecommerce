@@ -75,7 +75,7 @@ import {
   VOUCHER_TYPE,
   voucherTerms,
 } from '@/lib/format';
-import { useCart, usePaged } from '@/lib/queries';
+import { useCart, useFees, usePaged } from '@/lib/queries';
 import type {
   Address,
   CancelReason,
@@ -858,12 +858,103 @@ export const SHIPMENT_STEP: Partial<
   picked_up: { status: 'delivered', label: 'Đã giao hàng' },
 };
 
+// What the shop will be paid for this order, mirroring the settlement: commission on the items after
+// the shop's own voucher, and the Freeship fee fixed at checkout.
+function PrepareOrderDialog({
+  order,
+  open,
+  onOpenChange,
+  onConfirm,
+  pending,
+}: {
+  order: Order;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+  pending: boolean;
+}) {
+  const fees = useFees();
+  const revenue = order.itemsTotal - order.sellerDiscount;
+  const bps = fees.data?.commissionBps ?? 0;
+  const commission = Math.round((revenue * bps) / 10_000);
+  const rows: [string, number][] = [
+    ['Tiền hàng', order.itemsTotal],
+    ...(order.sellerDiscount
+      ? [['Voucher shop', -order.sellerDiscount] as [string, number]]
+      : []),
+    [`Phí sàn (${bps / 100}%)`, -commission],
+    ...(order.freeshipFee
+      ? [['Phí Freeship', -order.freeshipFee] as [string, number]]
+      : []),
+  ];
+  const steps = [
+    'Chuẩn bị hàng',
+    'Đơn vị vận chuyển lấy hàng',
+    'Giao thành công',
+    'Đơn hoàn thành, tiền vào ví',
+  ];
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Chuẩn bị hàng</DialogTitle>
+        </DialogHeader>
+        {fees.isPending ? (
+          <Loading />
+        ) : (
+          <dl className="grid gap-1.5 rounded-md border p-3 text-sm">
+            {rows.map(([label, value]) => (
+              <div
+                key={label}
+                className="flex justify-between text-muted-foreground"
+              >
+                <dt>{label}</dt>
+                <dd className="tabular-nums">{money(value)}</dd>
+              </div>
+            ))}
+            <Separator className="my-1" />
+            <div className="flex justify-between font-medium">
+              <dt>Dự kiến nhận</dt>
+              <dd className="text-primary tabular-nums">
+                {money(revenue - commission - order.freeshipFee)}
+              </dd>
+            </div>
+          </dl>
+        )}
+        <ol className="grid gap-2 text-sm">
+          {steps.map((label, i) => (
+            <li key={label} className="flex items-center gap-2">
+              <span
+                className={`grid size-6 shrink-0 place-items-center rounded-full text-xs font-medium ${i === 0 ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'}`}
+              >
+                {i + 1}
+              </span>
+              {label}
+            </li>
+          ))}
+        </ol>
+        <DialogFooter>
+          <DialogClose asChild>
+            <Button variant="outline">Hủy</Button>
+          </DialogClose>
+          <Button disabled={pending || fees.isPending} onClick={onConfirm}>
+            <PackageCheck />
+            Xác nhận chuẩn bị hàng
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
   const queryClient = useQueryClient();
   const basePath = party === 'buyer' ? '/orders' : '/shops/me/orders';
   const linkPrefix = party === 'buyer' ? '/orders' : '/seller/orders';
   const [status, setStatus] = useState<OrderStatus | 'all'>('all');
   const [cancelId, setCancelId] = useState<string | null>(null);
+  const [prepareId, setPrepareId] = useState<string | null>(null);
   const path = status === 'all' ? basePath : `${basePath}?status=${status}`;
   const page = usePaged<Order>(['orders', basePath, status], path);
   const act = useMutation({
@@ -988,10 +1079,7 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
                             !o.shipment && (
                               <Button
                                 size="sm"
-                                disabled={act.isPending}
-                                onClick={() =>
-                                  act.mutate({ id: o.id, path: 'ship' })
-                                }
+                                onClick={() => setPrepareId(o.id)}
                               >
                                 <PackageCheck />
                                 Chuẩn bị hàng
@@ -1052,6 +1140,25 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
         </Card>
       )}
       <Pager page={page.page} prev={page.prev} next={page.next} />
+      {(() => {
+        const prepare = page.items.find((o) => o.id === prepareId);
+        return (
+          prepare && (
+            <PrepareOrderDialog
+              order={prepare}
+              open
+              onOpenChange={(open) => !open && setPrepareId(null)}
+              pending={act.isPending}
+              onConfirm={() =>
+                act.mutate(
+                  { id: prepare.id, path: 'ship' },
+                  { onSuccess: () => setPrepareId(null) },
+                )
+              }
+            />
+          )
+        );
+      })()}
       {cancelId && (
         <CancelOrderDialog
           orderId={cancelId}
@@ -1086,7 +1193,7 @@ export function OrderDetail({
     path: string;
     body?: object;
     variant?: 'default' | 'outline' | 'destructive';
-    dialog?: 'cancel' | 'request' | 'reject';
+    dialog?: 'cancel' | 'request' | 'reject' | 'prepare';
   }[];
 }) {
   const { id } = useParams();
@@ -1095,7 +1202,9 @@ export function OrderDetail({
     queryKey: ['order', id],
     queryFn: () => api<Order>(`/orders/${id}`),
   });
-  const [dialog, setDialog] = useState<'cancel' | 'request' | 'reject'>();
+  const [dialog, setDialog] = useState<
+    'cancel' | 'request' | 'reject' | 'prepare'
+  >();
   const act = useMutation({
     mutationFn: ({ path, body }: { path: string; body?: object }) =>
       api<Order>(`/orders/${id}/${path}`, { method: 'POST', body }),
@@ -1146,6 +1255,18 @@ export function OrderDetail({
         orderId={o.id}
         open={dialog === 'cancel'}
         onOpenChange={(open) => setDialog(open ? 'cancel' : undefined)}
+      />
+      <PrepareOrderDialog
+        order={o}
+        open={dialog === 'prepare'}
+        onOpenChange={(open) => setDialog(open ? 'prepare' : undefined)}
+        pending={act.isPending}
+        onConfirm={() =>
+          act.mutate(
+            { path: 'ship' },
+            { onSuccess: () => setDialog(undefined) },
+          )
+        }
       />
       {(dialog === 'request' || dialog === 'reject') && (
         <ReturnDialog

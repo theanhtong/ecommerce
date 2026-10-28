@@ -196,7 +196,7 @@ export function SellerOrderPage() {
         }
         if (o.status === 'to_ship' && !o.shipment) {
           return [
-            { label: 'Chuẩn bị hàng', path: 'ship' },
+            { label: 'Chuẩn bị hàng', path: 'ship', dialog: 'prepare' },
             { label: 'Hủy đơn', path: 'cancel', variant: 'outline' },
           ];
         }
