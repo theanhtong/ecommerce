@@ -29,7 +29,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { SalePrice } from '@/components/flash-sale';
 import { LineReview } from '@/components/reviews';
-import { VoucherPicker } from '@/components/voucher-picker';
+import { CheckoutVoucherPicker } from '@/components/voucher-picker';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -76,6 +76,7 @@ import {
   voucherTerms,
 } from '@/lib/format';
 import { useCart, useFees, usePaged } from '@/lib/queries';
+import { useParam } from '@/lib/use-param';
 import type {
   Address,
   CancelReason,
@@ -425,8 +426,8 @@ export function CheckoutPage() {
   const platformBase = itemsTotal - sum('sellerDiscount');
   const summary: [string, number, boolean][] = [
     ['Tiền hàng', preview.data ? sum('itemsTotal') : itemsTotal, false],
-    ['Voucher của shop', sum('sellerDiscount'), true],
-    ['Voucher sàn', sum('platformDiscount'), true],
+    ['Mã giảm giá của shop', sum('sellerDiscount'), true],
+    ['Mã giảm giá của sàn', sum('platformDiscount'), true],
     ['Phí vận chuyển', sum('shippingFee'), false],
     ['Giảm phí vận chuyển', sum('shippingDiscount'), true],
   ];
@@ -480,87 +481,70 @@ export function CheckoutPage() {
             </CardContent>
           </Card>
 
-          <Card className="hidden py-3 md:flex">
-            <CardContent
-              className={`${CHECKOUT_COLS} text-sm text-muted-foreground`}
+          <Card className="gap-0 py-0">
+            <div
+              className={`${CHECKOUT_COLS} hidden border-b px-6 py-3 text-sm text-muted-foreground md:grid`}
             >
               <span>Sản phẩm</span>
               <span className="text-right">Đơn giá</span>
               <span className="text-center">Số lượng</span>
               <span className="text-right">Thành tiền</span>
-            </CardContent>
-          </Card>
-
-          {groups.map((group) => (
-            <Card key={group.shop.id}>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
+            </div>
+            {groups.map((group) => (
+              <section
+                key={group.shop.id}
+                className="grid gap-2 border-b px-6 py-4 last:border-b-0"
+              >
+                <h3 className="flex items-center gap-2 font-medium">
                   <Store className="size-4 text-muted-foreground" />
                   {group.shop.name}
                   {preview.data?.shops.find((x) => x.shop.id === group.shop.id)
                     ?.shop.freeship && (
                     <Badge variant="outline">Freeship</Badge>
                   )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="divide-y">
-                {group.items.map((line) => (
-                  <div key={line.id} className={`${CHECKOUT_COLS} py-3`}>
-                    <div className="flex min-w-48 flex-1 items-center gap-3">
-                      <ItemImage src={line.image} className="size-16" />
-                      <div className="min-w-0">
-                        <p className="line-clamp-2 font-medium">
-                          {line.itemName}
-                        </p>
-                        {line.variation && (
-                          <p className="text-sm text-muted-foreground">
-                            {line.variation}
+                </h3>
+                <div className="divide-y">
+                  {group.items.map((line) => (
+                    <div key={line.id} className={`${CHECKOUT_COLS} py-3`}>
+                      <div className="flex min-w-48 flex-1 items-center gap-3">
+                        <ItemImage src={line.image} className="size-16" />
+                        <div className="min-w-0">
+                          <p className="line-clamp-2 font-medium">
+                            {line.itemName}
                           </p>
-                        )}
+                          {line.variation && (
+                            <p className="text-sm text-muted-foreground">
+                              {line.variation}
+                            </p>
+                          )}
+                        </div>
                       </div>
+                      <SalePrice
+                        className="text-right"
+                        price={line.price}
+                        originalPrice={line.originalPrice}
+                      />
+                      <p className="text-center">{line.quantity}</p>
+                      <p className="text-right font-medium">
+                        {money(line.price * line.quantity)}
+                      </p>
                     </div>
-                    <SalePrice
-                      className="text-right"
-                      price={line.price}
-                      originalPrice={line.originalPrice}
-                    />
-                    <p className="text-center">{line.quantity}</p>
-                    <p className="text-right font-medium">
-                      {money(line.price * line.quantity)}
-                    </p>
-                  </div>
-                ))}
-              </CardContent>
-              <CardFooter className="flex-wrap justify-end gap-x-2 gap-y-3 text-sm">
-                <div className="w-full sm:max-w-sm sm:flex-1">
-                  <VoucherPicker
-                    label="Voucher của shop"
-                    vouchers={ofType('shop_voucher', group.shop.id)}
-                    base={group.items.reduce(
-                      (n, l) => n + l.price * l.quantity,
-                      0,
-                    )}
-                    discount={
-                      preview.data?.shops.find(
-                        (x) => x.shop.id === group.shop.id,
-                      )?.sellerDiscount ?? 0
-                    }
-                    value={picked[`shop:${group.shop.id}`]}
-                    onChange={pick(`shop:${group.shop.id}`)}
-                  />
+                  ))}
                 </div>
-                <span className="ml-auto text-muted-foreground">
-                  Tổng ({group.items.reduce((n, l) => n + l.quantity, 0)} sản
-                  phẩm)
-                </span>
-                <span className="font-medium">
-                  {money(
-                    group.items.reduce((n, l) => n + l.price * l.quantity, 0),
-                  )}
-                </span>
-              </CardFooter>
-            </Card>
-          ))}
+                <div className="flex flex-wrap items-center justify-end gap-x-2 gap-y-3 border-t pt-3 text-sm">
+                  <span className="ml-auto text-muted-foreground">
+                    Tổng ({group.items.reduce((n, l) => n + l.quantity, 0)} sản
+                    phẩm)
+                  </span>
+                  <span className="font-medium">
+                    {money(
+                      group.items.reduce((n, l) => n + l.price * l.quantity, 0),
+                    )}
+                  </span>
+                </div>
+              </section>
+            ))}
+          </Card>
         </div>
 
         <Card className="lg:sticky lg:top-20">
@@ -582,28 +566,28 @@ export function CheckoutPage() {
                 </Label>
               ))}
             </RadioGroup>
-            <VoucherPicker
-              label="Voucher sàn"
-              vouchers={ofType('platform_voucher')}
-              base={platformBase}
-              discount={sum('platformDiscount')}
-              value={picked.platform}
-              onChange={pick('platform')}
-            />
-            {/* Free shipping is applied by the server for shops in the Freeship program. */}
-            <VoucherPicker
-              label="Mã miễn phí vận chuyển"
-              vouchers={[]}
-              base={0}
-              discount={0}
-              onChange={() => {}}
-              locked={
-                !preview.data?.shops.some((x) => x.shop.freeship)
-                  ? 'Shop chưa tham gia Freeship'
-                  : preview.data.shippingVoucher
-                    ? `${preview.data.shippingVoucher} · -${money(sum('shippingDiscount'))}`
-                    : 'Không có mã phù hợp'
-              }
+            <CheckoutVoucherPicker
+              shops={groups.map((g) => ({
+                name: g.shop.name,
+                vouchers: ofType('shop_voucher', g.shop.id),
+                base: g.items.reduce((n, l) => n + l.price * l.quantity, 0),
+                value: picked[`shop:${g.shop.id}`],
+                onChange: pick(`shop:${g.shop.id}`),
+              }))}
+              platform={{
+                vouchers: ofType('platform_voucher'),
+                base: platformBase,
+                value: picked.platform,
+                onChange: pick('platform'),
+              }}
+              shipping={{
+                // Free-shipping vouchers only cover Freeship shops, so others never see them.
+                vouchers: preview.data?.shops.some((x) => x.shop.freeship)
+                  ? ofType('shipping_voucher')
+                  : [],
+                base: platformBase - sum('platformDiscount'),
+                applied: preview.data?.shippingVoucher ?? null,
+              }}
             />
             <Separator />
             <div className="grid gap-2">
@@ -627,14 +611,7 @@ export function CheckoutPage() {
               </div>
             )}
             {preview.error && <ErrorMessage error={preview.error} />}
-            {place_.error &&
-              (place_.error.message.startsWith('Prices changed') ? (
-                <p className="text-sm text-destructive">
-                  Giá đã thay đổi, vui lòng kiểm tra lại đơn hàng
-                </p>
-              ) : (
-                <ErrorMessage error={place_.error} />
-              ))}
+            {place_.error && <ErrorMessage error={place_.error} />}
           </CardContent>
           <CardFooter>
             <Button
@@ -869,7 +846,7 @@ function PrepareOrderDialog({
   const rows: [string, number][] = [
     ['Tiền hàng', order.itemsTotal],
     ...(order.sellerDiscount
-      ? [['Voucher shop', -order.sellerDiscount] as [string, number]]
+      ? [['Mã giảm giá của shop', -order.sellerDiscount] as [string, number]]
       : []),
     [`Phí sàn (${bps / 100}%)`, -commission],
     ...(order.freeshipFee
@@ -941,7 +918,11 @@ export function OrderTable({ party }: { party: 'buyer' | 'seller' }) {
   const queryClient = useQueryClient();
   const basePath = party === 'buyer' ? '/orders' : '/shops/me/orders';
   const linkPrefix = party === 'buyer' ? '/orders' : '/seller/orders';
-  const [status, setStatus] = useState<OrderStatus | 'all'>('all');
+  const [status, setStatus] = useParam<OrderStatus | 'all'>(
+    'status',
+    'all',
+    ORDER_TABS,
+  );
   const [cancelId, setCancelId] = useState<string | null>(null);
   const [prepareId, setPrepareId] = useState<string | null>(null);
   const path = status === 'all' ? basePath : `${basePath}?status=${status}`;
@@ -1353,8 +1334,8 @@ export function OrderDetail({
               {(
                 [
                   ['Tiền hàng', o.itemsTotal, false],
-                  ['Voucher của shop', o.sellerDiscount, true],
-                  ['Voucher sàn', o.platformDiscount, true],
+                  ['Mã giảm giá của shop', o.sellerDiscount, true],
+                  ['Mã giảm giá của sàn', o.platformDiscount, true],
                   ['Phí vận chuyển', o.shippingFee, false],
                   ['Giảm phí vận chuyển', o.shippingDiscount, true],
                 ] as const

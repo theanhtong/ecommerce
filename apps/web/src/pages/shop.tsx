@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { Store, Zap } from 'lucide-react';
+import { ChevronLeft, Store, Zap } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
@@ -279,6 +279,26 @@ function ShopStrip({ id, name }: { id: string; name: string }) {
   );
 }
 
+// Back to wherever the buyer came from; a page opened straight from a link goes home.
+function BackButton() {
+  const navigate = useNavigate();
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="-ml-2 justify-self-start"
+      onClick={() =>
+        (window.history.state as { idx?: number } | null)?.idx
+          ? navigate(-1)
+          : navigate('/')
+      }
+    >
+      <ChevronLeft />
+      Quay lại
+    </Button>
+  );
+}
+
 export function ItemPage() {
   const { id } = useParams();
   const { user } = useAuth();
@@ -338,6 +358,7 @@ export function ItemPage() {
 
   return (
     <div className="grid gap-4">
+      <BackButton />
       <Card>
         <CardContent className="grid gap-8 md:grid-cols-[2fr_3fr]">
           <ItemGallery
@@ -357,7 +378,7 @@ export function ItemPage() {
               <div className="flex flex-wrap items-center gap-3 rounded-md bg-primary/10 px-3 py-2 text-sm">
                 <span className="flex items-center gap-1 font-semibold text-primary">
                   <Zap className="size-4 fill-primary" />
-                  Flash Sale
+                  Giá sốc
                 </span>
                 <Countdown to={onSale.endsAt} />
                 <Button asChild size="sm" className="ml-auto">
@@ -461,10 +482,10 @@ export function ItemPage() {
 }
 
 const FLASH_STATUS: Record<FlashSalePageData['status'], string> = {
-  running: 'Flash Sale',
-  upcoming: 'Flash Sale chưa bắt đầu',
-  sold_out: 'Flash Sale đã hết suất',
-  ended: 'Flash Sale đã kết thúc',
+  running: 'Giá sốc',
+  upcoming: 'Giá sốc chưa bắt đầu',
+  sold_out: 'Giá sốc đã hết suất',
+  ended: 'Giá sốc đã kết thúc',
 };
 
 // A flash sale is bought on its own page, straight to checkout and never through the cart.
@@ -502,6 +523,7 @@ export function FlashSalePage() {
 
   return (
     <div className="grid gap-4">
+      <BackButton />
       <Card>
         <CardContent className="grid gap-8 md:grid-cols-[2fr_3fr]">
           <ItemGallery
@@ -519,7 +541,7 @@ export function FlashSalePage() {
             <div className="flex flex-wrap items-center gap-3 rounded-md bg-primary/10 px-3 py-2 text-sm">
               <span className="flex items-center gap-1 font-semibold text-primary">
                 <Zap className="size-4 fill-primary" />
-                Flash Sale
+                Giá sốc
               </span>
               {running ? (
                 <Countdown to={s.endsAt} />

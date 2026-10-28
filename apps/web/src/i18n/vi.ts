@@ -13,9 +13,9 @@ const vi = {
     http_500: 'Đã có lỗi xảy ra',
     http_503: 'Hệ thống đang bận, vui lòng thử lại sau',
 
-    a_flash_sale_lasts_at_most_24_hours: 'Flash sale kéo dài tối đa 24 giờ',
+    a_flash_sale_lasts_at_most_24_hours: 'Giá sốc kéo dài tối đa 24 giờ',
     a_model_is_already_in_a_flash_sale_at_that_time:
-      'Có phân loại đã tham gia flash sale khác trong khung giờ này',
+      'Có phân loại đã tham gia giá sốc khác trong khung giờ này',
     a_percent_discount_is_at_most_100: 'Mức giảm theo % tối đa là 100',
     a_return_is_open_for_this_order: 'Đơn hàng đang có yêu cầu trả hàng',
     a_return_was_already_requested: 'Đơn hàng đã được yêu cầu trả hàng',
@@ -38,10 +38,10 @@ const vi = {
     current_password_is_incorrect: 'Mật khẩu hiện tại không đúng',
     each_model_can_appear_once: 'Mỗi phân loại chỉ được chọn một lần',
     email_already_registered: 'Email đã được đăng ký',
-    flash_sale_has_already_ended: 'Flash sale đã kết thúc',
-    flash_sale_is_not_running: 'Flash sale chưa diễn ra hoặc đã kết thúc',
-    flash_sale_not_found: 'Không tìm thấy flash sale',
-    flash_sale_sold_out: 'Flash sale đã bán hết',
+    flash_sale_has_already_ended: 'Giá sốc đã kết thúc',
+    flash_sale_is_not_running: 'Giá sốc chưa diễn ra hoặc đã kết thúc',
+    flash_sale_not_found: 'Không tìm thấy giá sốc',
+    flash_sale_sold_out: 'Giá sốc đã bán hết',
     idempotency_key_was_used_for_another_model:
       'Yêu cầu bị trùng, vui lòng thử lại',
     idempotency_key_header_is_required: 'Yêu cầu bị trùng, vui lòng thử lại',
@@ -59,7 +59,7 @@ const vi = {
     not_enough_unreserved_stock: 'Không đủ tồn kho chưa được giữ cho đơn',
     notification_not_found: 'Không tìm thấy thông báo',
     only_csv_files_are_supported: 'Chỉ hỗ trợ file .csv',
-    only_one_voucher_per_shop: 'Mỗi cửa hàng chỉ dùng được một voucher',
+    only_one_voucher_per_shop: 'Mỗi cửa hàng chỉ dùng được một mã giảm giá',
     only_the_seller_can_do_this: 'Chỉ người bán mới thực hiện được',
     open_a_shop_first: 'Vui lòng mở cửa hàng trước',
     order_changed_reload_it: 'Đơn hàng đã thay đổi, vui lòng tải lại',
@@ -99,7 +99,7 @@ const vi = {
     the_edit_window_has_closed: 'Đã hết thời hạn sửa',
     the_file_has_no_product_rows: 'File không có dòng sản phẩm nào',
     the_flash_sale_price_must_be_below_the_regular_price:
-      'Giá flash sale phải thấp hơn giá gốc',
+      'Giá sốc phải thấp hơn giá gốc',
     the_purchase_limit_cannot_exceed_the_quota:
       'Giới hạn mua không được vượt số suất',
     the_quota_is_more_than_the_stock: 'Số suất vượt quá tồn kho',
@@ -115,9 +115,9 @@ const vi = {
     username_can_only_be_changed_once_every_30_days:
       'Tên đăng nhập chỉ được đổi 30 ngày một lần',
     username_changed_retry: 'Tên đăng nhập vừa thay đổi, vui lòng thử lại',
-    voucher_code_already_exists: 'Mã voucher đã tồn tại',
-    voucher_has_already_ended: 'Voucher đã kết thúc',
-    voucher_not_found: 'Không tìm thấy voucher',
+    voucher_code_already_exists: 'Mã giảm giá đã tồn tại',
+    voucher_has_already_ended: 'Mã giảm giá đã kết thúc',
+    voucher_not_found: 'Không tìm thấy mã giảm giá',
     you_already_have_a_shop: 'Bạn đã có cửa hàng',
     you_cannot_buy_from_your_own_shop:
       'Không thể mua sản phẩm của cửa hàng mình',
@@ -125,8 +125,7 @@ const vi = {
 
     csv_malformed: 'File CSV không đúng định dạng',
     csv_rows_max: 'Mỗi file tối đa {{max}} dòng',
-    flash_sale_allowance:
-      'Bạn chỉ còn mua được {{count}} sản phẩm giá flash sale',
+    flash_sale_allowance: 'Bạn chỉ còn mua được {{count}} sản phẩm giá sốc',
     item_images_max: 'Mỗi sản phẩm tối đa {{max}} ảnh',
     item_unavailable: '{{item}} không còn bán',
     models_per_combination:
@@ -144,17 +143,18 @@ const vi = {
     tier_options_unique: 'Các lựa chọn của "{{tier}}" không được trùng',
     tiers_max: 'Tối đa {{max}} nhóm phân loại',
     voucher_freeship_only:
-      'Voucher {{voucher}} chỉ áp dụng cho cửa hàng Freeship',
+      'Mã giảm giá {{voucher}} chỉ áp dụng cho cửa hàng Freeship',
     voucher_min_spend:
-      'Voucher {{voucher}} cần đơn tối thiểu {{minSpend, money}}',
-    voucher_one_per_type: 'Mỗi loại voucher chỉ dùng được một mã',
+      'Mã giảm giá {{voucher}} cần đơn tối thiểu {{minSpend, money}}',
+    voucher_one_per_type: 'Mỗi loại mã giảm giá chỉ dùng được một mã',
     voucher_over_limit:
       'Với đơn tối thiểu này, mức giảm tối đa là {{limit, money}}',
-    voucher_unavailable: 'Voucher {{voucher}} không khả dụng',
-    voucher_used: 'Bạn đã dùng voucher {{voucher}}',
-    voucher_used_up: 'Voucher {{voucher}} đã hết lượt',
+    voucher_unavailable: 'Mã giảm giá {{voucher}} không khả dụng',
+    voucher_used: 'Bạn đã dùng mã giảm giá {{voucher}}',
+    voucher_used_up: 'Mã giảm giá {{voucher}} đã hết lượt',
     payout_over_available: 'Chỉ rút được tối đa {{available, money}} lúc này',
-    voucher_wrong_shop: 'Voucher {{voucher}} không thuộc cửa hàng trong đơn',
+    voucher_wrong_shop:
+      'Mã giảm giá {{voucher}} không thuộc cửa hàng trong đơn',
   },
 };
 

@@ -160,7 +160,7 @@ function NewVoucher({
   const create = useMutation({
     mutationFn: (body: object) => api<Voucher>(path, { method: 'POST', body }),
     onSuccess: () => {
-      toast.success('Đã tạo voucher');
+      toast.success('Đã tạo mã giảm giá');
       setOpen(false);
       void queryClient.invalidateQueries({ queryKey: [path] });
     },
@@ -178,11 +178,11 @@ function NewVoucher({
     >
       <Button onClick={() => setOpen(true)}>
         <Plus />
-        Tạo voucher
+        Tạo mã giảm giá
       </Button>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Tạo voucher</DialogTitle>
+          <DialogTitle>Tạo mã giảm giá</DialogTitle>
         </DialogHeader>
         <form
           className="grid gap-4"
@@ -329,14 +329,14 @@ function VoucherManager({
       ) : vouchers.error ? (
         <ErrorMessage error={vouchers.error} />
       ) : !vouchers.data.length ? (
-        <Empty>Chưa có voucher</Empty>
+        <Empty>Chưa có mã giảm giá</Empty>
       ) : (
         <Card>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Voucher</TableHead>
+                  <TableHead>Mã giảm giá</TableHead>
                   <TableHead>Ưu đãi</TableHead>
                   <TableHead className="text-right">Đã dùng</TableHead>
                   <TableHead>Thời gian</TableHead>
@@ -373,7 +373,7 @@ function VoucherManager({
                           <ConfirmButton
                             label="Kết thúc"
                             variant="outline"
-                            title={`Kết thúc voucher ${v.code}?`}
+                            title={`Kết thúc mã giảm giá ${v.code}?`}
                             description={v.name}
                             pending={end.isPending}
                             onConfirm={() => end.mutate(v.id)}

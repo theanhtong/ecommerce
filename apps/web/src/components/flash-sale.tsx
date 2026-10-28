@@ -114,7 +114,7 @@ export function FlashSaleStrip() {
       <CardHeader>
         <CardTitle className="flex items-center gap-3 text-primary">
           <Zap className="size-5 fill-primary" />
-          Flash Sale
+          Giá sốc
         </CardTitle>
       </CardHeader>
       <CardContent className="relative">

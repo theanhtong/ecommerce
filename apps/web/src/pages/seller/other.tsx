@@ -301,7 +301,12 @@ function WalletLineDialog({
     b && o
       ? [
           ['Tiền hàng', '', 'Người mua', b.itemsTotal],
-          ['Voucher shop', code('shop_voucher'), 'Shop', -b.sellerDiscount],
+          [
+            'Mã giảm giá của shop',
+            code('shop_voucher'),
+            'Shop',
+            -b.sellerDiscount,
+          ],
           ['Doanh thu', '', '', revenue, true],
           [`Phí sàn (${rate}%)`, '', 'Shop', -b.commission],
           ...(b.freeshipFee
@@ -325,7 +330,12 @@ function WalletLineDialog({
       : [];
   const outside: [string, string, string, number, boolean?][] = o
     ? [
-        ['Voucher sàn', code('platform_voucher'), 'Sàn', -o.platformDiscount],
+        [
+          'Mã giảm giá của sàn',
+          code('platform_voucher'),
+          'Sàn',
+          -o.platformDiscount,
+        ],
         ['Phí vận chuyển', '', 'Người mua', o.shippingFee],
         [
           'Giảm phí vận chuyển',
@@ -344,7 +354,7 @@ function WalletLineDialog({
       <TableHeader>
         <TableRow>
           <TableHead>{title}</TableHead>
-          <TableHead>Mã voucher</TableHead>
+          <TableHead>Mã giảm giá</TableHead>
           <TableHead>Bên chịu</TableHead>
           <TableHead className="text-right">Số tiền</TableHead>
         </TableRow>
@@ -702,7 +712,7 @@ export function ShopWallet() {
                           <span className="text-xs text-muted-foreground tabular-nums">
                             Tiền hàng {money(l.breakdown.itemsTotal)}
                             {l.breakdown.sellerDiscount > 0 &&
-                              ` − Voucher shop ${money(l.breakdown.sellerDiscount)}`}
+                              ` − Mã giảm giá của shop ${money(l.breakdown.sellerDiscount)}`}
                             {' − '}Phí sàn {money(l.breakdown.commission)}
                             {l.breakdown.freeshipFee > 0 &&
                               ` − Phí Freeship ${money(l.breakdown.freeshipFee)}`}
