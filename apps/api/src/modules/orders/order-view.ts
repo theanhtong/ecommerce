@@ -1,4 +1,4 @@
-import type { Prisma } from '@ecommerce/db';
+import type { Prisma } from '@marketplace/db';
 import { reviewView } from '../reviews/review-view.js';
 import { mediaUrl } from '../storage/storage.service.js';
 

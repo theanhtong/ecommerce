@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { OrderStatus, Prisma } from '@ecommerce/db';
+import { OrderStatus, Prisma } from '@marketplace/db';
 import {
   cursorArgs,
   toPage,

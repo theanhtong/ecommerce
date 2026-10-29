@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PayoutStatus, Prisma } from '@ecommerce/db';
+import { PayoutStatus, Prisma } from '@marketplace/db';
 import { coded } from '../../common/http-error.js';
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';

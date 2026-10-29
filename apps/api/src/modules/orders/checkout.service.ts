@@ -13,7 +13,7 @@ import {
   Prisma,
   PromotionType,
   ShopStatus,
-} from '@ecommerce/db';
+} from '@marketplace/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { variationName } from '../catalog/items.service.js';
 import { emit } from '../notifications/outbox.service.js';

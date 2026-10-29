@@ -5,7 +5,7 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Prisma, UserStatus } from '@ecommerce/db';
+import { Prisma, UserStatus } from '@marketplace/db';
 import * as argon2 from 'argon2';
 import { withinChangeCooldown } from '../../common/cooldown.js';
 import { moderationHistory } from '../../common/moderation.js';

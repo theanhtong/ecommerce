@@ -1,4 +1,4 @@
-import { Role, UserStatus } from '@ecommerce/db';
+import { Role, UserStatus } from '@marketplace/db';
 import { IsEnum, IsIn, IsOptional } from 'class-validator';
 import { CursorQuery } from '../../../common/pagination.js';
 

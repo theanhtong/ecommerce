@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { Prisma, Role, UserStatus } from '@ecommerce/db';
+import { Prisma, Role, UserStatus } from '@marketplace/db';
 import * as argon2 from 'argon2';
 import { createHash, randomBytes } from 'node:crypto';
 import { latestReason } from '../../common/moderation.js';

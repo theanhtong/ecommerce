@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { NotificationType, OrderStatus, ReturnStatus } from '@ecommerce/db';
+import { NotificationType, OrderStatus, ReturnStatus } from '@marketplace/db';
 import {
   cursorArgs,
   toPage,

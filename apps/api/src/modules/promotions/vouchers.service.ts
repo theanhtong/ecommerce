@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, PromotionType } from '@ecommerce/db';
+import { Prisma, PromotionType } from '@marketplace/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import type {
   CreatePlatformVoucherDto,

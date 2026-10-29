@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ItemStatus, Prisma, ShopStatus } from '@ecommerce/db';
+import { ItemStatus, Prisma, ShopStatus } from '@marketplace/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
   available,

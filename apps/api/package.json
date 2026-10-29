@@ -1,5 +1,5 @@
 {
-  "name": "@ecommerce/api",
+  "name": "@marketplace/api",
   "version": "0.0.1",
   "description": "",
   "author": "",
@@ -31,7 +31,7 @@
     "load:verify": "node load/flash-sale-verify.ts"
   },
   "dependencies": {
-    "@ecommerce/db": "workspace:*",
+    "@marketplace/db": "workspace:*",
     "@nestjs/common": "^12.0.1",
     "@nestjs/core": "^12.0.1",
     "@nestjs/jwt": "^12.0.3",

@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
-import { LedgerAccountType, PaymentMethod, Prisma } from '@ecommerce/db';
+import { LedgerAccountType, PaymentMethod, Prisma } from '@marketplace/db';
 import {
   cursorArgs,
   toPage,

@@ -47,5 +47,5 @@ Demo accounts use the password `demo password 123` (e.g. `buyer@demo.vn`, `selle
 ## Test
 
 ```bash
-pnpm test && pnpm --filter @ecommerce/api test:e2e && pnpm lint
+pnpm test && pnpm --filter @marketplace/api test:e2e && pnpm lint
 ```

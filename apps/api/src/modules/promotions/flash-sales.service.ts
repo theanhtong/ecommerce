@@ -5,7 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { ItemStatus, Prisma, PromotionType, ShopStatus } from '@ecommerce/db';
+import { ItemStatus, Prisma, PromotionType, ShopStatus } from '@marketplace/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { variationName } from '../catalog/items.service.js';
 import { mediaUrl } from '../storage/storage.service.js';

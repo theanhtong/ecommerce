@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma, RefundStatus } from '@ecommerce/db';
+import { Prisma, RefundStatus } from '@marketplace/db';
 import {
   cursorArgs,
   toPage,

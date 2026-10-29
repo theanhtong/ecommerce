@@ -1,4 +1,4 @@
-import { ShopStatus } from '@ecommerce/db';
+import { ShopStatus } from '@marketplace/db';
 import { IsEnum, ValidateIf } from 'class-validator';
 import { Text } from '../../regions/location.js';
 

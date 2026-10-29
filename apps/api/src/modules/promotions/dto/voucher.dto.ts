@@ -1,4 +1,4 @@
-import { DiscountKind } from '@ecommerce/db';
+import { DiscountKind } from '@marketplace/db';
 import { Transform, Type } from 'class-transformer';
 import {
   IsDate,

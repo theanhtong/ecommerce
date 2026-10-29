@@ -1,4 +1,4 @@
-import { ItemStatus } from '@ecommerce/db';
+import { ItemStatus } from '@marketplace/db';
 import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,

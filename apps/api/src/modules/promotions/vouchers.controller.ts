@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Role } from '@ecommerce/db';
+import { Role } from '@marketplace/db';
 import { Transform } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsUUID } from 'class-validator';
 import type { AccessTokenPayload } from '../auth/auth.service.js';

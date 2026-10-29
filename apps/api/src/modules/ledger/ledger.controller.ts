@@ -13,7 +13,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Role } from '@ecommerce/db';
+import { Role } from '@marketplace/db';
 import { IntersectionType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {

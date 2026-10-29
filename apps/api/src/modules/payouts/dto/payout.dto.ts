@@ -1,4 +1,4 @@
-import { PayoutStatus } from '@ecommerce/db';
+import { PayoutStatus } from '@marketplace/db';
 import { Transform } from 'class-transformer';
 import { IsEnum, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
 import { CursorQuery } from '../../../common/pagination.js';

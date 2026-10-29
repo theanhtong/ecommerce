@@ -8,7 +8,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { Role } from '@ecommerce/db';
+import { Role } from '@marketplace/db';
 import { IsBoolean } from 'class-validator';
 import type { AccessTokenPayload } from '../auth/auth.service.js';
 import { CurrentUser } from '../auth/decorators/current-user.decorator.js';

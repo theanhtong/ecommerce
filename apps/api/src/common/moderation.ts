@@ -1,4 +1,4 @@
-import type { Prisma } from '@ecommerce/db';
+import type { Prisma } from '@marketplace/db';
 
 // Newest first, for the admin's view of a user or shop.
 export const moderationHistory = {

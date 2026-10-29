@@ -1,4 +1,4 @@
-import type { Review } from '@ecommerce/db';
+import type { Review } from '@marketplace/db';
 
 export const reviewView = (r: Review) => ({
   id: r.id,

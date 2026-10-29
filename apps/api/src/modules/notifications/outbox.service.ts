@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type { OrderStatus, Prisma, ReturnStatus } from '@ecommerce/db';
+import type { OrderStatus, Prisma, ReturnStatus } from '@marketplace/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
 
 export type DomainEvent =

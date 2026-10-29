@@ -36,7 +36,7 @@ export default async function setup() {
 
   execFileSync(
     'pnpm',
-    ['--filter', '@ecommerce/db', 'exec', 'prisma', 'migrate', 'deploy'],
+    ['--filter', '@marketplace/db', 'exec', 'prisma', 'migrate', 'deploy'],
     {
       env: { ...process.env, DATABASE_URL: url },
       stdio: 'pipe',

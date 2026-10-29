@@ -1,5 +1,5 @@
 {
-  "name": "@ecommerce/web",
+  "name": "@marketplace/web",
   "private": true,
   "type": "module",
   "scripts": {

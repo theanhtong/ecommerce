@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { LedgerAccountType, Prisma, ShopStatus } from '@ecommerce/db';
+import { LedgerAccountType, Prisma, ShopStatus } from '@marketplace/db';
 import { withinChangeCooldown } from '../../common/cooldown.js';
 import { latestReason, moderationHistory } from '../../common/moderation.js';
 import { cursorArgs, toPage } from '../../common/pagination.js';
