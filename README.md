@@ -14,22 +14,6 @@ A multi-shop marketplace in the style of Shopee: one checkout across many shops,
 - **Payments.** Bank-transfer payments via a signed (HMAC-SHA256) webhook with replay protection; unmatched transfers are kept for refund.
 - **Tested.** 135 end-to-end tests against a real Postgres, unit tests, CI on every push.
 
-## Architecture
-
-```mermaid
-flowchart LR
-  web[React] --> api[NestJS API]
-  bank[Bank webhook] --> api
-  api --> pg[(PostgreSQL)]
-  api --> s3[(MinIO)]
-  worker[Worker] --> pg
-  worker <--> redis[(Redis / BullMQ)]
-```
-
-A modular monolith: auth, catalog, cart, orders, payments, promotions, inventory, ledger and returns are separate modules over one database, so checkout stays a single transaction. The worker reuses the same modules without HTTP.
-
-Business rules not taken from a published platform policy are marked as assumptions in the code.
-
 ## Run locally
 
 Requires Node 22, pnpm 11 and Docker. Fill in `.env` after copying it.
