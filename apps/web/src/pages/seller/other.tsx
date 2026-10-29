@@ -1,32 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import {
-  Banknote,
-  CircleX,
-  Download,
-  FileDown,
-  PackageX,
-  Percent,
-  ShoppingBag,
-  TicketPercent,
-  Upload,
-  Wallet,
-} from 'lucide-react';
+import { Banknote, Download, FileDown, Upload, Wallet } from 'lucide-react';
 import { useRef, useState } from 'react';
-import { Link } from 'react-router';
 import { toast } from 'sonner';
+import { ErrorMessage, Pager, Loading, PageHeader } from '@/components/common';
 import {
-  ErrorMessage,
-  LoadMore,
-  Loading,
-  PageHeader,
-} from '@/components/common';
-import {
-  cancelRate,
-  IconStat,
-  RangePicker,
-  type Range,
-  SELECTED,
+  currentPeriod,
+  type Period,
+  PeriodPicker,
+  periodQuery,
   SeriesChart,
+  ShareChart,
   StatCard,
 } from '@/components/report';
 import { Badge } from '@/components/ui/badge';
@@ -54,13 +37,12 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { OrderDetail, OrderTable, SHIPMENT_STEP } from '@/pages/buyer';
+import { OrderDetail, OrderTable } from '@/pages/buyer';
 import { api, download } from '@/lib/api';
-import { dateTime, money } from '@/lib/format';
-import { usePaged } from '@/lib/queries';
-import type { Payout } from '@/lib/types';
+import { dateTime, money, PAYOUT_STATUS } from '@/lib/format';
+import { useCursorPage } from '@/lib/queries';
+import type { Order, Page, Payout } from '@/lib/types';
 import { Field } from '@/pages/account';
-import { useInfiniteQuery } from '@tanstack/react-query';
 
 interface ImportResult {
   created: number;
@@ -198,7 +180,7 @@ export function SellerOrdersPage() {
 export function SellerOrderPage() {
   return (
     <OrderDetail
-      backTo="/account/seller/orders"
+      backTo="/seller/orders"
       viewer="seller"
       actions={(o) => {
         if (o.returnRequest?.status === 'requested') {
@@ -214,35 +196,290 @@ export function SellerOrderPage() {
         }
         if (o.status === 'to_ship' && !o.shipment) {
           return [
-            { label: 'Chuẩn bị hàng', path: 'ship' },
+            { label: 'Chuẩn bị hàng', path: 'ship', dialog: 'prepare' },
             { label: 'Hủy đơn', path: 'cancel', variant: 'outline' },
           ];
         }
-        const step = o.shipment && SHIPMENT_STEP[o.shipment.status];
-        return step
-          ? [
-              {
-                label: step.label,
-                path: 'shipment',
-                body: { status: step.status },
-              },
-            ]
-          : [];
+        return [];
       }}
     />
   );
 }
 
+interface WalletLine {
+  id: string;
+  amount: number;
+  refType: string;
+  refId: string;
+  createdAt: string;
+  breakdown: {
+    itemsTotal: number;
+    sellerDiscount: number;
+    freeshipFee: number;
+    commission: number;
+  } | null;
+  payout: Pick<
+    Payout,
+    | 'bankName'
+    | 'accountNumber'
+    | 'accountName'
+    | 'status'
+    | 'createdAt'
+    | 'decidedAt'
+  > | null;
+}
+
 interface WalletPage {
   balance: number;
-  items: {
-    id: string;
-    amount: number;
-    refType: string;
-    refId: string;
-    createdAt: string;
-  }[];
+  // Money from orders still inside the return window, not yet withdrawable.
+  held: number;
+  items: WalletLine[];
   nextCursor: string | null;
+}
+
+const LINE_TYPE = {
+  order: 'Tiền đơn hàng',
+  return: 'Trả hàng',
+  payout: 'Rút tiền',
+} as Record<string, string>;
+
+const IN = 'text-emerald-600 dark:text-emerald-400';
+const OUT = 'text-red-600 dark:text-red-400';
+
+function LineType({ line }: { line: WalletLine }) {
+  return (
+    <Badge
+      variant="outline"
+      className={
+        line.amount >= 0
+          ? `border-emerald-500/40 bg-emerald-500/10 ${IN}`
+          : `border-red-500/40 bg-red-500/10 ${OUT}`
+      }
+    >
+      {LINE_TYPE[line.refType] ?? line.refType}
+    </Badge>
+  );
+}
+
+function SignedAmount({
+  amount,
+  className,
+}: {
+  amount: number;
+  className?: string;
+}) {
+  return (
+    <span
+      className={`font-medium tabular-nums ${amount >= 0 ? IN : OUT} ${className ?? ''}`}
+    >
+      {amount > 0 && '+'}
+      {money(amount)}
+    </span>
+  );
+}
+
+// Every amount between what the buyer paid and what reached the wallet, for one order.
+function WalletLineDialog({
+  line,
+  onClose,
+}: {
+  line: WalletLine;
+  onClose: () => void;
+}) {
+  const order = useQuery({
+    queryKey: ['order', line.refId],
+    queryFn: () => api<Order>(`/orders/${line.refId}`),
+    enabled: !!line.breakdown,
+  });
+  const b = line.breakdown;
+  const o = order.data;
+  const code = (type: string) =>
+    o?.vouchers.find((v) => v.type === type)?.code ?? '';
+  const revenue = b ? b.itemsTotal - b.sellerDiscount : 0;
+  const rate = revenue ? Math.round((b!.commission * 1000) / revenue) / 10 : 0;
+  const rows: [string, string, string, number, boolean?][] =
+    b && o
+      ? [
+          ['Tiền hàng', '', 'Người mua', b.itemsTotal],
+          [
+            'Mã giảm giá của shop',
+            code('shop_voucher'),
+            'Shop',
+            -b.sellerDiscount,
+          ],
+          ['Doanh thu', '', '', revenue, true],
+          [`Phí sàn (${rate}%)`, '', 'Shop', -b.commission],
+          ...(b.freeshipFee
+            ? [
+                ['Phí Freeship', '', 'Shop', -b.freeshipFee] as [
+                  string,
+                  string,
+                  string,
+                  number,
+                ],
+              ]
+            : []),
+          [
+            line.refType === 'return' ? 'Trừ khỏi ví' : 'Vào ví',
+            '',
+            '',
+            line.amount,
+            true,
+          ],
+        ]
+      : [];
+  const outside: [string, string, string, number, boolean?][] = o
+    ? [
+        [
+          'Mã giảm giá của sàn',
+          code('platform_voucher'),
+          'Sàn',
+          -o.platformDiscount,
+        ],
+        ['Phí vận chuyển', '', 'Người mua', o.shippingFee],
+        [
+          'Giảm phí vận chuyển',
+          code('shipping_voucher'),
+          'Sàn',
+          -o.shippingDiscount,
+        ],
+        ['Người mua thanh toán', '', '', o.total, true],
+      ]
+    : [];
+  const moneyTable = (
+    title: string,
+    data: [string, string, string, number, boolean?][],
+  ) => (
+    <Table fit={false}>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{title}</TableHead>
+          <TableHead>Mã giảm giá</TableHead>
+          <TableHead>Bên chịu</TableHead>
+          <TableHead className="text-right">Số tiền</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {data.map(([label, voucher, payer, amount, strong]) => (
+          <TableRow key={label} className={strong ? 'font-medium' : ''}>
+            <TableCell>{label}</TableCell>
+            <TableCell className="font-mono">{voucher}</TableCell>
+            <TableCell className="text-muted-foreground">{payer}</TableCell>
+            <TableCell className="text-right tabular-nums">
+              {money(amount)}
+            </TableCell>
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-3xl">
+        <DialogHeader>
+          <DialogTitle className="flex flex-wrap items-center gap-3">
+            {b
+              ? `${LINE_TYPE[line.refType]} ${line.refId.slice(-8).toUpperCase()}`
+              : LINE_TYPE.payout}
+            <LineType line={line} />
+          </DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-wrap items-end justify-between gap-2 text-sm">
+          <span className="text-muted-foreground">
+            {dateTime(line.createdAt)}
+          </span>
+          <SignedAmount amount={line.amount} className="text-2xl" />
+        </div>
+        {line.payout && (
+          <Table fit={false}>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Thông tin rút tiền</TableHead>
+                <TableHead className="text-right">Chi tiết</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {(
+                [
+                  ['Ngân hàng', line.payout.bankName],
+                  ['Số tài khoản', line.payout.accountNumber],
+                  ['Chủ tài khoản', line.payout.accountName],
+                  ['Trạng thái', PAYOUT_STATUS[line.payout.status]],
+                  ['Thời gian yêu cầu', dateTime(line.payout.createdAt)],
+                  [
+                    'Thời gian xử lý',
+                    line.payout.decidedAt
+                      ? dateTime(line.payout.decidedAt)
+                      : '',
+                  ],
+                  ['Số tiền', money(-line.amount)],
+                ] as const
+              ).map(([label, value]) => (
+                <TableRow key={label}>
+                  <TableCell className="text-muted-foreground">
+                    {label}
+                  </TableCell>
+                  <TableCell className="text-right font-medium">
+                    {value}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+        {b &&
+          (order.isPending ? (
+            <Loading />
+          ) : order.error ? (
+            <ErrorMessage error={order.error} />
+          ) : (
+            <div className="grid gap-6 text-sm">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Sản phẩm</TableHead>
+                    <TableHead className="text-right">Đơn giá</TableHead>
+                    <TableHead className="text-center">Số lượng</TableHead>
+                    <TableHead className="text-right">Thành tiền</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {o!.items.map((i) => (
+                    <TableRow key={i.id}>
+                      <TableCell className="whitespace-normal">
+                        <p>{i.itemName}</p>
+                        {i.modelName && (
+                          <p className="text-xs text-muted-foreground">
+                            {i.modelName}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {money(i.price)}
+                        {i.originalPrice !== null && (
+                          <p className="text-xs text-muted-foreground line-through">
+                            {money(i.originalPrice)}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-center tabular-nums">
+                        {i.quantity}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {money(i.price * i.quantity)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              {moneyTable('Tiền của shop', rows)}
+              {moneyTable('Không tính vào ví', outside)}
+            </div>
+          ))}
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 interface ShopReport {
@@ -256,6 +493,7 @@ interface ShopReport {
     averageOrder: number;
     placedOrders: number;
     cancelledOrders: number;
+    returnedOrders: number;
     balance: number;
   };
   series: {
@@ -269,73 +507,44 @@ interface ShopReport {
 const count = (n: number) => String(n);
 
 export function ShopReportSection() {
-  const [range, setRange] = useState<Range>('30d');
+  const [period, setPeriod] = useState<Period>(currentPeriod);
   const report = useQuery({
-    queryKey: ['shop-report', range],
-    queryFn: () => api<ShopReport>(`/shops/me/report?range=${range}`),
+    queryKey: ['shop-report', period],
+    queryFn: () => api<ShopReport>(`/shops/me/report?${periodQuery(period)}`),
   });
   const t = report.data?.totals;
 
   return (
     <section>
-      <RangePicker value={range} onChange={setRange} />
+      <PeriodPicker value={period} onChange={setPeriod} />
       {report.isPending ? (
         <Loading />
       ) : report.error || !t ? (
         <ErrorMessage error={report.error} />
       ) : (
         <div className="grid gap-4">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-4 sm:grid-cols-3">
             <StatCard label="Doanh thu thực nhận" value={money(t.earnings)} />
-            <StatCard label="Tiền hàng" value={money(t.itemsTotal)} />
             <StatCard label="Đơn hoàn thành" value={count(t.orders)} />
-            <StatCard
-              label="Giá trị đơn trung bình"
-              value={money(t.averageOrder)}
-            />
+            <StatCard label="Đơn mới" value={count(t.placedOrders)} />
           </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <IconStat
-              icon={TicketPercent}
-              label="Giảm giá của shop"
-              value={money(t.sellerDiscount)}
-            />
-            <IconStat
-              icon={Percent}
-              label="Phí sàn"
-              value={money(t.commission)}
-            />
-            <IconStat
-              icon={ShoppingBag}
-              label="Đơn mới"
-              value={count(t.placedOrders)}
-            />
-            <IconStat
-              icon={CircleX}
-              label="Đơn bị hủy"
-              value={count(t.cancelledOrders)}
-              note={cancelRate(t.cancelledOrders, t.orders)}
-            />
-            <IconStat
-              icon={PackageX}
-              label="Tiền trả hàng"
-              value={money(t.returned)}
-            />
-          </div>
-          <div className="grid gap-4 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-[3fr_2fr]">
             <SeriesChart
               title="Doanh thu thực nhận"
               data={report.data.series}
               dataKey="earnings"
-              range={range}
+              kind={period.period}
               format={money}
             />
-            <SeriesChart
-              title="Đơn hoàn thành"
-              data={report.data.series}
-              dataKey="orders"
-              range={range}
+            <ShareChart
+              title="Kết quả đơn hàng"
               format={count}
+              parts={[
+                { label: 'Hoàn thành', value: t.orders - t.returnedOrders },
+                { label: 'Bị hủy', value: t.cancelledOrders },
+                { label: 'Trả hàng', value: t.returnedOrders },
+              ]}
+              extra={['Tiền trả hàng', money(t.returned)]}
             />
           </div>
         </div>
@@ -429,22 +638,19 @@ function PayoutDialog({ balance, last }: { balance: number; last?: Payout }) {
 }
 
 export function ShopWallet() {
-  const wallet = useInfiniteQuery({
-    queryKey: ['wallet'],
-    queryFn: ({ pageParam }) =>
-      api<WalletPage>(
-        pageParam ? `/shops/me/wallet?cursor=${pageParam}` : '/shops/me/wallet',
-      ),
-    initialPageParam: '',
-    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  const wallet = useCursorPage<WalletPage>(['wallet'], '/shops/me/wallet');
+  // The last payout prefills the bank details of the next one.
+  const last = useQuery({
+    queryKey: ['payouts', 'last'],
+    queryFn: () => api<Page<Payout>>('/shops/me/payouts?limit=1'),
   });
-  const payouts = usePaged<Payout>(['payouts'], '/shops/me/payouts');
-  const [tab, setTab] = useState<'lines' | 'payouts'>('lines');
+  const [selected, setSelected] = useState<WalletLine | null>(null);
 
-  if (wallet.isPending || payouts.isPending) return <Loading />;
+  if (wallet.isPending) return <Loading />;
   if (wallet.error) return <ErrorMessage error={wallet.error} />;
-  const lines = wallet.data.pages.flatMap((p) => p.items);
-  const balance = wallet.data.pages[0].balance;
+  const lines = wallet.data.items;
+  const balance = wallet.data.balance;
+  const available = Math.max(0, balance - wallet.data.held);
 
   return (
     <Card>
@@ -456,87 +662,21 @@ export function ShopWallet() {
         <CardAction className="flex items-center gap-6">
           <div className="text-right">
             <p className="text-xs text-muted-foreground">Số dư</p>
+            <p className="text-xl font-medium tabular-nums">{money(balance)}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xs text-muted-foreground">Có thể rút</p>
             <p className="text-xl font-medium text-primary tabular-nums">
-              {money(balance)}
+              {money(available)}
             </p>
           </div>
-          <PayoutDialog balance={balance} last={payouts.items[0]} />
+          <PayoutDialog balance={available} last={last.data?.items[0]} />
         </CardAction>
       </CardHeader>
       <CardContent>
-        <div className="mb-3 flex gap-2">
-          {(
-            [
-              ['lines', 'Giao dịch'],
-              ['payouts', 'Lịch sử rút tiền'],
-            ] as const
-          ).map(([value, label]) => (
-            <Button
-              key={value}
-              size="sm"
-              variant="outline"
-              className={tab === value ? SELECTED : undefined}
-              onClick={() => setTab(value)}
-            >
-              {label}
-            </Button>
-          ))}
-        </div>
-        {tab === 'lines' ? (
-          !lines.length ? (
-            <p className="py-4 text-center text-sm text-muted-foreground">
-              Chưa có giao dịch
-            </p>
-          ) : (
-            <>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Thời gian</TableHead>
-                    <TableHead>Nội dung</TableHead>
-                    <TableHead className="text-right">Số tiền</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {lines.map((l) => (
-                    <TableRow key={l.id}>
-                      <TableCell>{dateTime(l.createdAt)}</TableCell>
-                      <TableCell>
-                        {l.refType === 'order' ? (
-                          <Button
-                            asChild
-                            variant="ghost"
-                            size="sm"
-                            className="-ml-3"
-                          >
-                            <Link to={`/account/seller/orders/${l.refId}`}>
-                              Đơn {l.refId.slice(-8).toUpperCase()}
-                            </Link>
-                          </Button>
-                        ) : (
-                          'Rút tiền'
-                        )}
-                      </TableCell>
-                      <TableCell
-                        className={`text-right tabular-nums ${l.amount < 0 ? 'text-muted-foreground' : ''}`}
-                      >
-                        {l.amount > 0 && '+'}
-                        {money(l.amount)}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              <LoadMore
-                hasMore={wallet.hasNextPage}
-                loading={wallet.isFetchingNextPage}
-                onClick={() => void wallet.fetchNextPage()}
-              />
-            </>
-          )
-        ) : !payouts.items.length ? (
+        {!lines.length ? (
           <p className="py-4 text-center text-sm text-muted-foreground">
-            Chưa có yêu cầu rút tiền
+            Chưa có giao dịch
           </p>
         ) : (
           <>
@@ -544,32 +684,60 @@ export function ShopWallet() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Thời gian</TableHead>
-                  <TableHead>Tài khoản nhận</TableHead>
+                  <TableHead>Loại</TableHead>
+                  <TableHead>Nội dung</TableHead>
                   <TableHead className="text-right">Số tiền</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {payouts.items.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell>{dateTime(p.createdAt)}</TableCell>
+                {lines.map((l) => (
+                  <TableRow
+                    key={l.id}
+                    role="button"
+                    tabIndex={0}
+                    className="cursor-pointer"
+                    onClick={() => setSelected(l)}
+                    onKeyDown={(e) => e.key === 'Enter' && setSelected(l)}
+                  >
+                    <TableCell>{dateTime(l.createdAt)}</TableCell>
                     <TableCell>
-                      {p.bankName} · {p.accountNumber}
+                      <LineType line={l} />
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {money(p.amount)}
+                    <TableCell>
+                      {l.breakdown ? (
+                        <div className="grid gap-0.5">
+                          <span className="font-mono">
+                            {l.refId.slice(-8).toUpperCase()}
+                          </span>
+                          <span className="text-xs text-muted-foreground tabular-nums">
+                            Tiền hàng {money(l.breakdown.itemsTotal)}
+                            {l.breakdown.sellerDiscount > 0 &&
+                              ` − Mã giảm giá của shop ${money(l.breakdown.sellerDiscount)}`}
+                            {' − '}Phí sàn {money(l.breakdown.commission)}
+                            {l.breakdown.freeshipFee > 0 &&
+                              ` − Phí Freeship ${money(l.breakdown.freeshipFee)}`}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">
+                          Chuyển về tài khoản ngân hàng
+                        </span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <SignedAmount amount={l.amount} />
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
-            <LoadMore
-              hasMore={payouts.hasNextPage}
-              loading={payouts.isFetchingNextPage}
-              onClick={() => void payouts.fetchNextPage()}
-            />
+            <Pager page={wallet.page} prev={wallet.prev} next={wallet.next} />
           </>
         )}
       </CardContent>
+      {selected && (
+        <WalletLineDialog line={selected} onClose={() => setSelected(null)} />
+      )}
     </Card>
   );
 }

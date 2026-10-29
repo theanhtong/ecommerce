@@ -16,6 +16,7 @@ pnpm install
 pnpm infra:up
 pnpm db:migrate
 pnpm db:seed
+pnpm admin:create
 ```
 
 Fill in `.env` before running the other commands.
@@ -27,13 +28,15 @@ pnpm dev          # API: http://localhost:3000, web: http://localhost:5173
 pnpm dev:worker   # background jobs
 ```
 
-Sample data (optional, deletes existing dev data):
+Keep the worker running: it plays the carrier, so a prepared order is picked up 4 hours later and delivered 1 day later within a province or 3 days across provinces. It also completes delivered orders after 24 hours and cancels orders left unpaid or unprepared. `CARRIER_TIME_SCALE=60` in `.env` makes an hour of shipping pass in a minute; it does not shorten completion or the return window.
+
+Sample data (optional, deletes existing dev data; needs `pnpm admin:create` first):
 
 ```bash
-pnpm demo:flow
+pnpm demo:seed
 ```
 
-Demo accounts, password `demo password 123`: `buyer@demo.vn`, `buyer2@demo.vn`, `seller@demo.vn`, `seller2@demo.vn`. The admin account is `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PASSWORD` in `.env`; create it first by registering on the website, then set its `role` to `admin` in the `users` table.
+Demo accounts, password `demo password 123`: buyers `buyer@demo.vn`, `buyer2@demo.vn`; sellers `seller@demo.vn`, `seller2@demo.vn` and the other `@demo.vn` shops the script prints. The admin account is `DEMO_ADMIN_EMAIL` / `DEMO_ADMIN_PASSWORD` in `.env`, created by `pnpm admin:create`.
 
 ## Run with Docker
 

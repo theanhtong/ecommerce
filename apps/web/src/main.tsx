@@ -1,9 +1,10 @@
+import '@/i18n';
 import {
   MutationCache,
   QueryClient,
   QueryClientProvider,
 } from '@tanstack/react-query';
-import { StrictMode } from 'react';
+import { lazy, StrictMode, type ComponentType } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createBrowserRouter, Navigate, RouterProvider } from 'react-router';
 import { toast } from 'sonner';
@@ -16,19 +17,6 @@ import { Layout } from '@/components/layout';
 import { Toaster } from '@/components/ui/sonner';
 import { AuthProvider } from '@/lib/auth';
 import { AccountLayout, AccountPage, AddressesPage } from '@/pages/account';
-import {
-  AdminLayout,
-  AdminLedgerPage,
-  AdminShopPage,
-  AdminShopsPage,
-  AdminUserPage,
-  AdminUsersPage,
-} from '@/pages/admin';
-import {
-  AdminPayoutsPage,
-  AdminRefundsPage,
-  AdminReturnsPage,
-} from '@/pages/admin-money';
 import { LoginPage, RegisterPage } from '@/pages/auth';
 import {
   BuyerOrderPage,
@@ -37,14 +25,87 @@ import {
   OrdersPage,
 } from '@/pages/buyer';
 import { PaymentPage } from '@/pages/payment';
-import { AdminVouchersPage, SellerVouchersPage } from '@/pages/vouchers';
 import { ShopReviews } from '@/components/reviews';
-import { SellerFlashSalesPage } from '@/pages/flash-sales';
-import { SellerItemPage, SellerItemsPage } from '@/pages/seller/items';
-import { SellerLayout, SellerShopPage } from '@/pages/seller/layout';
-import { SellerOrderPage, SellerOrdersPage } from '@/pages/seller/other';
-import { HomePage, ItemPage, SearchPage, ShopPage } from '@/pages/shop';
+import {
+  FlashSalePage,
+  HomePage,
+  ItemPage,
+  SearchPage,
+  ShopPage,
+} from '@/pages/shop';
 import './index.css';
+
+// Admin and seller pages, and the chart library they use, load only when first opened.
+function page<M, K extends keyof M>(load: () => Promise<M>, name: K) {
+  return lazy(() =>
+    load().then((m) => ({ default: m[name] as ComponentType })),
+  );
+}
+const AdminLayout = page(() => import('@/pages/admin'), 'AdminLayout');
+const AdminShopPage = page(() => import('@/pages/admin'), 'AdminShopPage');
+const AdminShopsPage = page(() => import('@/pages/admin'), 'AdminShopsPage');
+const AdminUserPage = page(() => import('@/pages/admin'), 'AdminUserPage');
+const AdminUsersPage = page(() => import('@/pages/admin'), 'AdminUsersPage');
+const AdminRefundsPage = page(
+  () => import('@/pages/admin-money'),
+  'AdminRefundsPage',
+);
+const AdminReturnsPage = page(
+  () => import('@/pages/admin-money'),
+  'AdminReturnsPage',
+);
+const AdminLedgerPage = page(
+  () => import('@/pages/admin-ledger'),
+  'AdminLedgerPage',
+);
+const AdminVouchersPage = page(
+  () => import('@/pages/vouchers'),
+  'AdminVouchersPage',
+);
+const SellerVouchersPage = page(
+  () => import('@/pages/vouchers'),
+  'SellerVouchersPage',
+);
+const SellerFlashSalesPage = page(
+  () => import('@/pages/flash-sales'),
+  'SellerFlashSalesPage',
+);
+const SellerItemPage = page(
+  () => import('@/pages/seller/items'),
+  'SellerItemPage',
+);
+const SellerItemsPage = page(
+  () => import('@/pages/seller/items'),
+  'SellerItemsPage',
+);
+const AccountShopPage = page(
+  () => import('@/pages/seller/layout'),
+  'AccountShopPage',
+);
+const SellerDashboardPage = page(
+  () => import('@/pages/seller/layout'),
+  'SellerDashboardPage',
+);
+const SellerLayout = page(
+  () => import('@/pages/seller/layout'),
+  'SellerLayout',
+);
+const SellerShopPage = page(
+  () => import('@/pages/seller/layout'),
+  'SellerShopPage',
+);
+const SellerWalletPage = page(
+  () => import('@/pages/seller/layout'),
+  'SellerWalletPage',
+);
+const SellerOrderPage = page(
+  () => import('@/pages/seller/other'),
+  'SellerOrderPage',
+);
+const SellerOrdersPage = page(
+  () => import('@/pages/seller/other'),
+  'SellerOrdersPage',
+);
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } },
@@ -65,6 +126,7 @@ const router = createBrowserRouter([
         ],
       },
       { path: 'items/:id', element: <ItemPage /> },
+      { path: 'flash-sales/:id', element: <FlashSalePage /> },
       { path: 'shops/:id', element: <ShopPage /> },
       { path: 'login', element: <LoginPage /> },
       { path: 'register', element: <RegisterPage /> },
@@ -80,23 +142,7 @@ const router = createBrowserRouter([
                 element: <RequireNonAdmin />,
                 children: [
                   { path: 'addresses', element: <AddressesPage /> },
-                  {
-                    path: 'seller',
-                    element: <SellerLayout />,
-                    children: [
-                      { index: true, element: <SellerShopPage /> },
-                      { path: 'items', element: <SellerItemsPage /> },
-                      { path: 'items/:id', element: <SellerItemPage /> },
-                      { path: 'orders', element: <SellerOrdersPage /> },
-                      { path: 'orders/:id', element: <SellerOrderPage /> },
-                      { path: 'vouchers', element: <SellerVouchersPage /> },
-                      { path: 'reviews', element: <ShopReviews /> },
-                      {
-                        path: 'flash-sales',
-                        element: <SellerFlashSalesPage />,
-                      },
-                    ],
-                  },
+                  { path: 'shop', element: <AccountShopPage /> },
                 ],
               },
             ],
@@ -109,6 +155,25 @@ const router = createBrowserRouter([
               { path: 'checkouts/:id/payment', element: <PaymentPage /> },
               { path: 'orders', element: <OrdersPage /> },
               { path: 'orders/:id', element: <BuyerOrderPage /> },
+              {
+                path: 'seller',
+                element: <SellerLayout />,
+                children: [
+                  { index: true, element: <SellerDashboardPage /> },
+                  { path: 'profile', element: <SellerShopPage /> },
+                  { path: 'wallet', element: <SellerWalletPage /> },
+                  { path: 'items', element: <SellerItemsPage /> },
+                  { path: 'items/:id', element: <SellerItemPage /> },
+                  { path: 'orders', element: <SellerOrdersPage /> },
+                  { path: 'orders/:id', element: <SellerOrderPage /> },
+                  { path: 'vouchers', element: <SellerVouchersPage /> },
+                  { path: 'reviews', element: <ShopReviews /> },
+                  {
+                    path: 'flash-sales',
+                    element: <SellerFlashSalesPage />,
+                  },
+                ],
+              },
             ],
           },
           {
@@ -125,7 +190,6 @@ const router = createBrowserRouter([
                   { path: 'users', element: <AdminUsersPage /> },
                   { path: 'users/:id', element: <AdminUserPage /> },
                   { path: 'ledger', element: <AdminLedgerPage /> },
-                  { path: 'payouts', element: <AdminPayoutsPage /> },
                   { path: 'refunds', element: <AdminRefundsPage /> },
                   { path: 'returns', element: <AdminReturnsPage /> },
                   { path: 'vouchers', element: <AdminVouchersPage /> },

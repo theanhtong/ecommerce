@@ -16,6 +16,7 @@ import {
 } from '../storage/images.js';
 import { StorageService, TMP_PREFIX } from '../storage/storage.service.js';
 import { ItemsService } from './items.service.js';
+import { coded } from '../../common/http-error.js';
 
 // Assumption: up to 9 images per item, as sellers commonly report.
 export const MAX_ITEM_IMAGES = 9;
@@ -50,7 +51,11 @@ export class ItemImagesService {
         const position = await tx.itemImage.count({ where: { itemId } });
         if (position >= MAX_ITEM_IMAGES) {
           throw new ConflictException(
-            `An item has at most ${MAX_ITEM_IMAGES} images`,
+            coded(
+              'item_images_max',
+              `An item has at most ${MAX_ITEM_IMAGES} images`,
+              { max: MAX_ITEM_IMAGES },
+            ),
           );
         }
         await tx.itemImage.create({ data: { itemId, key, position } });

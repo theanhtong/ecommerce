@@ -1,4 +1,4 @@
-// k6: every buyer checks out once, all at the same moment.
+// k6: every buyer hits "buy now" on the flash sale once, all at the same moment.
 import { check } from 'k6';
 import { SharedArray } from 'k6/data';
 import exec from 'k6/execution';
@@ -20,7 +20,7 @@ export const options = {
   },
   thresholds: {
     checks: ['rate==1'],
-    // All buyers queue on one stock row and one quota row; measured p95 is about 4s on a laptop.
+    // All buyers queue on one quota row and one stock row; measured p95 is about 2s on a laptop.
     'http_req_duration{expected_response:true}': ['p(95)<5000'],
   },
 };
@@ -33,7 +33,7 @@ export default function () {
   const res = http.post(
     `${API}/checkout`,
     JSON.stringify({
-      cartItemIds: [b.cartItemId],
+      flashSale: { id: b.flashSaleId, quantity: 1 },
       addressId: b.addressId,
       paymentMethod: 'cod',
     }),

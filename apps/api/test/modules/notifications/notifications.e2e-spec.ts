@@ -13,6 +13,7 @@ import {
   createTestApp,
   SHOP_ADDRESS,
   signUp,
+  carrier,
 } from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
@@ -118,9 +119,7 @@ describe('Notifications (e2e)', () => {
     expect((await inbox(b)).items).toEqual([]);
 
     await as(s).post(`/orders/${orderId}/ship`).expect(200);
-    for (const status of ['picked_up', 'delivered']) {
-      await as(s).post(`/orders/${orderId}/shipment`, { status }).expect(200);
-    }
+    await carrier(app, orderId, 'delivered');
     await as(b)
       .post(`/orders/${orderId}/return`, { reason: 'damaged' })
       .expect(200);

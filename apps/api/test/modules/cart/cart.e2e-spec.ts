@@ -146,7 +146,11 @@ describe('Cart (e2e)', () => {
     const over = await as(buyer)
       .post('/cart/items', { modelId: modelIds[1], quantity: 2 })
       .expect(409);
-    expect(over.body.message).toBe('Only 5 left in stock');
+    expect(over.body).toMatchObject({
+      message: 'Only 5 left in stock',
+      code: 'stock_left',
+      params: { stock: 5 },
+    });
 
     const cart = await as(buyer).get('/cart').expect(200);
     const line = cart.body.shops[0].items[0];

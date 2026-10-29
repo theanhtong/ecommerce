@@ -8,6 +8,7 @@ import {
 import { Prisma, UserStatus } from '@ecommerce/db';
 import * as argon2 from 'argon2';
 import { withinChangeCooldown } from '../../common/cooldown.js';
+import { moderationHistory } from '../../common/moderation.js';
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { AuthService } from '../auth/auth.service.js';
@@ -105,6 +106,7 @@ export class UsersService {
       select: {
         ...adminSelect,
         _count: { select: { orders: true } },
+        moderations: moderationHistory,
       },
     });
     if (!user) throw new NotFoundException('User not found');
@@ -134,7 +136,12 @@ export class UsersService {
     };
   }
 
-  async updateStatus(actorId: string, userId: string, status: UserStatus) {
+  async updateStatus(
+    actorId: string,
+    userId: string,
+    status: UserStatus,
+    reason?: string,
+  ) {
     if (actorId === userId) {
       throw new BadRequestException('Cannot change your own status');
     }
@@ -144,6 +151,14 @@ export class UsersService {
           where: { id: userId },
           data: { status },
           select: profileSelect,
+        });
+        await tx.moderationAction.create({
+          data: {
+            userId,
+            actorId,
+            status,
+            reason: status === UserStatus.banned ? reason : null,
+          },
         });
         if (status === UserStatus.banned) {
           await this.auth.revokeUserSessions(userId, undefined, tx);

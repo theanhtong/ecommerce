@@ -10,7 +10,15 @@ import type {
   CreatePlatformVoucherDto,
   CreateVoucherDto,
 } from './dto/voucher.dto.js';
-import type { CartVouchers } from './pricing.js';
+import { commissionRateBps } from '../ledger/ledger.service.js';
+import {
+  discountFor,
+  FREESHIP_FEE_BPS,
+  FREESHIP_FEE_CAP,
+  platformVoucherExcess,
+  type CartVouchers,
+} from './pricing.js';
+import { coded } from '../../common/http-error.js';
 
 const voucherInclude = { promotion: true } satisfies Prisma.VoucherInclude;
 type VoucherRow = Prisma.VoucherGetPayload<{ include: typeof voucherInclude }>;
@@ -38,7 +46,17 @@ const live = (now: Date) =>
 
 @Injectable()
 export class VouchersService {
+  private readonly commissionBps = commissionRateBps();
+
   constructor(private readonly prisma: PrismaService) {}
+
+  fees() {
+    return {
+      commissionBps: this.commissionBps,
+      freeshipFeeBps: FREESHIP_FEE_BPS,
+      freeshipFeeCap: FREESHIP_FEE_CAP,
+    };
+  }
 
   // Turns the codes a buyer entered into the vouchers the cart may use: at most one shop
   // voucher per shop, one platform voucher and one shipping voucher.
@@ -56,7 +74,11 @@ export class VouchersService {
     });
     const missing = wanted.find((c) => !rows.some((r) => r.code === c));
     if (missing) {
-      throw new ConflictException(`Voucher ${missing} is not available`);
+      throw new ConflictException(
+        coded('voucher_unavailable', `Voucher ${missing} is not available`, {
+          voucher: missing,
+        }),
+      );
     }
 
     const cart: CartVouchers = { shop: new Map() };
@@ -65,7 +87,11 @@ export class VouchersService {
       if (type === PromotionType.shop_voucher) {
         if (!shopIds.includes(shopId!)) {
           throw new BadRequestException(
-            `Voucher ${row.code} is for a shop not in this order`,
+            coded(
+              'voucher_wrong_shop',
+              `Voucher ${row.code} is for a shop not in this order`,
+              { voucher: row.code },
+            ),
           );
         }
         if (cart.shop.has(shopId!)) {
@@ -76,7 +102,9 @@ export class VouchersService {
         const slot =
           type === PromotionType.platform_voucher ? 'platform' : 'shipping';
         if (cart[slot]) {
-          throw new BadRequestException(`Only one ${type.replace('_', ' ')}`);
+          throw new BadRequestException(
+            coded('voucher_one_per_type', `Only one ${type.replace('_', ' ')}`),
+          );
         }
         cart[slot] = row;
       }
@@ -87,7 +115,11 @@ export class VouchersService {
       include: { voucher: true },
     });
     if (used) {
-      throw new ConflictException(`Voucher ${used.voucher.code} already used`);
+      throw new ConflictException(
+        coded('voucher_used', `Voucher ${used.voucher.code} already used`, {
+          voucher: used.voucher.code,
+        }),
+      );
     }
     return { cart, rows };
   }
@@ -103,13 +135,22 @@ export class VouchersService {
       const taken = await tx.$executeRaw`
         UPDATE vouchers SET used_count = used_count + 1
         WHERE promotion_id = ${row.promotionId}::uuid AND used_count < usage_limit`;
-      if (!taken) throw new ConflictException(`Voucher ${row.code} is used up`);
+      if (!taken)
+        throw new ConflictException(
+          coded('voucher_used_up', `Voucher ${row.code} is used up`, {
+            voucher: row.code,
+          }),
+        );
       const { count } = await tx.voucherUsage.createMany({
         data: { voucherId: row.promotionId, userId: buyerId, checkoutId },
         skipDuplicates: true,
       });
       if (!count) {
-        throw new ConflictException(`Voucher ${row.code} already used`);
+        throw new ConflictException(
+          coded('voucher_used', `Voucher ${row.code} already used`, {
+            voucher: row.code,
+          }),
+        );
       }
     }
   }
@@ -139,6 +180,34 @@ export class VouchersService {
     });
   }
 
+  // The free-shipping voucher that takes the most off `fees`, among those the buyer can still use
+  // and whose minimum `base` meets; null when none fits.
+  async bestShipping(
+    tx: Prisma.TransactionClient,
+    buyerId: string,
+    base: number,
+    fees: number,
+    now = new Date(),
+  ) {
+    const rows = await tx.voucher.findMany({
+      where: {
+        ...live(now),
+        promotion: {
+          type: PromotionType.shipping_voucher,
+          ...live(now).promotion,
+        },
+        usedCount: { lt: tx.voucher.fields.usageLimit },
+        usages: { none: { userId: buyerId } },
+        minSpend: { lte: base },
+      },
+      include: voucherInclude,
+    });
+    return (
+      rows.sort((a, b) => discountFor(b, fees) - discountFor(a, fees))[0] ??
+      null
+    );
+  }
+
   // Vouchers a buyer could apply to a cart from these shops right now.
   async available(buyerId: string, shopIds: string[], now = new Date()) {
     const rows = await this.prisma.voucher.findMany({
@@ -163,6 +232,20 @@ export class VouchersService {
   }
 
   createForPlatform({ type, ...dto }: CreatePlatformVoucherDto) {
+    const limit = platformVoucherExcess(
+      type,
+      { ...dto, maxDiscount: dto.maxDiscount ?? null },
+      this.commissionBps,
+    );
+    if (limit !== null) {
+      throw new BadRequestException(
+        coded(
+          'voucher_over_limit',
+          `At this minimum spend the discount must be capped at ${limit}`,
+          { limit },
+        ),
+      );
+    }
     return this.create(type, null, dto);
   }
 

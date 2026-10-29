@@ -1,9 +1,32 @@
+import i18n from '@/i18n';
+import type vi from '@/i18n/vi';
+
+type ErrorKey = `errors.${keyof typeof vi.errors}`;
+
+// Shown in the user's language: the API's error code first, then the HTTP status, then the API's
+// own English message.
+function errorText(
+  status: number,
+  message: string,
+  code?: string,
+  params?: Record<string, unknown>,
+) {
+  const keys = [`errors.${code}`, `errors.http_${status}`] as ErrorKey[];
+  return i18n.t(code ? keys : keys.slice(1), {
+    ...params,
+    defaultValue: message,
+  });
+}
+
 export class ApiError extends Error {
   readonly status: number;
+  // Why an account or shop was banned, when the API says.
+  readonly reason?: string;
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, reason?: string) {
     super(message);
     this.status = status;
+    this.reason = reason;
   }
 }
 
@@ -65,11 +88,26 @@ export async function api<T>(
   const text = await res.text();
   const data: unknown = text ? JSON.parse(text) : undefined;
   if (!res.ok) {
-    const message = (data as { message?: string | string[] } | undefined)
-      ?.message;
+    const { message, code, params, reason } =
+      (data as
+        | {
+            message?: string | string[];
+            code?: string;
+            params?: Record<string, unknown>;
+            reason?: string | null;
+          }
+        | undefined) ?? {};
     throw new ApiError(
       res.status,
-      Array.isArray(message) ? message.join(', ') : (message ?? res.statusText),
+      errorText(
+        res.status,
+        Array.isArray(message)
+          ? message.join(', ')
+          : (message ?? res.statusText),
+        code,
+        params,
+      ),
+      reason ?? undefined,
     );
   }
   return data as T;
@@ -77,6 +115,8 @@ export async function api<T>(
 
 export async function download(path: string) {
   const res = await send(path, {});
-  if (!res.ok) throw new ApiError(res.status, res.statusText);
+  if (!res.ok) {
+    throw new ApiError(res.status, errorText(res.status, res.statusText));
+  }
   return res.blob();
 }

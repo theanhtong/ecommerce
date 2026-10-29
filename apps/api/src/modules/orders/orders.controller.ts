@@ -20,7 +20,6 @@ import {
   CheckoutDto,
   ListOrdersQuery,
   PreviewDto,
-  ShipmentStatusDto,
 } from './dto/order.dto.js';
 import { OrdersService } from './orders.service.js';
 
@@ -82,16 +81,6 @@ export class OrdersController {
     @Param('id', ParseUUIDPipe) id: string,
   ) {
     return this.orders.ship(user.sub, id);
-  }
-
-  @Post('orders/:id/shipment')
-  @HttpCode(HttpStatus.OK)
-  updateShipment(
-    @CurrentUser() user: AccessTokenPayload,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: ShipmentStatusDto,
-  ) {
-    return this.orders.updateShipment(user.sub, id, dto.status);
   }
 
   @Post('orders/:id/cancel')

@@ -339,7 +339,10 @@ describe('Catalog (e2e)', () => {
       });
 
       await as(admin)
-        .patch(`/admin/shops/${s.shopId}/status`, { status: 'banned' })
+        .patch(`/admin/shops/${s.shopId}/status`, {
+          status: 'banned',
+          reason: 'Vi phạm',
+        })
         .expect(200);
       await http().get(`/items/${visible.id}`).expect(404);
       const afterBan = await http().get('/items?limit=100').expect(200);

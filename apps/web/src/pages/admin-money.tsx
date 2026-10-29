@@ -5,12 +5,12 @@ import { toast } from 'sonner';
 import {
   Empty,
   ErrorMessage,
-  LoadMore,
+  Pager,
   Loading,
   PageHeader,
 } from '@/components/common';
 import { ConfirmButton } from '@/components/confirm-button';
-import { Filter } from '@/components/report';
+import { Filter } from '@/components/filter';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,77 +31,7 @@ import {
   RETURN_STATUS,
 } from '@/lib/format';
 import { usePaged } from '@/lib/queries';
-import type { Payout, Refund, ReturnReason, ReturnStatus } from '@/lib/types';
-
-export function AdminPayoutsPage() {
-  const page = usePaged<Payout & { shop: { id: string; name: string } }>(
-    ['admin-payouts'],
-    '/admin/payouts',
-  );
-
-  return (
-    <>
-      <PageHeader title="Rút tiền" />
-      {page.isPending ? (
-        <Loading />
-      ) : page.error ? (
-        <ErrorMessage error={page.error} />
-      ) : !page.items.length ? (
-        <Empty>Chưa có lần rút tiền nào</Empty>
-      ) : (
-        <Card>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Cửa hàng</TableHead>
-                  <TableHead>Tài khoản nhận</TableHead>
-                  <TableHead className="text-right">Số tiền</TableHead>
-                  <TableHead>Thời gian</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {page.items.map((p) => (
-                  <TableRow key={p.id}>
-                    <TableCell>
-                      <Button
-                        asChild
-                        variant="ghost"
-                        size="sm"
-                        className="-ml-3"
-                      >
-                        <Link to={`/admin/shops/${p.shop.id}`}>
-                          {p.shop.name}
-                        </Link>
-                      </Button>
-                    </TableCell>
-                    <TableCell>
-                      <p className="font-medium">{p.accountName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {p.bankName} · {p.accountNumber}
-                      </p>
-                    </TableCell>
-                    <TableCell className="text-right font-medium tabular-nums">
-                      {money(p.amount)}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">
-                      {dateTime(p.createdAt)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            <LoadMore
-              hasMore={page.hasNextPage}
-              loading={page.isFetchingNextPage}
-              onClick={() => void page.fetchNextPage()}
-            />
-          </CardContent>
-        </Card>
-      )}
-    </>
-  );
-}
+import type { Refund, ReturnReason, ReturnStatus } from '@/lib/types';
 
 export function AdminRefundsPage() {
   const queryClient = useQueryClient();
@@ -209,11 +139,7 @@ export function AdminRefundsPage() {
                 ))}
               </TableBody>
             </Table>
-            <LoadMore
-              hasMore={page.hasNextPage}
-              loading={page.isFetchingNextPage}
-              onClick={() => void page.fetchNextPage()}
-            />
+            <Pager page={page.page} prev={page.prev} next={page.next} />
           </CardContent>
         </Card>
       )}
@@ -341,11 +267,7 @@ export function AdminReturnsPage() {
                 ))}
               </TableBody>
             </Table>
-            <LoadMore
-              hasMore={page.hasNextPage}
-              loading={page.isFetchingNextPage}
-              onClick={() => void page.fetchNextPage()}
-            />
+            <Pager page={page.page} prev={page.prev} next={page.next} />
           </CardContent>
         </Card>
       )}

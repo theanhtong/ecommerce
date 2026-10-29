@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -10,6 +11,7 @@ import {
   OrderStatus,
   PaymentMethod,
   Prisma,
+  PromotionType,
   ShopStatus,
 } from '@ecommerce/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
@@ -19,33 +21,40 @@ import { PAYMENT_WINDOW_MS, paymentCode } from '../payments/payment-code.js';
 import { locationInclude, locationView } from '../regions/location.js';
 import type { CheckoutDto, PreviewDto } from './dto/order.dto.js';
 import {
-  activeFlashSales,
-  assertWithinLimit,
   claimFlashSale,
+  flashAllowance,
+  runningFlashSale,
+  type ActiveFlashSale,
 } from '../promotions/flash-sales.js';
 import { priceCart } from '../promotions/pricing.js';
 import { VouchersService } from '../promotions/vouchers.service.js';
 import { orderInclude, orderView } from './order-view.js';
 import { shippingFee } from './shipping-fee.js';
+import { coded } from '../../common/http-error.js';
 
-const lineInclude = {
-  model: {
+const modelInclude = {
+  item: {
     include: {
-      item: {
-        include: {
-          shop: { include: locationInclude },
-          images: { orderBy: { position: 'asc' }, take: 1 },
-          tierVariations: {
-            orderBy: { position: 'asc' },
-            include: { options: { orderBy: { position: 'asc' } } },
-          },
-        },
+      shop: { include: locationInclude },
+      images: { orderBy: { position: 'asc' }, take: 1 },
+      tierVariations: {
+        orderBy: { position: 'asc' },
+        include: { options: { orderBy: { position: 'asc' } } },
       },
     },
   },
-} satisfies Prisma.CartItemInclude;
+} satisfies Prisma.ModelInclude;
 
-type Line = Prisma.CartItemGetPayload<{ include: typeof lineInclude }>;
+// A cart line, or the one flash sale line of a "buy now" checkout (sale is set only then).
+interface Line {
+  id: string;
+  modelId: string;
+  quantity: number;
+  model: Prisma.ModelGetPayload<{ include: typeof modelInclude }>;
+  sale?: ActiveFlashSale;
+}
+
+const unitPrice = (l: Line) => l.sale?.price ?? l.model.price;
 
 @Injectable()
 export class CheckoutService {
@@ -72,10 +81,10 @@ export class CheckoutService {
 
   async preview(buyerId: string, dto: PreviewDto) {
     return this.prisma.$transaction(async (tx) => {
-      const { shops } = await this.quote(tx, buyerId, dto, false);
+      const { shops, vouchers } = await this.quote(tx, buyerId, dto, false);
       return {
         shops: shops.map(({ shop, priced }) => ({
-          shop: { id: shop.id, name: shop.name },
+          shop: { id: shop.id, name: shop.name, freeship: shop.freeship },
           itemsTotal: priced.itemsTotal,
           sellerDiscount: priced.sellerDiscount,
           platformDiscount: priced.platformDiscount,
@@ -84,6 +93,7 @@ export class CheckoutService {
           total: priced.total,
         })),
         total: shops.reduce((n, s) => n + s.priced.total, 0),
+        shippingVoucher: vouchers.cart.shipping?.code ?? null,
       };
     });
   }
@@ -101,33 +111,8 @@ export class CheckoutService {
     });
     if (!address) throw new NotFoundException('Address not found');
 
-    if (lock) {
-      // Lock cart lines first so a concurrent checkout of them fails instead of ordering twice.
-      const locked = await tx.$queryRaw<{ id: string }[]>`
-        SELECT id FROM cart_items
-        WHERE id IN (${Prisma.join(dto.cartItemIds.map((id) => Prisma.sql`${id}::uuid`))})
-          AND user_id = ${buyerId}::uuid
-        FOR UPDATE`;
-      if (locked.length !== dto.cartItemIds.length) {
-        throw new ConflictException('Cart changed, reload it');
-      }
-    }
-    const lines = await tx.cartItem.findMany({
-      where: { id: { in: dto.cartItemIds }, userId: buyerId },
-      include: lineInclude,
-    });
-    if (lines.length !== dto.cartItemIds.length) {
-      throw new ConflictException('Cart changed, reload it');
-    }
+    const lines = await this.lines(tx, buyerId, dto, lock);
     for (const line of lines) this.assertPurchasable(buyerId, line);
-    const sales = await activeFlashSales(
-      tx,
-      lines.map((l) => l.modelId),
-    );
-    for (const line of lines) {
-      const sale = sales.get(line.modelId);
-      if (sale) await assertWithinLimit(tx, buyerId, sale, line.quantity);
-    }
 
     const byShop = new Map<string, Line[]>();
     for (const line of lines) {
@@ -157,21 +142,67 @@ export class CheckoutService {
       dto.voucherCodes ?? [],
       groups.map((g) => g.shop.id),
     );
-    const priced = priceCart(
-      groups.map((g) => ({
-        shopId: g.shop.id,
-        shippingFee: g.fee,
-        lines: g.lines.map((l) => ({
-          id: l.id,
-          amount: (sales.get(l.modelId)?.price ?? l.model.price) * l.quantity,
-        })),
+    const carts = groups.map((g) => ({
+      shopId: g.shop.id,
+      shippingFee: g.fee,
+      freeship: g.shop.freeship,
+      lines: g.lines.map((l) => ({
+        id: l.id,
+        amount: unitPrice(l) * l.quantity,
       })),
-      vouchers.cart,
-    );
+    }));
+    // Shops in the Freeship program get the best free-shipping voucher applied for the buyer.
+    const commissionBps = this.vouchers.fees().commissionBps;
+    if (!vouchers.cart.shipping && carts.some((c) => c.freeship)) {
+      const draft = priceCart(carts, vouchers.cart, commissionBps);
+      const auto = await this.vouchers.bestShipping(
+        tx,
+        buyerId,
+        draft.reduce(
+          (n, s) => n + s.itemsTotal - s.sellerDiscount - s.platformDiscount,
+          0,
+        ),
+        draft.reduce(
+          (n, s, i) => n + (carts[i].freeship ? s.shippingFee : 0),
+          0,
+        ),
+      );
+      // Kept only if the platform can still fund some of it on this checkout.
+      if (
+        auto &&
+        priceCart(
+          carts,
+          { ...vouchers.cart, shipping: auto },
+          commissionBps,
+        ).some((s) => s.shippingDiscount > 0)
+      ) {
+        vouchers.cart.shipping = auto;
+        vouchers.rows.push(auto);
+      }
+    }
+    const priced = priceCart(carts, vouchers.cart, commissionBps);
+    // A voucher the platform's budget cut to nothing is not used up.
+    const applied = (row: (typeof vouchers.rows)[number]) =>
+      priced.reduce(
+        (n, p, i) =>
+          n +
+          (row.promotion.type === PromotionType.shop_voucher
+            ? carts[i].shopId === row.promotion.shopId
+              ? p.sellerDiscount
+              : 0
+            : row.promotion.type === PromotionType.platform_voucher
+              ? p.platformDiscount
+              : p.shippingDiscount),
+        0,
+      );
+    vouchers.rows = vouchers.rows.filter((row) => applied(row) > 0);
+    if (!vouchers.rows.some((r) => r.code === vouchers.cart.shipping?.code)) {
+      vouchers.cart.shipping = undefined;
+    }
     return {
       address,
       lines,
-      sales,
+      vouchers,
       voucherRows: vouchers.rows,
       shops: groups.map((g, i) => ({ ...g, priced: priced[i] })),
     };
@@ -183,13 +214,22 @@ export class CheckoutService {
     dto: CheckoutDto,
     idempotencyKey: string,
   ) {
-    const { address, lines, sales, shops, voucherRows } = await this.quote(
+    const { address, lines, shops, voucherRows } = await this.quote(
       tx,
       buyerId,
       dto,
       true,
     );
     const checkoutTotal = shops.reduce((n, s) => n + s.priced.total, 0);
+    if (
+      dto.expectedTotal !== undefined &&
+      dto.expectedTotal !== checkoutTotal
+    ) {
+      throw new ConflictException({
+        message: 'Prices changed, review the order again',
+        total: checkoutTotal,
+      });
+    }
     // Cash on delivery can ship right away; online orders wait for payment, holding their stock.
     const awaitsPayment =
       dto.paymentMethod === PaymentMethod.online && checkoutTotal > 0;
@@ -210,15 +250,12 @@ export class CheckoutService {
           AND on_hand - reserved >= ${line.quantity}`;
       if (reserved === 0) {
         throw new ConflictException(
-          `Not enough stock for ${line.model.item.name}`,
+          coded('stock_short', `Not enough stock for ${line.model.item.name}`, {
+            item: line.model.item.name,
+          }),
         );
       }
-      const sale = sales.get(line.modelId);
-      if (sale) {
-        await claimFlashSale(tx, sale, line.quantity);
-        // Again under the quota row lock, so two checkouts by one buyer cannot both pass.
-        await assertWithinLimit(tx, buyerId, sale, line.quantity);
-      }
+      if (line.sale) await claimFlashSale(tx, line.sale, line.quantity);
     }
 
     const shippingAddress = {
@@ -229,6 +266,31 @@ export class CheckoutService {
     };
     for (const { shop, lines: shopLines, priced } of shops) {
       const discounts = new Map(priced.lines.map((l) => [l.id, l]));
+      // Kept on the order, so it still shows after the voucher ends or its use is released.
+      const vouchers = voucherRows.flatMap(({ promotion, ...v }) => {
+        const amount =
+          promotion.type === PromotionType.shop_voucher
+            ? promotion.shopId === shop.id
+              ? priced.sellerDiscount
+              : 0
+            : promotion.type === PromotionType.platform_voucher
+              ? priced.platformDiscount
+              : priced.shippingDiscount;
+        return amount > 0
+          ? [
+              {
+                type: promotion.type,
+                name: promotion.name,
+                code: v.code,
+                discountKind: v.discountKind,
+                discountValue: v.discountValue,
+                maxDiscount: v.maxDiscount,
+                minSpend: v.minSpend,
+                amount,
+              },
+            ]
+          : [];
+      });
       const order = await tx.order.create({
         data: {
           checkoutId: checkout.id,
@@ -241,6 +303,8 @@ export class CheckoutService {
           shippingFee: priced.shippingFee,
           shippingDiscount: priced.shippingDiscount,
           total: priced.total,
+          freeshipFee: priced.freeshipFee,
+          vouchers,
           shippingAddress,
           pickupAddress: {
             contactName: shop.contactName,
@@ -249,22 +313,26 @@ export class CheckoutService {
             ...locationView(shop),
           },
           items: {
-            create: shopLines.map(({ id, model, quantity }) => ({
-              modelId: model.id,
-              itemName: model.item.name,
-              modelName: variationName(
-                model.tierIndex,
-                model.item.tierVariations,
-              ),
-              sku: model.sku,
-              imageKey: model.item.images[0]?.key,
-              price: sales.get(model.id)?.price ?? model.price,
-              flashSaleModelId: sales.get(model.id)?.id,
-              originalPrice: sales.has(model.id) ? model.price : undefined,
-              quantity,
-              sellerDiscount: discounts.get(id)!.sellerDiscount,
-              platformDiscount: discounts.get(id)!.platformDiscount,
-            })),
+            create: shopLines.map((line) => {
+              const { model, quantity, sale } = line;
+              const discount = discounts.get(line.id)!;
+              return {
+                modelId: model.id,
+                itemName: model.item.name,
+                modelName: variationName(
+                  model.tierIndex,
+                  model.item.tierVariations,
+                ),
+                sku: model.sku,
+                imageKey: model.item.images[0]?.key,
+                price: unitPrice(line),
+                flashSaleModelId: sale?.id,
+                originalPrice: sale && model.price,
+                quantity,
+                sellerDiscount: discount.sellerDiscount,
+                platformDiscount: discount.platformDiscount,
+              };
+            }),
           },
           history: {
             create: { toStatus: initialStatus, actorId: buyerId },
@@ -303,8 +371,66 @@ export class CheckoutService {
         },
       });
     }
-    await tx.cartItem.deleteMany({ where: { id: { in: dto.cartItemIds } } });
+    if (dto.cartItemIds) {
+      await tx.cartItem.deleteMany({ where: { id: { in: dto.cartItemIds } } });
+    }
     return checkout.id;
+  }
+
+  private async lines(
+    tx: Prisma.TransactionClient,
+    buyerId: string,
+    dto: PreviewDto,
+    lock: boolean,
+  ): Promise<Line[]> {
+    if (!dto.cartItemIds === !dto.flashSale) {
+      throw new BadRequestException('Send cart lines or a flash sale');
+    }
+    if (dto.flashSale) {
+      const { quantity } = dto.flashSale;
+      const { modelId, sale } = await runningFlashSale(
+        tx,
+        dto.flashSale.id,
+        lock,
+      );
+      // Assumption: a flash sale is bought within its allowance only; more is refused, not charged at the regular price.
+      const allowance = await flashAllowance(tx, buyerId, sale);
+      if (quantity > allowance) {
+        throw new ConflictException(
+          coded(
+            'flash_sale_allowance',
+            `You can get ${allowance} more at the flash sale price`,
+            { count: allowance },
+          ),
+        );
+      }
+      const model = await tx.model.findUniqueOrThrow({
+        where: { id: modelId },
+        include: modelInclude,
+      });
+      return [{ id: sale.id, modelId, quantity, model, sale }];
+    }
+
+    const ids = dto.cartItemIds!;
+    if (lock) {
+      // Lock cart lines first so a concurrent checkout of them fails instead of ordering twice.
+      const locked = await tx.$queryRaw<{ id: string }[]>`
+        SELECT id FROM cart_items
+        WHERE id IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))})
+          AND user_id = ${buyerId}::uuid
+        FOR UPDATE`;
+      if (locked.length !== ids.length) {
+        throw new ConflictException('Cart changed, reload it');
+      }
+    }
+    const lines = await tx.cartItem.findMany({
+      where: { id: { in: ids }, userId: buyerId },
+      include: { model: { include: modelInclude } },
+    });
+    if (lines.length !== ids.length) {
+      throw new ConflictException('Cart changed, reload it');
+    }
+    return lines;
   }
 
   private assertPurchasable(buyerId: string, { model }: Line) {
@@ -314,7 +440,11 @@ export class CheckoutService {
       item.status !== ItemStatus.active ||
       item.shop.status !== ShopStatus.active
     ) {
-      throw new ConflictException(`${item.name} is no longer available`);
+      throw new ConflictException(
+        coded('item_unavailable', `${item.name} is no longer available`, {
+          item: item.name,
+        }),
+      );
     }
     if (item.shop.ownerId === buyerId) {
       throw new ForbiddenException('You cannot buy from your own shop');

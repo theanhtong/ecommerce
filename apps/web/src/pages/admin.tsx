@@ -1,27 +1,24 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  Banknote,
   BookOpen,
   ChevronLeft,
-  CircleX,
   LogOut,
   PackageX,
   Store,
   TicketPercent,
-  Truck,
-  UserPlus,
   UserRound,
   Undo2,
   Users,
 } from 'lucide-react';
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
+import { toast } from 'sonner';
 import { Link, NavLink, Outlet, useNavigate, useParams } from 'react-router';
 import { useAuth } from '@/lib/auth-context';
 import {
   AddressBlock,
   Empty,
   ErrorMessage,
-  LoadMore,
+  Pager,
   Loading,
   OrderStatusBadge,
   PageHeader,
@@ -37,15 +34,16 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import {
-  cancelRate,
-  IconStat,
-  periodLabel,
-  RangePicker,
-  type Range,
-  SELECTED,
-  SeriesChart,
-  StatCard,
-} from '@/components/report';
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { SELECTED } from '@/components/filter';
 import {
   Table,
   TableBody,
@@ -59,6 +57,7 @@ import {
   dateTime,
   money,
   PAYMENT_METHOD,
+  PAYMENT_STATE,
   priceRange,
   SHOP_STATUS,
 } from '@/lib/format';
@@ -76,7 +75,6 @@ const TABS = [
   ['/admin/ledger', 'Sổ cái', BookOpen],
   ['/admin/shops', 'Cửa hàng', Store],
   ['/admin/users', 'Người dùng', Users],
-  ['/admin/payouts', 'Rút tiền', Banknote],
   ['/admin/returns', 'Trả hàng', PackageX],
   ['/admin/refunds', 'Hoàn tiền', Undo2],
   ['/admin/vouchers', 'Khuyến mãi', TicketPercent],
@@ -121,7 +119,7 @@ export function AdminLayout() {
             <Button
               variant="outline"
               className="justify-start"
-              onClick={() => void logout().then(() => navigate('/'))}
+              onClick={() => void logout().then(() => navigate('/login'))}
             >
               <LogOut />
               Đăng xuất
@@ -130,7 +128,9 @@ export function AdminLayout() {
         )}
       </nav>
       <div className="min-w-0">
-        <Outlet />
+        <Suspense fallback={<Loading />}>
+          <Outlet />
+        </Suspense>
       </div>
     </div>
   );
@@ -150,6 +150,131 @@ const shopBadge = (status: ShopStatus) => (
   </Badge>
 );
 
+interface Moderation {
+  id: string;
+  status: string;
+  reason: string | null;
+  createdAt: string;
+  actor: { id: string; username: string } | null;
+}
+
+type StatusChange<S> = { status: S; reason?: string };
+
+// Banning or rejecting asks for the reason the owner will see; other changes apply at once.
+function StatusAction({
+  label,
+  title,
+  needsReason,
+  pending,
+  onConfirm,
+  size,
+}: {
+  label: string;
+  title: string;
+  needsReason: boolean;
+  pending: boolean;
+  onConfirm: (reason?: string) => void;
+  size?: 'sm';
+}) {
+  const [open, setOpen] = useState(false);
+  if (!needsReason) {
+    return (
+      <Button
+        size={size}
+        variant="outline"
+        disabled={pending}
+        onClick={() => onConfirm()}
+      >
+        {label}
+      </Button>
+    );
+  }
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <Button size={size} variant="outline" onClick={() => setOpen(true)}>
+        {label}
+      </Button>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <form
+          className="grid gap-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const reason = new FormData(e.currentTarget).get('reason');
+            onConfirm(String(reason).trim());
+            setOpen(false);
+          }}
+        >
+          <div className="grid gap-2">
+            <Label htmlFor="reason">Lý do</Label>
+            <Textarea id="reason" name="reason" required maxLength={500} />
+          </div>
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">
+                Hủy
+              </Button>
+            </DialogClose>
+            <Button type="submit" disabled={pending}>
+              {label}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function ModerationHistory({
+  items,
+  labels,
+}: {
+  items: Moderation[];
+  labels: Record<string, string>;
+}) {
+  if (!items.length) return null;
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Lịch sử xử lý</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Thời gian</TableHead>
+              <TableHead>Trạng thái</TableHead>
+              <TableHead>Lý do</TableHead>
+              <TableHead>Người xử lý</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {items.map((m) => (
+              <TableRow key={m.id}>
+                <TableCell className="text-muted-foreground">
+                  {dateTime(m.createdAt)}
+                </TableCell>
+                <TableCell>{labels[m.status] ?? m.status}</TableCell>
+                <TableCell className="whitespace-pre-line">
+                  {m.reason ?? '—'}
+                </TableCell>
+                <TableCell>{m.actor?.username ?? '—'}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </CardContent>
+    </Card>
+  );
+}
+
+const USER_STATUS: Record<User['status'], string> = {
+  active: 'Hoạt động',
+  banned: 'Bị khóa',
+};
+
 const SHOP_ACTIONS: Record<ShopStatus, [ShopStatus, string][]> = {
   pending: [
     ['active', 'Duyệt'],
@@ -162,17 +287,28 @@ const SHOP_ACTIONS: Record<ShopStatus, [ShopStatus, string][]> = {
 
 export function AdminShopsPage() {
   const queryClient = useQueryClient();
-  const [status, setStatus] = useState<ShopStatus>('active');
+  // The extra tab lists shops asking to join Freeship, whatever their status.
+  const [status, setStatus] = useState<ShopStatus | 'freeship'>('active');
   const page = usePaged<AdminShopRow>(
     ['admin-shops', status],
-    `/admin/shops?status=${status}`,
+    status === 'freeship'
+      ? '/admin/shops?freeship=requested'
+      : `/admin/shops?status=${status}`,
   );
-  const update = useMutation({
-    mutationFn: ({ id, next }: { id: string; next: ShopStatus }) =>
-      api(`/admin/shops/${id}/status`, {
+  const decide = useMutation({
+    mutationFn: ({ id, approve }: { id: string; approve: boolean }) =>
+      api(`/admin/shops/${id}/freeship`, {
         method: 'PATCH',
-        body: { status: next },
+        body: { approve },
       }),
+    onSuccess: (_, { approve }) => {
+      toast.success(approve ? 'Đã duyệt Freeship' : 'Đã từ chối');
+      void queryClient.invalidateQueries({ queryKey: ['admin-shops'] });
+    },
+  });
+  const update = useMutation({
+    mutationFn: ({ id, ...body }: StatusChange<ShopStatus> & { id: string }) =>
+      api(`/admin/shops/${id}/status`, { method: 'PATCH', body }),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: ['admin-shops'] }),
   });
@@ -192,6 +328,14 @@ export function AdminShopsPage() {
             {SHOP_STATUS[s]}
           </Button>
         ))}
+        <Button
+          size="sm"
+          variant="outline"
+          className={status === 'freeship' ? SELECTED : undefined}
+          onClick={() => setStatus('freeship')}
+        >
+          Chờ duyệt Freeship
+        </Button>
       </div>
       {page.isPending ? (
         <Loading />
@@ -242,17 +386,37 @@ export function AdminShopsPage() {
                       <Button asChild size="sm" variant="outline">
                         <Link to={`/admin/shops/${s.id}`}>Chi tiết</Link>
                       </Button>
-                      {SHOP_ACTIONS[s.status].map(([next, label]) => (
-                        <Button
-                          key={next}
-                          size="sm"
-                          variant="outline"
-                          disabled={update.isPending}
-                          onClick={() => update.mutate({ id: s.id, next })}
-                        >
-                          {label}
-                        </Button>
-                      ))}
+                      {status === 'freeship' &&
+                        (
+                          [
+                            [true, 'Duyệt Freeship'],
+                            [false, 'Từ chối'],
+                          ] as const
+                        ).map(([approve, label]) => (
+                          <Button
+                            key={label}
+                            size="sm"
+                            variant={approve ? 'default' : 'outline'}
+                            disabled={decide.isPending}
+                            onClick={() => decide.mutate({ id: s.id, approve })}
+                          >
+                            {label}
+                          </Button>
+                        ))}
+                      {status !== 'freeship' &&
+                        SHOP_ACTIONS[s.status].map(([next, label]) => (
+                          <StatusAction
+                            key={next}
+                            size="sm"
+                            label={label}
+                            title={`${label} ${s.name}`}
+                            needsReason={next !== 'active'}
+                            pending={update.isPending}
+                            onConfirm={(reason) =>
+                              update.mutate({ id: s.id, status: next, reason })
+                            }
+                          />
+                        ))}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -261,11 +425,7 @@ export function AdminShopsPage() {
           </CardContent>
         </Card>
       )}
-      <LoadMore
-        hasMore={page.hasNextPage}
-        loading={page.isFetchingNextPage}
-        onClick={() => void page.fetchNextPage()}
-      />
+      <Pager page={page.page} prev={page.prev} next={page.next} />
     </>
   );
 }
@@ -296,8 +456,11 @@ export function AdminUsersPage() {
     `/admin/users?role=${role}`,
   );
   const update = useMutation({
-    mutationFn: ({ id, status }: { id: string; status: User['status'] }) =>
-      api(`/admin/users/${id}/status`, { method: 'PATCH', body: { status } }),
+    mutationFn: ({
+      id,
+      ...body
+    }: StatusChange<User['status']> & { id: string }) =>
+      api(`/admin/users/${id}/status`, { method: 'PATCH', body }),
     onSuccess: () =>
       void queryClient.invalidateQueries({ queryKey: ['admin-users'] }),
   });
@@ -376,21 +539,23 @@ export function AdminUsersPage() {
                         <Link to={`/admin/users/${u.id}`}>Chi tiết</Link>
                       </Button>
                       {u.role !== 'admin' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="ml-2"
-                          disabled={update.isPending}
-                          onClick={() =>
-                            update.mutate({
-                              id: u.id,
-                              status:
-                                u.status === 'active' ? 'banned' : 'active',
-                            })
-                          }
-                        >
-                          {u.status === 'active' ? 'Khóa' : 'Mở khóa'}
-                        </Button>
+                        <span className="ml-2">
+                          <StatusAction
+                            size="sm"
+                            label={u.status === 'active' ? 'Khóa' : 'Mở khóa'}
+                            title={`Khóa ${u.username}`}
+                            needsReason={u.status === 'active'}
+                            pending={update.isPending}
+                            onConfirm={(reason) =>
+                              update.mutate({
+                                id: u.id,
+                                status:
+                                  u.status === 'active' ? 'banned' : 'active',
+                                reason,
+                              })
+                            }
+                          />
+                        </span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -400,177 +565,7 @@ export function AdminUsersPage() {
           </CardContent>
         </Card>
       )}
-      <LoadMore
-        hasMore={page.hasNextPage}
-        loading={page.isFetchingNextPage}
-        onClick={() => void page.fetchNextPage()}
-      />
-    </>
-  );
-}
-
-type Report = {
-  totals: {
-    profit: number;
-    itemsTotal: number;
-    shippingFees: number;
-    promotions: number;
-    orders: number;
-    averageOrder: number;
-    cancelledOrders: number;
-    newUsers: number;
-    newShops: number;
-  };
-  series: {
-    period: string;
-    orders: number;
-    itemsTotal: number;
-    shippingFees: number;
-    promotions: number;
-    profit: number;
-  }[];
-};
-
-export function AdminLedgerPage() {
-  const [range, setRange] = useState<Range>('30d');
-  const report = useQuery({
-    queryKey: ['ledger-report', range],
-    queryFn: () => api<Report>(`/admin/ledger/report?range=${range}`),
-  });
-  const balances = useQuery({
-    queryKey: ['ledger'],
-    queryFn: () => api<{ total: number }>('/admin/ledger/accounts'),
-  });
-  const count = (n: number) => String(n);
-  const t = report.data?.totals;
-
-  return (
-    <>
-      <PageHeader
-        title="Sổ cái"
-        actions={
-          balances.data && (
-            <Badge
-              variant={balances.data.total === 0 ? 'default' : 'destructive'}
-            >
-              {balances.data.total === 0
-                ? 'Cân đối'
-                : `Lệch ${money(balances.data.total)}`}
-            </Badge>
-          )
-        }
-      />
-      <RangePicker value={range} onChange={setRange} />
-      {report.isPending ? (
-        <Loading />
-      ) : report.error || !t ? (
-        <ErrorMessage error={report.error} />
-      ) : (
-        <div className="grid gap-4">
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard label="Lợi nhuận" value={money(t.profit)} />
-            <StatCard label="Tiền hàng" value={money(t.itemsTotal)} />
-            <StatCard label="Đơn hoàn thành" value={count(t.orders)} />
-            <StatCard
-              label="Giá trị đơn trung bình"
-              value={money(t.averageOrder)}
-            />
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
-            <IconStat
-              icon={TicketPercent}
-              label="Chi phí khuyến mãi"
-              value={money(t.promotions)}
-            />
-            <IconStat
-              icon={Truck}
-              label="Phí vận chuyển thu hộ"
-              value={money(t.shippingFees)}
-            />
-            <IconStat
-              icon={CircleX}
-              label="Đơn bị hủy"
-              value={count(t.cancelledOrders)}
-              note={cancelRate(t.cancelledOrders, t.orders)}
-            />
-            <IconStat
-              icon={UserPlus}
-              label="Người dùng mới"
-              value={count(t.newUsers)}
-            />
-            <IconStat
-              icon={Store}
-              label="Cửa hàng mới"
-              value={count(t.newShops)}
-            />
-          </div>
-          <SeriesChart
-            title="Lợi nhuận"
-            data={report.data.series}
-            dataKey="profit"
-            range={range}
-            format={money}
-          />
-          <div className="grid gap-4 lg:grid-cols-2">
-            <SeriesChart
-              title="Tiền hàng"
-              data={report.data.series}
-              dataKey="itemsTotal"
-              range={range}
-              format={money}
-            />
-            <SeriesChart
-              title="Đơn hoàn thành"
-              data={report.data.series}
-              dataKey="orders"
-              range={range}
-              format={count}
-            />
-          </div>
-          <Card>
-            <CardHeader>
-              <CardTitle>Chi tiết</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Thời gian</TableHead>
-                    <TableHead className="text-right">Đơn hoàn thành</TableHead>
-                    <TableHead className="text-right">Tiền hàng</TableHead>
-                    <TableHead className="text-right">Phí vận chuyển</TableHead>
-                    <TableHead className="text-right">Lợi nhuận</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {[...report.data.series]
-                    .reverse()
-                    .filter((p) => p.orders > 0)
-                    .map((p) => (
-                      <TableRow key={p.period}>
-                        <TableCell>
-                          {periodLabel(range, p.period, true)}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.orders}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {money(p.itemsTotal)}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground tabular-nums">
-                          {money(p.shippingFees)}
-                        </TableCell>
-                        <TableCell className="text-right font-medium tabular-nums">
-                          {money(p.profit)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      <Pager page={page.page} prev={page.prev} next={page.next} />
     </>
   );
 }
@@ -586,7 +581,7 @@ function BackTo({ to }: { to: string }) {
   );
 }
 
-type AdminUserDetail = AdminUser;
+type AdminUserDetail = AdminUser & { moderations: Moderation[] };
 
 export function AdminUserPage() {
   const { id } = useParams();
@@ -596,8 +591,8 @@ export function AdminUserPage() {
     queryFn: () => api<AdminUserDetail>(`/admin/users/${id}`),
   });
   const update = useMutation({
-    mutationFn: (status: User['status']) =>
-      api(`/admin/users/${id}/status`, { method: 'PATCH', body: { status } }),
+    mutationFn: (body: StatusChange<User['status']>) =>
+      api(`/admin/users/${id}/status`, { method: 'PATCH', body }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin-user', id] });
       void queryClient.invalidateQueries({ queryKey: ['admin-users'] });
@@ -620,15 +615,18 @@ export function AdminUserPage() {
               {u.status === 'active' ? 'Hoạt động' : 'Bị khóa'}
             </Badge>
             {u.role !== 'admin' && (
-              <Button
-                variant="outline"
-                disabled={update.isPending}
-                onClick={() =>
-                  update.mutate(u.status === 'active' ? 'banned' : 'active')
+              <StatusAction
+                label={u.status === 'active' ? 'Khóa tài khoản' : 'Mở khóa'}
+                title={`Khóa ${u.username}`}
+                needsReason={u.status === 'active'}
+                pending={update.isPending}
+                onConfirm={(reason) =>
+                  update.mutate({
+                    status: u.status === 'active' ? 'banned' : 'active',
+                    reason,
+                  })
                 }
-              >
-                {u.status === 'active' ? 'Khóa tài khoản' : 'Mở khóa'}
-              </Button>
+              />
             )}
           </>
         }
@@ -652,6 +650,7 @@ export function AdminUserPage() {
         </CardContent>
       </Card>
       <div className="grid gap-4">
+        <ModerationHistory items={u.moderations} labels={USER_STATUS} />
         {u.role !== 'admin' && (
           <AdminOrdersTable filter={`buyerId=${u.id}`} party="buyer" />
         )}
@@ -661,6 +660,7 @@ export function AdminUserPage() {
 }
 
 type AdminShopDetail = MyShop & {
+  moderations: Moderation[];
   owner: { id: string; email: string; username: string };
   itemCount: number;
   orderCount: number;
@@ -674,11 +674,8 @@ function ShopDetail({ id, showOwner }: { id: string; showOwner?: boolean }) {
     queryFn: () => api<AdminShopDetail>(`/admin/shops/${id}`),
   });
   const update = useMutation({
-    mutationFn: (next: ShopStatus) =>
-      api(`/admin/shops/${id}/status`, {
-        method: 'PATCH',
-        body: { status: next },
-      }),
+    mutationFn: (body: StatusChange<ShopStatus>) =>
+      api(`/admin/shops/${id}/status`, { method: 'PATCH', body }),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['admin-shop', id] });
       void queryClient.invalidateQueries({ queryKey: ['admin-shops'] });
@@ -691,73 +688,78 @@ function ShopDetail({ id, showOwner }: { id: string; showOwner?: boolean }) {
   const s = shop.data;
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Store className="size-4 text-muted-foreground" />
-          {s.name}
-          {shopBadge(s.status)}
-        </CardTitle>
-        {showOwner && (
-          <CardDescription className="flex items-center gap-2">
-            <UserRound className="size-3.5" />
-            {s.owner.username} · {s.owner.email}
-          </CardDescription>
-        )}
-        {SHOP_ACTIONS[s.status].length > 0 && (
-          <CardAction className="flex gap-2">
-            {SHOP_ACTIONS[s.status].map(([next, label]) => (
-              <Button
-                key={next}
-                size="sm"
-                variant="outline"
-                disabled={update.isPending}
-                onClick={() => update.mutate(next)}
-              >
-                {label}
-              </Button>
-            ))}
-          </CardAction>
-        )}
-      </CardHeader>
-      <CardContent className="grid gap-6 md:grid-cols-2">
-        <div className="grid content-start gap-4 text-sm">
-          <dl className="grid grid-cols-3 gap-4">
-            {(
-              [
-                ['Sản phẩm', s.itemCount],
-                ['Đơn hàng', s.orderCount],
-                ['Số dư ví', money(s.walletBalance)],
-              ] as const
-            ).map(([label, value]) => (
-              <div key={label}>
-                <dt className="text-muted-foreground">{label}</dt>
-                <dd className="mt-1 text-lg font-medium tabular-nums">
-                  {value}
-                </dd>
-              </div>
-            ))}
-          </dl>
-          {s.description && (
-            <p className="whitespace-pre-line">{s.description}</p>
+    <>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Store className="size-4 text-muted-foreground" />
+            {s.name}
+            {shopBadge(s.status)}
+          </CardTitle>
+          {showOwner && (
+            <CardDescription className="flex items-center gap-2">
+              <UserRound className="size-3.5" />
+              {s.owner.username} · {s.owner.email}
+            </CardDescription>
           )}
-          <p className="text-muted-foreground">
-            Mở ngày {dateTime(s.createdAt)}
-          </p>
-        </div>
-        <div className="grid content-start gap-3 md:border-l md:pl-6">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            Địa chỉ lấy hàng
-          </h3>
-          <AddressBlock
-            name={s.contactName}
-            phone={s.phone}
-            street={s.street}
-            location={s}
-          />
-        </div>
-      </CardContent>
-    </Card>
+          {SHOP_ACTIONS[s.status].length > 0 && (
+            <CardAction className="flex gap-2">
+              {SHOP_ACTIONS[s.status].map(([next, label]) => (
+                <StatusAction
+                  key={next}
+                  size="sm"
+                  label={label}
+                  title={`${label} ${s.name}`}
+                  needsReason={next !== 'active'}
+                  pending={update.isPending}
+                  onConfirm={(reason) =>
+                    update.mutate({ status: next, reason })
+                  }
+                />
+              ))}
+            </CardAction>
+          )}
+        </CardHeader>
+        <CardContent className="grid gap-6 md:grid-cols-2">
+          <div className="grid content-start gap-4 text-sm">
+            <dl className="grid grid-cols-3 gap-4">
+              {(
+                [
+                  ['Sản phẩm', s.itemCount],
+                  ['Đơn hàng', s.orderCount],
+                  ['Số dư ví', money(s.walletBalance)],
+                ] as const
+              ).map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-muted-foreground">{label}</dt>
+                  <dd className="mt-1 text-lg font-medium tabular-nums">
+                    {value}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+            {s.description && (
+              <p className="whitespace-pre-line">{s.description}</p>
+            )}
+            <p className="text-muted-foreground">
+              Mở ngày {dateTime(s.createdAt)}
+            </p>
+          </div>
+          <div className="grid content-start gap-3 md:border-l md:pl-6">
+            <h3 className="text-sm font-medium text-muted-foreground">
+              Địa chỉ lấy hàng
+            </h3>
+            <AddressBlock
+              name={s.contactName}
+              phone={s.phone}
+              street={s.street}
+              location={s}
+            />
+          </div>
+        </CardContent>
+      </Card>
+      <ModerationHistory items={s.moderations} labels={SHOP_STATUS} />
+    </>
   );
 }
 
@@ -847,7 +849,12 @@ function AdminOrdersTable({
                   <TableCell className="text-right tabular-nums">
                     {money(o.total)}
                   </TableCell>
-                  <TableCell>{PAYMENT_METHOD[o.paymentMethod]}</TableCell>
+                  <TableCell>
+                    <p>{PAYMENT_METHOD[o.paymentMethod]}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {PAYMENT_STATE[o.paymentState]}
+                    </p>
+                  </TableCell>
                   <TableCell>
                     <OrderStatusBadge status={o.status} />
                   </TableCell>
@@ -859,11 +866,7 @@ function AdminOrdersTable({
             </TableBody>
           </Table>
         )}
-        <LoadMore
-          hasMore={page.hasNextPage}
-          loading={page.isFetchingNextPage}
-          onClick={() => void page.fetchNextPage()}
-        />
+        <Pager page={page.page} prev={page.prev} next={page.next} />
       </CardContent>
     </Card>
   );
@@ -959,11 +962,7 @@ function AdminItemsTable({ shopId }: { shopId: string }) {
             </TableBody>
           </Table>
         )}
-        <LoadMore
-          hasMore={page.hasNextPage}
-          loading={page.isFetchingNextPage}
-          onClick={() => void page.fetchNextPage()}
-        />
+        <Pager page={page.page} prev={page.prev} next={page.next} />
       </CardContent>
     </Card>
   );

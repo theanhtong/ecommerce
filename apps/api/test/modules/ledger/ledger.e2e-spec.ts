@@ -9,6 +9,7 @@ import {
   createTestApp,
   SHOP_ADDRESS,
   signUp,
+  carrier,
 } from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
@@ -29,8 +30,6 @@ describe('Ledger (e2e)', () => {
     put: (url: string, body: object) =>
       http().put(url).set(bearer(account.token)).send(body),
   });
-  const shipment = (s: Account, orderId: string, status: string) =>
-    as(s).post(`/orders/${orderId}/shipment`, { status });
 
   async function seller() {
     const account = await signUp(app, emails);
@@ -80,8 +79,8 @@ describe('Ledger (e2e)', () => {
 
   async function complete(s: Account, b: Account, orderId: string) {
     await as(s).post(`/orders/${orderId}/ship`).expect(200);
-    await shipment(s, orderId, 'picked_up').expect(200);
-    await shipment(s, orderId, 'delivered').expect(200);
+    await carrier(app, orderId, 'picked_up');
+    await carrier(app, orderId, 'delivered');
     return as(b).post(`/orders/${orderId}/receive`).expect(200);
   }
 
@@ -111,6 +110,7 @@ describe('Ledger (e2e)', () => {
     ).toBe(1);
     await as(s).get('/shops/me/wallet').expect(200, {
       balance: 0,
+      held: 0,
       items: [],
       nextCursor: null,
     });
@@ -126,7 +126,18 @@ describe('Ledger (e2e)', () => {
     const wallet = await as(s).get('/shops/me/wallet').expect(200);
     expect(wallet.body).toMatchObject({
       balance: 95_000,
-      items: [{ amount: 95_000, refType: 'order', refId: placed.id }],
+      items: [
+        {
+          amount: 95_000,
+          refType: 'order',
+          refId: placed.id,
+          breakdown: {
+            itemsTotal: 100_000,
+            sellerDiscount: 0,
+            commission: 5_000,
+          },
+        },
+      ],
     });
 
     const entry = await prisma.ledgerEntry.findUniqueOrThrow({
@@ -142,6 +153,74 @@ describe('Ledger (e2e)', () => {
       shipping: -16_500,
     });
 
+    const remit = (amount: number, key = 'cod-batch-1') =>
+      as(admin)
+        .post('/admin/ledger/cod-remittances', { amount })
+        .set('Idempotency-Key', key);
+    await remit(116_501).expect(409);
+    await as(admin)
+      .post('/admin/ledger/cod-remittances', { amount: 1 })
+      .expect(400);
+    await as(s)
+      .post('/admin/ledger/cod-remittances', { amount: 1 })
+      .set('Idempotency-Key', 'x')
+      .expect(403);
+    // The carrier keeps the shipping fee it is owed out of the COD it hands over.
+    const remitted = {
+      amount: 116_500,
+      shippingFee: 16_500,
+      received: 100_000,
+    };
+    expect((await remit(116_500).expect(200)).body).toEqual(remitted);
+    expect((await remit(116_500).expect(200)).body).toEqual(remitted);
+    const cash = (await as(admin).get('/admin/ledger/accounts').expect(200))
+      .body;
+    expect(cash.byType).toMatchObject({
+      receivable: 0,
+      shipping: 0,
+      bank: 100_000,
+    });
+    expect(cash.total).toBe(0);
+
+    const shopId = placed.shop.id as string;
+    const board = await as(admin)
+      .get(
+        `/admin/ledger/shops?period=month&q=${encodeURIComponent(placed.shop.name)}`,
+      )
+      .expect(200);
+    expect(board.body.items).toEqual([
+      expect.objectContaining({
+        id: shopId,
+        itemsTotal: 100_000,
+        orders: 1,
+        commission: 5_000,
+        balance: 95_000,
+      }),
+    ]);
+    await as(admin).get('/admin/ledger/shops?sort=nope').expect(400);
+    await as(s).get('/admin/ledger/shops').expect(403);
+    const journal = await as(admin)
+      .get(`/admin/ledger/entries?type=order&shopId=${shopId}`)
+      .expect(200);
+    expect(journal.body.items).toHaveLength(1);
+    expect(journal.body.items[0].description).toContain(placed.shop.name);
+    expect(
+      journal.body.items[0].lines.reduce(
+        (n: number, l: { amount: number }) => n + l.amount,
+        0,
+      ),
+    ).toBe(0);
+    const csv = await as(admin)
+      .get(`/admin/ledger/entries.csv?shopId=${shopId}`)
+      .expect(200);
+    expect(csv.headers['content-type']).toContain('text/csv');
+    expect(csv.text).toContain(placed.id);
+    expect(csv.text).toContain('Diễn giải');
+    expect(
+      (await as(admin).get(`/admin/ledger/shops/${shopId}/wallet`).expect(200))
+        .body.balance,
+    ).toBe(95_000);
+
     const platform = await as(admin).get('/admin/ledger/accounts').expect(200);
     expect(platform.body.total).toBe(0);
     expect(
@@ -154,12 +233,14 @@ describe('Ledger (e2e)', () => {
     const today = new Intl.DateTimeFormat('en-CA', {
       timeZone: 'Asia/Ho_Chi_Minh',
     }).format(new Date());
+    const [year, month] = today.split('-').map(Number);
     const daily = await as(admin)
-      .get('/admin/ledger/report?range=30d')
+      .get('/admin/ledger/report?period=month')
       .expect(200);
-    expect(daily.body.series).toHaveLength(30);
-    const current = daily.body.series.at(-1);
-    expect(current.period).toBe(today);
+    expect(daily.body.series).toHaveLength(new Date(year, month, 0).getDate());
+    const current = daily.body.series.find(
+      (p: { period: string }) => p.period === today,
+    );
     expect(current.orders).toBeGreaterThanOrEqual(1);
     expect(current.profit).toBeGreaterThanOrEqual(5_000);
     expect(daily.body.totals).toMatchObject({
@@ -172,18 +253,27 @@ describe('Ledger (e2e)', () => {
     expect(daily.body.totals.profit).toBeGreaterThanOrEqual(current.profit);
 
     const hourly = await as(admin)
-      .get('/admin/ledger/report?range=today')
+      .get('/admin/ledger/report?period=day')
       .expect(200);
     expect(hourly.body.series).toHaveLength(24);
     const monthly = await as(admin)
-      .get('/admin/ledger/report?range=12m')
+      .get('/admin/ledger/report?period=year')
       .expect(200);
     expect(monthly.body.series).toHaveLength(12);
-    expect(monthly.body.series.at(-1).profit).toBeGreaterThanOrEqual(
-      current.profit,
-    );
-    await as(admin).get('/admin/ledger/report?range=1y').expect(400);
-    await as(s).get('/admin/ledger/report?range=30d').expect(403);
+    expect(
+      monthly.body.series.find(
+        (p: { period: string }) => p.period === today.slice(0, 7),
+      ).profit,
+    ).toBeGreaterThanOrEqual(current.profit);
+    const past = await as(admin)
+      .get('/admin/ledger/report?period=month&at=2020-02')
+      .expect(200);
+    expect(past.body.series).toHaveLength(29);
+    expect(past.body.series[0].period).toBe('2020-02-01');
+    expect(past.body.totals.orders).toBe(0);
+    await as(admin).get('/admin/ledger/report?period=week').expect(400);
+    await as(admin).get('/admin/ledger/report?at=2026-13').expect(400);
+    await as(s).get('/admin/ledger/report').expect(403);
   });
 
   it('posts nothing for orders that do not complete', async () => {
@@ -194,7 +284,7 @@ describe('Ledger (e2e)', () => {
     });
     const inTransit = await order(s);
     await as(s).post(`/orders/${inTransit.order.id}/ship`).expect(200);
-    await shipment(s, inTransit.order.id, 'picked_up').expect(200);
+    await carrier(app, inTransit.order.id, 'picked_up');
 
     expect(
       await prisma.ledgerEntry.count({

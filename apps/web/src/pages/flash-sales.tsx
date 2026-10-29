@@ -61,7 +61,7 @@ const modelName = (item: ItemDetail, tierIndex: number[]) =>
 type Row = { on: boolean; price: string; quota: string; limit: string };
 
 const INPUT_LABEL = {
-  price: 'Giá Flash Sale',
+  price: 'Giá sốc',
   quota: 'Số suất',
   limit: 'Mỗi người',
 };
@@ -85,7 +85,7 @@ function NewFlashSale() {
     mutationFn: (body: object) =>
       api<FlashSale>(PATH, { method: 'POST', body }),
     onSuccess: () => {
-      toast.success('Đã tạo Flash Sale');
+      toast.success('Đã tạo giá sốc');
       setOpen(false);
       void queryClient.invalidateQueries({ queryKey: [PATH] });
     },
@@ -112,11 +112,11 @@ function NewFlashSale() {
     >
       <Button onClick={() => setOpen(true)}>
         <Plus />
-        Tạo Flash Sale
+        Tạo giá sốc
       </Button>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Tạo Flash Sale</DialogTitle>
+          <DialogTitle>Tạo giá sốc</DialogTitle>
         </DialogHeader>
         <form
           className="grid gap-4"
@@ -183,7 +183,7 @@ function NewFlashSale() {
                   <TableHead />
                   <TableHead>Phân loại</TableHead>
                   <TableHead>Giá gốc</TableHead>
-                  <TableHead>Giá Flash Sale</TableHead>
+                  <TableHead>Giá sốc</TableHead>
                   <TableHead>Số suất</TableHead>
                   <TableHead>Mỗi người</TableHead>
                 </TableRow>
@@ -271,13 +271,13 @@ export function SellerFlashSalesPage() {
 
   return (
     <>
-      <PageHeader title="Flash Sale" actions={<NewFlashSale />} />
+      <PageHeader title="Giá sốc" actions={<NewFlashSale />} />
       {sales.isPending ? (
         <Loading />
       ) : sales.error ? (
         <ErrorMessage error={sales.error} />
       ) : !sales.data.length ? (
-        <Empty>Chưa có Flash Sale</Empty>
+        <Empty>Chưa có giá sốc</Empty>
       ) : (
         <Card>
           <CardContent>

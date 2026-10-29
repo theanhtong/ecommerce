@@ -48,6 +48,11 @@ export class VouchersController {
     return this.vouchers.available(user.sub, query.shopIds);
   }
 
+  @Get('vouchers/fees')
+  fees() {
+    return this.vouchers.fees();
+  }
+
   @Post('shops/me/vouchers')
   create(
     @CurrentUser() user: AccessTokenPayload,

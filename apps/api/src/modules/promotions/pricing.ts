@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { coded } from '../../common/http-error.js';
 
 export interface VoucherTerms {
   code: string;
@@ -12,6 +13,49 @@ export interface ShopCart {
   shopId: string;
   lines: { id: string; amount: number }[];
   shippingFee: number;
+  // In the shop-funded Freeship program.
+  freeship: boolean;
+}
+
+// Assumption: the Freeship program fee is 6% of the shop's revenue on the order, at most 50,000₫,
+// as GHN's seller blog reports for TikTok Shop's Freeship Extra; set the platform's own rate later.
+export const FREESHIP_FEE_BPS = 600;
+export const FREESHIP_FEE_CAP = 50_000;
+
+export const freeshipFee = (revenue: number) =>
+  Math.min(FREESHIP_FEE_CAP, Math.round((revenue * FREESHIP_FEE_BPS) / 10_000));
+
+// Assumption: a platform-funded voucher may not cost more than the platform earns on an order
+// that just meets its minimum spend: commission, plus the Freeship fee for shipping vouchers.
+export function platformVoucherLimit(
+  type: 'platform_voucher' | 'shipping_voucher',
+  minSpend: number,
+  commissionBps: number,
+) {
+  return (
+    Math.round((minSpend * commissionBps) / 10_000) +
+    (type === 'shipping_voucher' ? freeshipFee(minSpend) : 0)
+  );
+}
+
+// Null when the voucher fits the limit; otherwise the limit it breaks.
+export function platformVoucherExcess(
+  type: 'platform_voucher' | 'shipping_voucher',
+  v: Omit<VoucherTerms, 'code'>,
+  commissionBps: number,
+) {
+  // A percent off the order never outruns a commission of at least that percent.
+  if (
+    type === 'platform_voucher' &&
+    v.discountKind === 'percent' &&
+    v.discountValue * 100 <= commissionBps
+  ) {
+    return null;
+  }
+  const limit = platformVoucherLimit(type, v.minSpend, commissionBps);
+  const most =
+    v.discountKind === 'fixed' ? v.discountValue : (v.maxDiscount ?? Infinity);
+  return most > limit ? limit : null;
 }
 
 export interface CartVouchers {
@@ -50,7 +94,11 @@ export function allocate(total: number, weights: number[]) {
 function requireSpend(v: VoucherTerms, base: number) {
   if (base < v.minSpend) {
     throw new BadRequestException(
-      `Voucher ${v.code} needs a minimum spend of ${v.minSpend}`,
+      coded(
+        'voucher_min_spend',
+        `Voucher ${v.code} needs a minimum spend of ${v.minSpend}`,
+        { voucher: v.code, minSpend: v.minSpend },
+      ),
     );
   }
 }
@@ -58,7 +106,14 @@ function requireSpend(v: VoucherTerms, base: number) {
 // Shop vouchers apply first, the platform voucher to what is left, and the shipping
 // voucher only to shipping fees. Assumption: each minimum spend is checked against the
 // amount its voucher applies to.
-export function priceCart(shops: ShopCart[], vouchers: CartVouchers) {
+// Assumption: with `commissionBps`, the platform never funds more on one checkout than it earns on it
+// (commission plus Freeship fees); the platform voucher is served first, the shipping voucher gets
+// what is left.
+export function priceCart(
+  shops: ShopCart[],
+  vouchers: CartVouchers,
+  commissionBps?: number,
+) {
   const priced = shops.map((s) => {
     const itemsTotal = s.lines.reduce((n, l) => n + l.amount, 0);
     const voucher = vouchers.shop.get(s.shopId);
@@ -74,18 +129,43 @@ export function priceCart(shops: ShopCart[], vouchers: CartVouchers) {
   const afterShop = priced.map((s) => s.itemsTotal - s.sellerDiscount);
   const platformBase = afterShop.reduce((a, b) => a + b, 0);
   if (vouchers.platform) requireSpend(vouchers.platform, platformBase);
-  const platformByShop = allocate(
+  let budget =
+    commissionBps === undefined
+      ? Infinity
+      : priced.reduce(
+          (n, s, i) =>
+            n +
+            Math.round((afterShop[i] * commissionBps) / 10_000) +
+            (s.freeship ? freeshipFee(afterShop[i]) : 0),
+          0,
+        );
+  const platformTotal = Math.min(
+    budget,
     vouchers.platform ? discountFor(vouchers.platform, platformBase) : 0,
-    afterShop,
   );
+  budget -= platformTotal;
+  const platformByShop = allocate(platformTotal, afterShop);
 
-  const fees = priced.map((s) => s.shippingFee);
-  const shippingBase = fees.reduce((a, b) => a + b, 0);
+  // Shipping vouchers only cover shops in the Freeship program, which fund them through its fee.
+  const fees = priced.map((s) => (s.freeship ? s.shippingFee : 0));
+  const shippingBase = sum(fees);
   if (vouchers.shipping) {
+    if (!shippingBase) {
+      throw new BadRequestException(
+        coded(
+          'voucher_freeship_only',
+          `Voucher ${vouchers.shipping.code} only covers shops in the Freeship program`,
+          { voucher: vouchers.shipping.code },
+        ),
+      );
+    }
     requireSpend(vouchers.shipping, platformBase - sum(platformByShop));
   }
   const shippingByShop = allocate(
-    vouchers.shipping ? discountFor(vouchers.shipping, shippingBase) : 0,
+    Math.min(
+      budget,
+      vouchers.shipping ? discountFor(vouchers.shipping, shippingBase) : 0,
+    ),
     fees,
   );
 
@@ -103,6 +183,9 @@ export function priceCart(shops: ShopCart[], vouchers: CartVouchers) {
       platformDiscount,
       shippingFee: s.shippingFee,
       shippingDiscount,
+      freeshipFee: s.freeship
+        ? freeshipFee(s.itemsTotal - s.sellerDiscount)
+        : 0,
       total:
         s.itemsTotal -
         s.sellerDiscount -

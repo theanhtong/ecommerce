@@ -3,6 +3,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -23,6 +24,7 @@ import { releaseFlashSales } from '../promotions/flash-sales.js';
 import { VouchersService } from '../promotions/vouchers.service.js';
 import type { AdminListOrdersQuery, ListOrdersQuery } from './dto/order.dto.js';
 import { orderInclude, orderView } from './order-view.js';
+import { coded } from '../../common/http-error.js';
 
 type Party = 'buyer' | 'seller';
 type StockEffect = {
@@ -53,9 +55,24 @@ const OPEN_RETURN = { in: [ReturnStatus.requested, ReturnStatus.disputed] };
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Assumption: a seller has 3 days from when an order becomes payable to arrange shipment.
 const SHIP_DEADLINE_MS = 3 * DAY_MS;
-// A delivered order completes on its own 3 days later if the buyer does not confirm it first.
-const AUTO_COMPLETE_AFTER_MS = 3 * DAY_MS;
+// Assumption: many buyers never confirm receipt, so a delivered order completes on its own 24 hours
+// later; an open return holds it, and the buyer can still ask for a return within the return window.
+const AUTO_COMPLETE_AFTER_MS = DAY_MS;
 const SWEEP_BATCH = 100;
+// Assumption: no carrier is integrated yet, so a simulated one picks a parcel up 4 hours after the
+// seller prepares it and delivers it 1 day later within a province, 3 days across provinces.
+// CARRIER_TIME_SCALE speeds it up for demos: 60 makes an hour pass in a minute.
+// Read on each run: the entrypoints load .env after their imports are evaluated.
+const carrierTimes = () => {
+  const scale = Number(process.env.CARRIER_TIME_SCALE) || 1;
+  return {
+    pickup: (4 * 60 * 60 * 1000) / scale,
+    province: DAY_MS / scale,
+    country: (3 * DAY_MS) / scale,
+  };
+};
+const provinceOf = (address: Prisma.JsonValue) =>
+  (address as { province: { code: string } }).province.code;
 
 type SweptOrder = Prisma.OrderGetPayload<{
   include: { items: true; checkout: { select: { paymentMethod: true } } };
@@ -104,6 +121,8 @@ const shipmentView = (s: {
 
 @Injectable()
 export class OrdersService {
+  private readonly logger = new Logger(OrdersService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly ledger: LedgerService,
@@ -150,7 +169,7 @@ export class OrdersService {
     await this.prisma.$transaction(async (tx) => {
       const status = await this.lockOrder(tx, id);
       if (status !== OrderStatus.to_ship) {
-        throw new ConflictException(`Order is ${status}`);
+        throw new ConflictException(coded('order_state', `Order is ${status}`));
       }
       const { count } = await tx.shipment.createMany({
         data: { orderId: id },
@@ -227,7 +246,7 @@ export class OrdersService {
   ) {
     const status = await this.lockOrder(tx, id);
     if (status !== OrderStatus.delivered && status !== OrderStatus.completed) {
-      throw new ConflictException(`Order is ${status}`);
+      throw new ConflictException(coded('order_state', `Order is ${status}`));
     }
     const order = await tx.order.findUniqueOrThrow({
       where: { id },
@@ -262,11 +281,58 @@ export class OrdersService {
     return true;
   }
 
-  // Repeats are no-ops so a double submit is safe; skipped steps are refused.
+  // The simulated carrier: reports pickups and deliveries that are due by `now`, stamped `now`.
+  // shortcut: replace with the carrier's webhook once one is integrated; it would call advanceShipment.
+  async advanceShipments(now = new Date(), orderId?: string) {
+    const times = carrierTimes();
+    let moved = 0;
+    const due = (where: Prisma.ShipmentWhereInput) =>
+      this.prisma.shipment.findMany({
+        where: { ...where, ...(orderId && { orderId }) },
+        include: {
+          order: { select: { pickupAddress: true, shippingAddress: true } },
+        },
+        orderBy: { id: 'asc' },
+      });
+    for (const s of await due({
+      status: ShipmentStatus.awaiting_pickup,
+      createdAt: { lte: new Date(now.getTime() - times.pickup) },
+    })) {
+      moved += await this.report(s.id, ShipmentStatus.picked_up, now);
+    }
+    for (const s of await due({
+      status: ShipmentStatus.picked_up,
+      pickedUpAt: { lte: new Date(now.getTime() - times.province) },
+    })) {
+      const transit =
+        provinceOf(s.order.pickupAddress) ===
+        provinceOf(s.order.shippingAddress)
+          ? times.province
+          : times.country;
+      if (s.pickedUpAt!.getTime() + transit > now.getTime()) continue;
+      moved += await this.report(s.id, ShipmentStatus.delivered, now);
+    }
+    return moved;
+  }
+
+  // One shipment that cannot move must not stop the rest of the sweep.
+  private async report(id: string, status: ShipmentStep, at: Date) {
+    try {
+      await this.advanceShipment(id, status, at);
+      return 1;
+    } catch (error) {
+      this.logger.warn(
+        `Shipment ${id} not moved to ${status}: ${(error as Error).message}`,
+      );
+      return 0;
+    }
+  }
+
+  // Repeats are no-ops, so a carrier reporting twice is safe; skipped steps are refused.
   private async advanceShipment(
     shipmentId: string,
     status: ShipmentStep,
-    actorId: string | null = null,
+    at: Date,
   ) {
     const shipment = await this.prisma.shipment.findUnique({
       where: { id: shipmentId },
@@ -279,17 +345,19 @@ export class OrdersService {
     await this.prisma.$transaction(async (tx) => {
       const { count } = await tx.shipment.updateMany({
         where: { id: shipmentId, status: step.shipmentFrom },
-        data: { status, [step.stamp]: new Date() },
+        data: { status, [step.stamp]: at },
       });
       if (count === 0) {
         const current = await tx.shipment.findUniqueOrThrow({
           where: { id: shipmentId },
         });
         if (current.status === status) return;
-        throw new ConflictException(`Shipment is ${current.status}`);
+        throw new ConflictException(
+          coded('shipment_state', `Shipment is ${current.status}`),
+        );
       }
       await this.move(tx, shipment.order, step.orderFrom, step.orderTo, {
-        actorId,
+        actorId: null,
         stock: step.stock,
       });
     });
@@ -415,22 +483,17 @@ export class OrdersService {
     }
   }
 
-  // shortcut: the seller reports pickup and delivery until a carrier integration can.
-  async updateShipment(userId: string, id: string, status: ShipmentStep) {
-    const { party, order } = await this.involved(userId, id);
-    if (party !== 'seller') {
-      throw new ForbiddenException('Only the seller can do this');
-    }
-    if (!order.shipment) throw new ConflictException('Shipment not arranged');
-    await this.advanceShipment(order.shipment.id, status, userId);
-    return this.get(userId, id);
-  }
-
   private async list(where: Prisma.OrderWhereInput, query: ListOrdersQuery) {
     const orders = await this.prisma.order.findMany({
-      where: { ...where, status: query.status },
+      where: {
+        ...where,
+        status: query.status,
+        ...(query.prepared && {
+          shipment: query.prepared === 'true' ? { isNot: null } : { is: null },
+        }),
+      },
       include: orderInclude,
-      ...cursorArgs(query),
+      ...cursorArgs(query, 'desc'),
     });
     const page = toPage(orders, query.limit);
     return { ...page, items: page.items.map(orderView) };
@@ -479,10 +542,13 @@ export class OrdersService {
   ) {
     const { party, order } = await this.involved(userId, id);
     const allowed = rule.from[order.status];
-    if (!allowed) throw new ConflictException(`Order is ${order.status}`);
+    if (!allowed)
+      throw new ConflictException(
+        coded('order_state', `Order is ${order.status}`),
+      );
     if (!allowed.includes(party)) {
       throw new ForbiddenException(
-        `Only the ${allowed.join(' or ')} can do this`,
+        coded('order_party', `Only the ${allowed.join(' or ')} can do this`),
       );
     }
     rule.check?.(party);

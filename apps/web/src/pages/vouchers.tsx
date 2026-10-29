@@ -26,7 +26,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { api } from '@/lib/api';
-import { dateTime, VOUCHER_TYPE, voucherTerms } from '@/lib/format';
+import { dateTime, money, VOUCHER_TYPE, voucherTerms } from '@/lib/format';
+import { useFees, useMyShop } from '@/lib/queries';
 import type { Voucher, VoucherType } from '@/lib/types';
 import { Field } from '@/pages/account';
 
@@ -74,6 +75,76 @@ function Choice<T extends string>({
   );
 }
 
+const share = (amount: number, bps: number) =>
+  Math.round((amount * bps) / 10_000);
+
+// Mirrors the server: the platform's take at the minimum spend for admin vouchers, and what the
+// shop keeps on an order of exactly the minimum spend for shop vouchers.
+function VoucherMath({
+  type,
+  kind,
+  draft,
+}: {
+  type?: Exclude<VoucherType, 'shop_voucher'>;
+  kind: 'fixed' | 'percent';
+  draft: Record<string, string>;
+}) {
+  const fees = useFees();
+  const shop = useMyShop(!type);
+  const f = fees.data;
+  const minSpend = Number(draft.minSpend || 0);
+  const value = Number(draft.discountValue || 0);
+  const cap = draft.maxDiscount ? Number(draft.maxDiscount) : Infinity;
+  if (!f) return null;
+  const freeship = (revenue: number) =>
+    Math.min(f.freeshipFeeCap, share(revenue, f.freeshipFeeBps));
+  let rows: [string, number][];
+  let over = false;
+  if (type) {
+    const limit =
+      share(minSpend, f.commissionBps) +
+      (type === 'shipping_voucher' ? freeship(minSpend) : 0);
+    const exempt =
+      type === 'platform_voucher' &&
+      kind === 'percent' &&
+      value * 100 <= f.commissionBps;
+    over = !exempt && (kind === 'fixed' ? value : cap) > limit;
+    rows = [['Giảm tối đa cho phép', limit]];
+  } else {
+    if (!minSpend) return null;
+    const discount = Math.min(
+      minSpend,
+      cap,
+      kind === 'fixed' ? value : Math.floor((minSpend * value) / 100),
+    );
+    const revenue = minSpend - discount;
+    const commission = share(revenue, f.commissionBps);
+    const fee = shop.data?.freeship ? freeship(revenue) : 0;
+    rows = [
+      ['Đơn tối thiểu', minSpend],
+      ['Giảm giá', -discount],
+      ['Phí sàn', -commission],
+      ...(fee ? [['Phí Freeship', -fee] as [string, number]] : []),
+      ['Thực nhận', revenue - commission - fee],
+    ];
+  }
+  return (
+    <div className="grid gap-1 rounded-md border p-3 text-sm">
+      {rows.map(([label, amount], i) => (
+        <div
+          key={label}
+          className={`flex justify-between ${i === rows.length - 1 ? 'font-medium' : 'text-muted-foreground'}`}
+        >
+          <span>{label}</span>
+          <span className={`tabular-nums ${over ? 'text-destructive' : ''}`}>
+            {money(amount)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function NewVoucher({
   path,
   types,
@@ -85,10 +156,11 @@ function NewVoucher({
   const [open, setOpen] = useState(false);
   const [type, setType] = useState(types?.[0]);
   const [kind, setKind] = useState<'fixed' | 'percent'>('fixed');
+  const [draft, setDraft] = useState<Record<string, string>>({});
   const create = useMutation({
     mutationFn: (body: object) => api<Voucher>(path, { method: 'POST', body }),
     onSuccess: () => {
-      toast.success('Đã tạo voucher');
+      toast.success('Đã tạo mã giảm giá');
       setOpen(false);
       void queryClient.invalidateQueries({ queryKey: [path] });
     },
@@ -100,19 +172,28 @@ function NewVoucher({
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
+        setDraft({});
         create.reset();
       }}
     >
       <Button onClick={() => setOpen(true)}>
         <Plus />
-        Tạo voucher
+        Tạo mã giảm giá
       </Button>
       <DialogContent className="max-h-[90svh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Tạo voucher</DialogTitle>
+          <DialogTitle>Tạo mã giảm giá</DialogTitle>
         </DialogHeader>
         <form
           className="grid gap-4"
+          onChange={(e) =>
+            setDraft(
+              Object.fromEntries(new FormData(e.currentTarget)) as Record<
+                string,
+                string
+              >,
+            )
+          }
           onSubmit={(e) => {
             e.preventDefault();
             const f = Object.fromEntries(
@@ -202,6 +283,7 @@ function NewVoucher({
               required
             />
           </div>
+          <VoucherMath type={type} kind={kind} draft={draft} />
           {create.error && <ErrorMessage error={create.error} />}
           <DialogFooter>
             <DialogClose asChild>
@@ -247,14 +329,14 @@ function VoucherManager({
       ) : vouchers.error ? (
         <ErrorMessage error={vouchers.error} />
       ) : !vouchers.data.length ? (
-        <Empty>Chưa có voucher</Empty>
+        <Empty>Chưa có mã giảm giá</Empty>
       ) : (
         <Card>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Voucher</TableHead>
+                  <TableHead>Mã giảm giá</TableHead>
                   <TableHead>Ưu đãi</TableHead>
                   <TableHead className="text-right">Đã dùng</TableHead>
                   <TableHead>Thời gian</TableHead>
@@ -291,7 +373,7 @@ function VoucherManager({
                           <ConfirmButton
                             label="Kết thúc"
                             variant="outline"
-                            title={`Kết thúc voucher ${v.code}?`}
+                            title={`Kết thúc mã giảm giá ${v.code}?`}
                             description={v.name}
                             pending={end.isPending}
                             onConfirm={() => end.mutate(v.id)}

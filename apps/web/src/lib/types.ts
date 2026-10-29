@@ -1,3 +1,4 @@
+import type { PAYMENT_STATE } from './format';
 export interface Page<T> {
   items: T[];
   nextCursor: string | null;
@@ -22,6 +23,8 @@ export interface Shop {
   status: ShopStatus;
   rating?: number | null;
   ratingCount?: number;
+  freeship?: boolean;
+  freeshipRequestedAt?: string | null;
   createdAt: string;
   owner?: { id: string; email: string; username: string };
 }
@@ -52,10 +55,8 @@ export interface Model {
 }
 
 export interface ModelFlashSale {
+  id: string;
   price: number;
-  quota: number;
-  sold: number;
-  purchaseLimit: number;
   endsAt: string;
 }
 
@@ -82,8 +83,6 @@ export interface CartLine {
   itemName: string;
   image: string | null;
   variation: string | null;
-  originalPrice: number | null;
-  flashSale: ModelFlashSale | null;
   addedPrice: number;
   price: number;
   priceChange: number;
@@ -114,7 +113,7 @@ export interface ShopAddress extends Location {
   street: string;
 }
 
-export type MyShop = Shop & ShopAddress;
+export type MyShop = Shop & ShopAddress & { statusReason?: string | null };
 
 export type CancelReason =
   | 'change_address'
@@ -150,12 +149,24 @@ export interface Order {
   shop: { id: string; name: string };
   status: OrderStatus;
   paymentMethod: 'cod' | 'online';
+  paymentState: keyof typeof PAYMENT_STATE;
   itemsTotal: number;
   sellerDiscount: number;
   platformDiscount: number;
   shippingFee: number;
   shippingDiscount: number;
   total: number;
+  freeshipFee: number;
+  vouchers: (Pick<
+    Voucher,
+    | 'type'
+    | 'name'
+    | 'code'
+    | 'discountKind'
+    | 'discountValue'
+    | 'maxDiscount'
+    | 'minSpend'
+  > & { amount: number })[];
   shippingAddress: Location & {
     recipientName: string;
     phone: string;
@@ -316,4 +327,17 @@ export interface FlashSale {
   startsAt: string;
   endsAt: string;
   models: FlashSaleModel[];
+}
+
+export interface FlashSalePage extends FlashSaleModel {
+  shop: { id: string; name: string };
+  startsAt: string;
+  endsAt: string;
+  status: 'upcoming' | 'running' | 'sold_out' | 'ended';
+}
+
+export interface Fees {
+  commissionBps: number;
+  freeshipFeeBps: number;
+  freeshipFeeCap: number;
 }

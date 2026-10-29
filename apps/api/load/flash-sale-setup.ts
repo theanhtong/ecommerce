@@ -1,5 +1,5 @@
 // Seeds the test database for the flash sale load test: one shop, one flash sale and
-// BUYERS buyers who each have an address, the item in their cart and a signed access token.
+// BUYERS buyers who each have an address and a signed access token, ready to "buy now".
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { JwtService } from '@nestjs/jwt';
@@ -67,9 +67,9 @@ const promotionId = await one(
    RETURNING id`,
   [shopId],
 );
-await db.query(
+const flashSaleId = await one(
   `INSERT INTO flash_sale_models (id, promotion_id, model_id, price, quota, purchase_limit)
-   VALUES (gen_random_uuid(), $1, $2, 50000, $3, 1)`,
+   VALUES (gen_random_uuid(), $1, $2, 50000, $3, 1) RETURNING id`,
   [promotionId, modelId, QUOTA],
 );
 
@@ -85,11 +85,6 @@ for (let i = 0; i < BUYERS; i++) {
      VALUES (gen_random_uuid(), $1, 'Load', '+84912345678', '00004', '1 Load', true, now()) RETURNING id`,
     [buyerId],
   );
-  const cartItemId = await one(
-    `INSERT INTO cart_items (id, user_id, model_id, quantity, added_price, updated_at)
-     VALUES (gen_random_uuid(), $1, $2, 1, 100000, now()) RETURNING id`,
-    [buyerId, modelId],
-  );
   buyers.push({
     token: await jwt.signAsync({
       sub: buyerId,
@@ -97,7 +92,7 @@ for (let i = 0; i < BUYERS; i++) {
       sid: randomUUID(),
     }),
     addressId,
-    cartItemId,
+    flashSaleId,
     key: randomUUID(),
     // One address per buyer, as a proxy would report it.
     ip: `10.${(i >> 16) & 255}.${(i >> 8) & 255}.${i & 255}`,

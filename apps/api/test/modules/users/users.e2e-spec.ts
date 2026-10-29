@@ -243,10 +243,15 @@ describe('Users (e2e)', () => {
       const admin = await signUp('admin');
       const target = await signUp();
 
-      const banned = await http()
+      await http()
         .patch(`/admin/users/${target.id}/status`)
         .set(bearer(admin.token))
         .send({ status: 'banned' })
+        .expect(400);
+      const banned = await http()
+        .patch(`/admin/users/${target.id}/status`)
+        .set(bearer(admin.token))
+        .send({ status: 'banned', reason: 'Spam đánh giá' })
         .expect(200);
       expect(banned.body.status).toBe('banned');
 
@@ -255,10 +260,17 @@ describe('Users (e2e)', () => {
         .set('Cookie', target.cookie)
         .expect(401);
       await http().get('/users/me').set(bearer(target.token)).expect(401);
-      await http()
+      // The reason reaches only someone who knows the password.
+      const refused = await http()
         .post('/auth/login')
         .send({ email: target.email, password })
+        .expect(403);
+      expect(refused.body.reason).toBe('Spam đánh giá');
+      const wrong = await http()
+        .post('/auth/login')
+        .send({ email: target.email, password: `${password}x` })
         .expect(401);
+      expect(wrong.body.reason).toBeUndefined();
 
       await http()
         .patch(`/admin/users/${target.id}/status`)
@@ -269,6 +281,18 @@ describe('Users (e2e)', () => {
         .post('/auth/login')
         .send({ email: target.email, password })
         .expect(200);
+      const detail = await http()
+        .get(`/admin/users/${target.id}`)
+        .set(bearer(admin.token))
+        .expect(200);
+      expect(detail.body.moderations).toEqual([
+        expect.objectContaining({ status: 'active', reason: null }),
+        expect.objectContaining({
+          status: 'banned',
+          reason: 'Spam đánh giá',
+          actor: { id: admin.id, username: expect.any(String) },
+        }),
+      ]);
     });
 
     it('rejects self-ban, unknown users and bad ids', async () => {
@@ -277,7 +301,7 @@ describe('Users (e2e)', () => {
         http()
           .patch(`/admin/users/${id}/status`)
           .set(bearer(admin.token))
-          .send({ status: 'banned' });
+          .send({ status: 'banned', reason: 'Vi phạm' });
       await status(admin.id).expect(400);
       await status(randomUUID()).expect(404);
       await status('not-a-uuid').expect(400);

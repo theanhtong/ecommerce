@@ -61,7 +61,11 @@ describe('Auth (e2e)', () => {
       .post('/auth/register')
       .send({ email, username: testUsername(), password })
       .expect(409);
-    expect(dupEmail.body.message).toBe('Email already registered');
+    expect(dupEmail.body).toMatchObject({
+      statusCode: 409,
+      message: 'Email already registered',
+      code: 'email_already_registered',
+    });
 
     const dupUsername = await http()
       .post('/auth/register')
@@ -162,7 +166,7 @@ describe('Auth (e2e)', () => {
       .post('/auth/refresh')
       .set('Cookie', refreshCookie(login))
       .expect(401);
-    await http().post('/auth/login').send({ email, password }).expect(401);
+    await http().post('/auth/login').send({ email, password }).expect(403);
     await prisma.user.update({ where: { email }, data: { status: 'active' } });
   });
 });

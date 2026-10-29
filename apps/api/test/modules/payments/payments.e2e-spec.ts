@@ -9,6 +9,7 @@ import {
   createTestApp,
   SHOP_ADDRESS,
   signUp,
+  carrier,
 } from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
@@ -306,11 +307,7 @@ describe('Payments (e2e)', () => {
     );
 
     await as(sellerOf(kept)).post(`/orders/${kept.id}/ship`).expect(200);
-    for (const status of ['picked_up', 'delivered']) {
-      await as(sellerOf(kept))
-        .post(`/orders/${kept.id}/shipment`, { status })
-        .expect(200);
-    }
+    await carrier(app, kept.id, 'delivered');
     await as(buyer).post(`/orders/${kept.id}/receive`).expect(200);
     expect(await entryLines(`order:${kept.id}:settlement`)).toEqual(
       expect.arrayContaining([['prepaid', kept.total]]),

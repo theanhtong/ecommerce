@@ -88,14 +88,31 @@ export const PAYMENT_METHOD = {
   online: 'Thanh toán online',
 } as const;
 
+export const PAYMENT_STATE = {
+  pending: 'Chờ thanh toán',
+  paid: 'Đã thanh toán',
+  expired: 'Hết hạn thanh toán',
+  cod_due: 'Thu khi nhận hàng',
+  cod_collected: 'Đã thu COD',
+  refund_pending: 'Chờ hoàn tiền',
+  refunded: 'Đã hoàn tiền',
+  none: 'Không phát sinh',
+} as const;
+
 export const REFUND_STATUS = {
   pending: 'Chờ hoàn',
   paid: 'Đã hoàn',
 } as const;
 
+export const PAYOUT_STATUS = {
+  pending: 'Chờ xử lý',
+  paid: 'Đã chuyển',
+  rejected: 'Bị từ chối',
+} as const;
+
 export const VOUCHER_TYPE = {
-  shop_voucher: 'Voucher của shop',
-  platform_voucher: 'Voucher sàn',
+  shop_voucher: 'Mã giảm giá của shop',
+  platform_voucher: 'Mã giảm giá của sàn',
   shipping_voucher: 'Mã miễn phí vận chuyển',
 } as const;
 

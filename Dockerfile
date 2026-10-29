@@ -7,6 +7,9 @@ RUN corepack enable
 WORKDIR /app
 
 FROM base AS build
+ARG DEMO_LOGIN=false
+ARG DEMO_ADMIN_EMAIL
+ARG DEMO_ADMIN_PASSWORD
 COPY . .
 RUN pnpm install --frozen-lockfile
 RUN pnpm --filter @ecommerce/db build \

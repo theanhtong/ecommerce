@@ -13,10 +13,10 @@ import {
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { emit } from '../notifications/outbox.service.js';
 import { OrdersService } from './orders.service.js';
+import { coded } from '../../common/http-error.js';
+import { RETURN_WINDOW_MS } from './return-window.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-// Buyers may ask for a return within 15 days of delivery.
-const RETURN_WINDOW_MS = 15 * DAY_MS;
 // Assumption: a seller who does not answer within 3 days is taken to accept the return.
 const SELLER_ANSWER_MS = 3 * DAY_MS;
 
@@ -46,7 +46,9 @@ export class ReturnsService {
         order.status !== OrderStatus.completed) ||
       !deliveredAt
     ) {
-      throw new ConflictException(`Order is ${order.status}`);
+      throw new ConflictException(
+        coded('order_state', `Order is ${order.status}`),
+      );
     }
     if (now.getTime() - deliveredAt.getTime() > RETURN_WINDOW_MS) {
       throw new ConflictException('The return window has closed');
@@ -169,7 +171,10 @@ export class ReturnsService {
       });
       const request = await tx.returnRequest.findUnique({ where: { id } });
       if (!request) throw new NotFoundException('Return not found');
-      if (!count) throw new ConflictException(`Return is ${request.status}`);
+      if (!count)
+        throw new ConflictException(
+          coded('return_state', `Return is ${request.status}`),
+        );
       await emit(tx, {
         type: 'return.status_changed',
         payload: { orderId: request.orderId, status: to, actorId },

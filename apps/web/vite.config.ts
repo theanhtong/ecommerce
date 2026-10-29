@@ -9,18 +9,47 @@ export default defineConfig(({ command, mode }) => {
     path.resolve(import.meta.dirname, '../..'),
     'DEMO_ADMIN_',
   );
-  // Accounts created by apps/api/scripts/demo-flow.ts. Dev server only, so no credentials
-  // (the admin one comes from .env) ever land in a production bundle.
+  // Accounts created by apps/api/scripts/demo-seed.ts: on the dev server, or in a build with
+  // DEMO_LOGIN=true. Such a build carries the admin password, so it is for local demos only.
   const password = 'demo password 123';
   const demoAccounts =
-    command === 'serve'
+    command === 'serve' || process.env.DEMO_LOGIN === 'true'
       ? [
-          { label: 'Người mua', email: 'buyer@demo.vn', password },
-          { label: 'Người bán', email: 'seller@demo.vn', password },
-          { label: 'Người bán 2', email: 'seller2@demo.vn', password },
+          ...(
+            [
+              ['buyer@demo.vn', 'Nguyễn Văn Demo'],
+              ['buyer2@demo.vn', 'Trần Thị Demo'],
+            ] as const
+          ).map(([email, label]) => ({
+            group: 'buyer',
+            label,
+            email,
+            password,
+          })),
+          ...(
+            [
+              ['seller@demo.vn', 'Thời Trang Basic'],
+              ['seller2@demo.vn', 'Nhà Gỗ Mộc An'],
+              ['gom@demo.vn', 'Gốm Sứ Bát Tràng'],
+              ['caphe@demo.vn', 'Cà Phê Cầu Đất Farm'],
+              ['phukien@demo.vn', 'Phụ Kiện Số Sài Gòn'],
+              ['mypham@demo.vn', 'Mỹ Phẩm Lá Xanh'],
+              ['giay@demo.vn', 'Giày Chạy Bộ Runner'],
+              ['tra@demo.vn', 'Trà Thái Nguyên Xanh'],
+              ['dochoi@demo.vn', 'Đồ Chơi Gỗ Bé Xinh'],
+              ['sotay@demo.vn', 'Sổ Tay Handmade'],
+              ['dolen@demo.vn', 'Đồ Len Handmade'],
+            ] as const
+          ).map(([email, label]) => ({
+            group: 'seller',
+            label,
+            email,
+            password,
+          })),
           ...(env.DEMO_ADMIN_EMAIL && env.DEMO_ADMIN_PASSWORD
             ? [
                 {
+                  group: 'admin',
                   label: 'Quản trị',
                   email: env.DEMO_ADMIN_EMAIL,
                   password: env.DEMO_ADMIN_PASSWORD,

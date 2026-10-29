@@ -1,5 +1,4 @@
 // After the load test: the quota, the orders and the stock must all agree.
-// Buyers who arrive after the quota is gone pay the regular price, so only flash-priced units are capped.
 import { readFileSync } from 'node:fs';
 import pg from 'pg';
 
@@ -45,7 +44,8 @@ console.table(results);
 const ok =
   r.sold === quota &&
   r.flash_units === quota &&
-  r.reserved === r.flash_units + r.regular_units &&
+  r.regular_units === 0 &&
+  r.reserved === r.flash_units &&
   r.buyers_over_limit === 0;
 console.log(ok ? 'PASS: no overselling' : 'FAIL');
 process.exit(ok ? 0 : 1);

@@ -4,6 +4,8 @@ import type { User } from './types';
 export interface AuthState {
   user: User | null;
   ready: boolean;
+  // True after the user signs out here, so guards do not send them back to the page they left.
+  signedOut: boolean;
   login: (email: string, password: string) => Promise<void>;
   register: (input: {
     email: string;

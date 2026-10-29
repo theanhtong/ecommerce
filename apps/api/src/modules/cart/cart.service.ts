@@ -11,13 +11,9 @@ import {
   publicWhere,
   variationName,
 } from '../catalog/items.service.js';
-import {
-  activeFlashSales,
-  flashSaleView,
-  type ActiveFlashSale,
-} from '../promotions/flash-sales.js';
 import { mediaUrl } from '../storage/storage.service.js';
 import type { AddCartItemDto } from './dto/cart-item.dto.js';
+import { coded } from '../../common/http-error.js';
 
 export const MAX_CART_MODELS = 200;
 
@@ -41,7 +37,7 @@ const lineInclude = {
 
 type Line = Prisma.CartItemGetPayload<{ include: typeof lineInclude }>;
 
-const lineView = ({ model, ...line }: Line, sale?: ActiveFlashSale) => {
+const lineView = ({ model, ...line }: Line) => {
   const { item } = model;
   const stock = available(model);
   return {
@@ -53,9 +49,7 @@ const lineView = ({ model, ...line }: Line, sale?: ActiveFlashSale) => {
     image: item.images[0] ? mediaUrl(item.images[0].key) : null,
     variation: variationName(model.tierIndex, item.tierVariations),
     addedPrice: line.addedPrice,
-    price: sale?.price ?? model.price,
-    originalPrice: sale ? model.price : null,
-    flashSale: sale ? flashSaleView(sale) : null,
+    price: model.price,
     priceChange: model.price - line.addedPrice,
     stock,
     purchasable:
@@ -75,10 +69,6 @@ export class CartService {
       include: lineInclude,
       orderBy: { updatedAt: 'desc' },
     });
-    const sales = await activeFlashSales(
-      this.prisma,
-      lines.map((l) => l.modelId),
-    );
     // Shops appear in the order of their most recently touched line.
     const shops = new Map<
       string,
@@ -90,7 +80,7 @@ export class CartService {
     for (const line of lines) {
       const { id, name } = line.model.item.shop;
       const group = shops.get(id) ?? { shop: { id, name }, items: [] };
-      group.items.push(lineView(line, sales.get(line.modelId)));
+      group.items.push(lineView(line));
       shops.set(id, group);
     }
     return { shops: [...shops.values()] };
@@ -158,7 +148,9 @@ export class CartService {
 
   private assertStock(quantity: number, stock: number) {
     if (quantity > stock) {
-      throw new ConflictException(`Only ${stock} left in stock`);
+      throw new ConflictException(
+        coded('stock_left', `Only ${stock} left in stock`, { stock }),
+      );
     }
   }
 }

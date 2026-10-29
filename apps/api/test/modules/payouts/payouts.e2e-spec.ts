@@ -8,6 +8,7 @@ import {
   createTestApp,
   SHOP_ADDRESS,
   signUp,
+  carrier,
 } from '../../support/helpers.js';
 
 type Account = Awaited<ReturnType<typeof signUp>>;
@@ -86,15 +87,24 @@ describe('Payouts and refunds (e2e)', () => {
     };
   }
 
-  async function completed(s: Awaited<ReturnType<typeof seller>>) {
+  // By default the return window has closed, so the order's money can be withdrawn.
+  async function completed(
+    s: Awaited<ReturnType<typeof seller>>,
+    returnable = false,
+  ) {
     const { buyer, order: o } = await order(s);
     await as(s).post(`/orders/${o.id}/ship`).expect(200);
-    for (const status of ['picked_up', 'delivered']) {
-      await as(s).post(`/orders/${o.id}/shipment`, { status }).expect(200);
-    }
+    await carrier(app, o.id, 'delivered');
     await as(buyer).post(`/orders/${o.id}/receive`).expect(200);
-    return o;
+    if (!returnable) await closeReturnWindow(o.id);
+    return { ...o, buyer };
   }
+
+  const closeReturnWindow = (orderId: string) =>
+    prisma.shipment.update({
+      where: { orderId },
+      data: { deliveredAt: new Date(Date.now() - 16 * 24 * 60 * 60 * 1000) },
+    });
 
   const balance = async (s: Account) =>
     (await as(s).get('/shops/me/wallet').expect(200)).body.balance as number;
@@ -148,19 +158,59 @@ describe('Payouts and refunds (e2e)', () => {
       }),
     ).toBe(1);
 
+    const wallet = await as(s).get('/shops/me/wallet').expect(200);
+    expect(wallet.body.items[0]).toMatchObject({
+      refType: 'payout',
+      amount: -payout.amount,
+      payout: { bankName: 'MB Bank', accountNumber: '0123456789' },
+    });
+
     const mine = await as(s).get('/shops/me/payouts').expect(200);
     expect(mine.body.items).toEqual([
       expect.objectContaining({ id: payout.id }),
     ]);
-    await as(s).get('/admin/payouts').expect(403);
-    const all = await as(admin).get('/admin/payouts').expect(200);
-    expect(all.body.items[0]).toMatchObject({
-      id: payout.id,
-      shop: { name: expect.any(String) },
+    const shop = (await as(s).get('/shops/me').expect(200)).body;
+    const shopWallet = await as(admin)
+      .get(`/admin/ledger/shops/${shop.id}/wallet`)
+      .expect(200);
+    expect(shopWallet.body.items[0]).toMatchObject({
+      refType: 'payout',
+      payout: { accountName: 'NGUYEN VAN A' },
     });
 
     const accounts = await as(admin).get('/admin/ledger/accounts').expect(200);
     expect(accounts.body.total).toBe(0);
+  });
+
+  it('holds back what a buyer can still return', async () => {
+    const s = await seller();
+    const o = await completed(s, true);
+    const wallet = async () =>
+      (await as(s).get('/shops/me/wallet').expect(200)).body;
+    const earned = (await wallet()).balance;
+    expect(await wallet()).toMatchObject({ balance: earned, held: earned });
+    const refused = await as(s)
+      .post('/shops/me/payouts', { ...BANK, amount: 1000 })
+      .expect(409);
+    expect(refused.body).toMatchObject({
+      code: 'payout_over_available',
+      params: { available: 0 },
+    });
+
+    // An open return keeps it held even after the window closes.
+    await as(o.buyer)
+      .post(`/orders/${o.id}/return`, { reason: 'damaged' })
+      .expect(200);
+    await closeReturnWindow(o.id);
+    expect((await wallet()).held).toBe(earned);
+    await prisma.returnRequest.update({
+      where: { orderId: o.id },
+      data: { status: 'rejected' },
+    });
+    expect((await wallet()).held).toBe(0);
+    await as(s)
+      .post('/shops/me/payouts', { ...BANK, amount: earned })
+      .expect(201);
   });
 
   it('reports what the shop earned and sold', async () => {
@@ -172,7 +222,7 @@ describe('Payouts and refunds (e2e)', () => {
       .post('/shops/me/payouts', { ...BANK, amount: 1000 })
       .expect(201);
 
-    const report = await as(s).get('/shops/me/report?range=30d').expect(200);
+    const report = await as(s).get('/shops/me/report?period=month').expect(200);
     const earned = (await as(s).get('/shops/me/wallet').expect(200)).body
       .balance;
     expect(report.body.totals).toMatchObject({
@@ -187,9 +237,15 @@ describe('Payouts and refunds (e2e)', () => {
     expect(report.body.totals.commission).toBe(
       100000 - report.body.totals.earnings,
     );
-    expect(report.body.series).toHaveLength(30);
-    await as(s).get('/shops/me/report?range=week').expect(400);
-    await as(admin).get('/shops/me/report?range=30d').expect(403);
+    const [year, month] = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+    })
+      .format(new Date())
+      .split('-')
+      .map(Number);
+    expect(report.body.series).toHaveLength(new Date(year, month, 0).getDate());
+    await as(s).get('/shops/me/report?period=week').expect(400);
+    await as(admin).get('/shops/me/report').expect(403);
   });
 
   it('lets the admin settle what is owed back to buyers', async () => {

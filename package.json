@@ -10,7 +10,8 @@
     "build": "pnpm -r build",
     "test": "pnpm -r test",
     "test:e2e": "pnpm --filter @ecommerce/api test:e2e",
-    "demo:flow": "pnpm --filter @ecommerce/api demo:flow",
+    "admin:create": "pnpm --filter @ecommerce/api admin:create",
+    "demo:seed": "pnpm --filter @ecommerce/api demo:seed",
     "lint": "pnpm -r lint",
     "format:check": "pnpm -r format:check",
     "db:generate": "pnpm --filter @ecommerce/db generate",
@@ -18,7 +19,7 @@
     "db:seed": "pnpm --filter @ecommerce/api db:seed",
     "db:studio": "pnpm --filter @ecommerce/db studio",
     "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down",
+    "infra:down": "docker compose --profile app down",
     "app:up": "docker compose --profile app up -d --build",
     "app:down": "docker compose --profile app down"
   }
