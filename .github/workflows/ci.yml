@@ -16,9 +16,9 @@ jobs:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @ecommerce/db build
+      - run: pnpm --filter @marketplace/db build
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm test
-      - run: pnpm --filter @ecommerce/api build
-      - run: pnpm --filter @ecommerce/web build
+      - run: pnpm --filter @marketplace/api build
+      - run: pnpm --filter @marketplace/web build

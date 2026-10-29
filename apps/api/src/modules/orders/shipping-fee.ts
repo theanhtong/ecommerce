@@ -1,4 +1,4 @@
-import type { WardType } from '@ecommerce/db';
+import type { WardType } from '@marketplace/db';
 
 // Assumption: every 500 g above 2 kg adds one step, priced by whether that step ends above 4 kg.
 const RATES = {

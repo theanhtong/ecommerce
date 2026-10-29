@@ -1,4 +1,4 @@
-import { CancelReason, OrderStatus, PaymentMethod } from '@ecommerce/db';
+import { CancelReason, OrderStatus, PaymentMethod } from '@marketplace/db';
 import {
   ArrayMaxSize,
   ArrayMinSize,

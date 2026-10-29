@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { PaymentStatus, Prisma } from '@ecommerce/db';
+import { PaymentStatus, Prisma } from '@marketplace/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';
 import { OrdersService } from '../orders/orders.service.js';

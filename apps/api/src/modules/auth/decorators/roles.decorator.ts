@@ -1,5 +1,5 @@
 import { SetMetadata } from '@nestjs/common';
-import type { Role } from '@ecommerce/db';
+import type { Role } from '@marketplace/db';
 
 export const ROLES_KEY = 'roles';
 

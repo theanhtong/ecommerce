@@ -1,5 +1,5 @@
 import { ConflictException, NotFoundException } from '@nestjs/common';
-import type { Prisma } from '@ecommerce/db';
+import type { Prisma } from '@marketplace/db';
 
 type Db = Pick<Prisma.TransactionClient, 'flashSaleModel'>;
 

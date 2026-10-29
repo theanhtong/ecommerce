@@ -15,7 +15,7 @@ import {
   Prisma,
   ReturnStatus,
   ShipmentStatus,
-} from '@ecommerce/db';
+} from '@marketplace/db';
 import { cursorArgs, toPage } from '../../common/pagination.js';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import { LedgerService } from '../ledger/ledger.service.js';

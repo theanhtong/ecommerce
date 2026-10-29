@@ -1,4 +1,4 @@
-import { ShopStatus } from '@ecommerce/db';
+import { ShopStatus } from '@marketplace/db';
 import { IsEnum, IsIn, IsOptional } from 'class-validator';
 import { CursorQuery } from '../../../common/pagination.js';
 

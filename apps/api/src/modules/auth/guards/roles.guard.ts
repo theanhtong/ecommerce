@@ -1,6 +1,6 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { Role } from '@ecommerce/db';
+import type { Role } from '@marketplace/db';
 import { ROLES_KEY } from '../decorators/roles.decorator.js';
 import type { AuthenticatedRequest } from './jwt-auth.guard.js';
 

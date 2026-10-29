@@ -49,7 +49,7 @@ services:
   migrate:
     profiles: [app]
     build: { context: ., target: api }
-    image: ecommerce-api
+    image: marketplace-api
     env_file: .env
     environment: &app-env
       NODE_ENV: production
@@ -59,14 +59,14 @@ services:
       # nginx is the one proxy in front of the API.
       TRUST_PROXY_HOPS: "1"
     command: >
-      sh -c "pnpm --filter @ecommerce/db exec prisma migrate deploy
+      sh -c "pnpm --filter @marketplace/db exec prisma migrate deploy
       && node scripts/seed-regions.ts"
     depends_on:
       postgres: { condition: service_healthy }
 
   api:
     profiles: [app]
-    image: ecommerce-api
+    image: marketplace-api
     env_file: .env
     environment: *app-env
     healthcheck:
@@ -81,7 +81,7 @@ services:
 
   worker:
     profiles: [app]
-    image: ecommerce-api
+    image: marketplace-api
     env_file: .env
     environment: *app-env
     command: ["node", "dist/worker.js"]
@@ -99,7 +99,7 @@ services:
         DEMO_LOGIN: "true"
         DEMO_ADMIN_EMAIL: ${DEMO_ADMIN_EMAIL}
         DEMO_ADMIN_PASSWORD: ${DEMO_ADMIN_PASSWORD}
-    image: ecommerce-web
+    image: marketplace-web
     ports:
       - "${WEB_PORT:-8080}:80"
     depends_on:

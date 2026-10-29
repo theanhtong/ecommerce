@@ -12,9 +12,9 @@ ARG DEMO_ADMIN_EMAIL
 ARG DEMO_ADMIN_PASSWORD
 COPY . .
 RUN pnpm install --frozen-lockfile
-RUN pnpm --filter @ecommerce/db build \
-  && pnpm --filter @ecommerce/api build \
-  && pnpm --filter @ecommerce/web build
+RUN pnpm --filter @marketplace/db build \
+  && pnpm --filter @marketplace/api build \
+  && pnpm --filter @marketplace/web build
 
 # One image runs the API, the worker and the migrate step.
 # shortcut: keeps dev dependencies because migrate and the region seed need the Prisma CLI and pg; split a slim runtime image when size matters.

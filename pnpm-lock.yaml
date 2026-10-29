@@ -10,7 +10,7 @@ importers:
 
   apps/api:
     dependencies:
-      '@ecommerce/db':
+      '@marketplace/db':
         specifier: workspace:*
         version: link:../../packages/db
       '@nestjs/common':

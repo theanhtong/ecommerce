@@ -10,7 +10,7 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ReturnReason, ReturnStatus, Role } from '@ecommerce/db';
+import { ReturnReason, ReturnStatus, Role } from '@marketplace/db';
 import { IsEnum, IsOptional } from 'class-validator';
 import { CursorQuery } from '../../common/pagination.js';
 import type { AccessTokenPayload } from '../auth/auth.service.js';

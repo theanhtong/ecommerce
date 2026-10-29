@@ -3,7 +3,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@ecommerce/db';
+import { Prisma } from '@marketplace/db';
 import { PrismaService } from '../../prisma/prisma.service.js';
 import {
   assertWardExists,

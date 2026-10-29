@@ -1,5 +1,5 @@
 import { applyDecorators, BadRequestException } from '@nestjs/common';
-import type { Prisma, Province, Ward } from '@ecommerce/db';
+import type { Prisma, Province, Ward } from '@marketplace/db';
 import { Transform } from 'class-transformer';
 import { IsString, Length, Matches } from 'class-validator';
 import { trim } from '../../common/transforms.js';
